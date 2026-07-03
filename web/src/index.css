@@ -1,0 +1,165 @@
+/* =============================================================
+ * MindCanvas v3.0 - 全局样式 · 暖木教育主题
+ * ============================================================= */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === 设计令牌 · 暖木教育 === */
+:root {
+  --color-primary-50:  #FAEEDA;
+  --color-primary-100: #FAC775;
+  --color-primary-300: #EF9F27;
+  --color-primary-500: #BA7517;
+  --color-primary-700: #854F0B;
+  --color-primary-900: #412402;
+
+  --color-bg:           #FBFAF7;
+  --color-surface:      #FFFFFF;
+  --color-border:       #E5E2D9;
+  --color-border-strong:#D3D1C7;
+
+  --color-text:         #2C2C2A;
+  --color-text-muted:   #6B6A64;
+  --color-text-hint:    #9A988F;
+
+  --color-success-bg: #E1F5EE; --color-success: #0F6E56;
+  --color-warning-bg: #FAEEDA; --color-warning: #854F0B;
+  --color-danger-bg:  #FCEBEB; --color-danger:  #A32D2D;
+  --color-info-bg:    #E6F1FB; --color-info:    #0C447C;
+
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   16px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 2px 8px rgba(133, 79, 11, 0.06);
+  --shadow-pop:  0 4px 16px rgba(133, 79, 11, 0.10);
+
+  --text-title:   22px;
+  --text-h2:      16px;
+  --text-body:    14px;
+  --text-caption: 12px;
+
+  --sidebar-width: 300px;
+  --header-height: 48px;
+}
+
+/* === 全局重置 === */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+               'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* === Tailwind 组件 === */
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-amber-700 text-white rounded-xl font-medium
+           hover:bg-amber-800 active:bg-amber-900 transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    box-shadow: var(--shadow-card);
+  }
+  .btn-secondary {
+    @apply px-4 py-2 text-amber-800 rounded-xl font-medium
+           hover:bg-amber-100 active:bg-amber-200 transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--color-primary-50);
+    border: 1px solid var(--color-primary-100);
+  }
+  .btn-danger {
+    @apply px-4 py-2 rounded-xl font-medium transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger);
+    border: 1px solid #f5c6c6;
+  }
+  .btn-danger:hover {
+    background-color: #f9d5d5;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .card {
+    @apply bg-white rounded-2xl p-4;
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-card);
+  }
+  .input {
+    @apply w-full px-3 py-2 rounded-xl outline-none transition-all bg-white;
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    font-size: var(--text-body);
+  }
+  .input::placeholder {
+    color: var(--color-text-hint);
+  }
+  .input:focus {
+    border-color: var(--color-primary-300);
+    box-shadow: 0 0 0 3px rgba(186, 117, 23, 0.12);
+  }
+  .toast {
+    @apply fixed top-4 left-1/2 -translate-x-1/2 z-[9999]
+           px-4 py-2 rounded-xl text-white text-sm font-medium
+           shadow-lg animate-slide-in;
+  }
+  .spinner {
+    @apply w-8 h-8 rounded-full animate-spin;
+    border: 3px solid var(--color-primary-50);
+    border-top-color: var(--color-primary-500);
+  }
+}
+
+/* === 动画 === */
+@keyframes slide-in {
+  from { opacity: 0; transform: translate(-50%, -20px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-slide-in { animation: slide-in 0.3s ease-out; }
+.animate-fade-in  { animation: fade-in 0.2s ease-out; }
+
+/* =============================================================
+ * Excalidraw v0.18 样式调整
+ * ============================================================= */
+.excalidraw .welcome-screen-center {
+  display: none !important;
+}
+.excalidraw .welcome-screen-menu-hinted {
+  display: none !important;
+}
+.excalidraw .layer-ui__wrapper__top-right .default-sidebar-trigger,
+.excalidraw [class*="Excalidraw-plus"],
+.excalidraw [data-testid="share-button"] {
+  display: none !important;
+}
+
+/* === 画布覆盖层 === */
+.card-container:hover {
+  box-shadow: var(--shadow-pop) !important;
+}
+
+/* === 滚动条美化 === */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-hint); }
+
+/* === 打印 === */
+@media print {
+  header, .control-panel, .toolbar { display: none !important; }
+}
+
+/* ── 护眼模式 ───────────────────────────────────────────── */

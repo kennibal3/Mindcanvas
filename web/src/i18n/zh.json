@@ -1,0 +1,114 @@
+{
+  "app": {
+    "name": "MindCanvas",
+    "subtitle": "协同白板",
+    "loading": "加载中..."
+  },
+  "auth": {
+    "login": "登录",
+    "logout": "退出登录",
+    "username": "用户名",
+    "password": "密码",
+    "loginBtn": "登录",
+    "loggingIn": "登录中...",
+    "loginError": "登录失败",
+    "teacherLogin": "教师/管理员登录"
+  },
+  "room": {
+    "create": "创建房间",
+    "title": "房间标题",
+    "capacity": "房间容量",
+    "inviteCode": "邀请码",
+    "active": "进行中",
+    "finished": "已结束",
+    "locked": "已锁定",
+    "readonly": "只读",
+    "noRooms": "还没有房间",
+    "deleteConfirm": "确定删除这个房间吗？所有数据将被清除。",
+    "enterRoom": "进入房间",
+    "members": "在线成员",
+    "elements": "画布元素"
+  },
+  "canvas": {
+    "textCard": "文本卡片",
+    "imageCard": "图片卡片",
+    "select": "选择",
+    "hand": "平移",
+    "addCard": "添加卡片",
+    "doubleClickHint": "双击画布创建文本卡片",
+    "lockedHint": "画布已锁定，无法编辑",
+    "readonlyHint": "课程已结束，当前为浏览模式"
+  },
+  "card": {
+    "placeholder": "输入文字...",
+    "likes": "赞",
+    "delete": "删除",
+    "createdBy": "创建者",
+    "uploadImage": "上传图片",
+    "dragOrPaste": "拖拽或粘贴图片",
+    "maxSize": "最大 5MB",
+    "caption": "图片说明"
+  },
+  "control": {
+    "panel": "场控面板",
+    "lock": "锁定画布",
+    "unlock": "解锁画布",
+    "gather": "召集视角",
+    "gatherDesc": "将所有学生视角拉到教师位置",
+    "kick": "踢出",
+    "kickConfirm": "确定将该学生移出房间？",
+    "readonly": "设为只读",
+    "readonlyDesc": "课程结束后学生只能浏览",
+    "memberCount": "在线人数",
+    "elementCount": "画布元素"
+  },
+  "widget": {
+    "toolbar": "互动工具",
+    "polling": "投票",
+    "wordcloud": "词云",
+    "qa": "问答",
+    "createWidget": "创建互动组件",
+    "clickCanvasToPlace": "点击画布放置组件",
+    "vote": "投票",
+    "voted": "已投票",
+    "submit": "提交",
+    "submitted": "已提交"
+  },
+  "student": {
+    "join": "加入课堂",
+    "roomCode": "房间码",
+    "nickname": "昵称",
+    "avatar": "选择头像",
+    "joining": "加入中...",
+    "reconnecting": "重新连接中...",
+    "disconnected": "连接已断开"
+  },
+  "export": {
+    "image": "导出图片",
+    "pdf": "导出PDF",
+    "csv": "导出报表",
+    "exporting": "导出中...",
+    "all": "全部数据",
+    "voteData": "投票数据",
+    "wordcloudData": "词云数据",
+    "qaData": "问答数据",
+    "png": "导出图片"
+  },
+  "common": {
+    "confirm": "确定",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "close": "关闭",
+    "edit": "编辑",
+    "loading": "加载中...",
+    "error": "出错了",
+    "success": "操作成功",
+    "retry": "重试",
+    "online": "在线",
+    "offline": "离线",
+    "copy": "复制",
+    "copied": "已复制",
+    "noData": "暂无数据"
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "app": {
+    "name": "MindCanvas",
+    "subtitle": "Collaborative Whiteboard",
+    "loading": "Loading..."
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "username": "Username",
+    "password": "Password",
+    "loginBtn": "Login",
+    "loggingIn": "Logging in...",
+    "loginError": "Login failed",
+    "teacherLogin": "Teacher/Admin Login"
+  },
+  "room": {
+    "create": "Create Room",
+    "title": "Room Title",
+    "capacity": "Room Capacity",
+    "inviteCode": "Invite Code",
+    "active": "Active",
+    "finished": "Finished",
+    "locked": "Locked",
+    "readonly": "Read Only",
+    "noRooms": "No rooms yet",
+    "deleteConfirm": "Delete this room? All data will be erased.",
+    "enterRoom": "Enter Room",
+    "members": "Online Members",
+    "elements": "Canvas Elements"
+  },
+  "canvas": {
+    "textCard": "Text Card",
+    "imageCard": "Image Card",
+    "select": "Select",
+    "hand": "Pan",
+    "addCard": "Add Card",
+    "doubleClickHint": "Double-click canvas to create text card",
+    "lockedHint": "Canvas is locked, editing disabled",
+    "readonlyHint": "Class ended, view-only mode"
+  },
+  "card": {
+    "placeholder": "Type here...",
+    "likes": "Like",
+    "delete": "Delete",
+    "createdBy": "Created by",
+    "uploadImage": "Upload Image",
+    "dragOrPaste": "Drag or paste image",
+    "maxSize": "Max 5MB",
+    "caption": "Caption"
+  },
+  "control": {
+    "panel": "Control Panel",
+    "lock": "Lock Canvas",
+    "unlock": "Unlock Canvas",
+    "gather": "Gather View",
+    "gatherDesc": "Bring all students to teacher's viewport",
+    "kick": "Kick",
+    "kickConfirm": "Remove this student from the room?",
+    "readonly": "Set Read-Only",
+    "readonlyDesc": "Students can only view after class ends",
+    "memberCount": "Online",
+    "elementCount": "Elements"
+  },
+  "widget": {
+    "toolbar": "Interactions",
+    "polling": "Poll",
+    "wordcloud": "Word Cloud",
+    "qa": "Q&A",
+    "createWidget": "Create Widget",
+    "clickCanvasToPlace": "Click on canvas to place",
+    "vote": "Vote",
+    "voted": "Voted",
+    "submit": "Submit",
+    "submitted": "Submitted"
+  },
+  "student": {
+    "join": "Join Class",
+    "roomCode": "Room Code",
+    "nickname": "Nickname",
+    "avatar": "Choose Avatar",
+    "joining": "Joining...",
+    "reconnecting": "Reconnecting...",
+    "disconnected": "Disconnected"
+  },
+  "export": {
+    "image": "Export Image",
+    "pdf": "Export PDF",
+    "csv": "Export Report",
+    "exporting": "Exporting...",
+    "all": "All Data",
+    "voteData": "Vote Data",
+    "wordcloudData": "Word Cloud Data",
+    "qaData": "Q&A Data",
+    "png": "Export Image"
+  },
+  "common": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "edit": "Edit",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "retry": "Retry",
+    "online": "Online",
+    "offline": "Offline",
+    "copy": "Copy",
+    "copied": "Copied",
+    "noData": "No data"
+  }
+}
