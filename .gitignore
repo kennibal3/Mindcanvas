@@ -25,3 +25,5 @@ configs/backup_*
 mindcanvas-server
 uploads/
 *.broken*
+bin/
+*.bak.*
