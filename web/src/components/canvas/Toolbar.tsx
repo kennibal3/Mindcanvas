@@ -3,16 +3,18 @@
 // 悬浮在画布底部中央，提供快捷操作
 // 包含：文本卡片、图片上传、缩放控制、导入 .excalidraw 文件
 // 新增（需求7）：导入 .excalidraw 文件，解析后合并到当前画布
+// 新增（REQ-027）：AI 图形生成按钮 + DiagramModal
 // =============================================================
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Type, ImagePlus, ZoomIn, ZoomOut, Maximize,
-  Lock, BookOpen, FolderOpen, Check,
+  Lock, BookOpen, FolderOpen, Check, Sparkles,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useRoomStore } from '@/store/roomStore';
 import { CANVAS_CONFIG, IMAGE_MIMES, FILE_LIMITS } from '@/utils/constants';
+import DiagramModal from './DiagramModal';
 
 /**
  * Toolbar Props
@@ -43,6 +45,8 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
   const [importSuccess, setImportSuccess] = useState(false);
   // 导入错误提示
   const [importError, setImportError] = useState('');
+  // AI 图形生成弹窗（REQ-027）
+  const [showDiagramModal, setShowDiagramModal] = useState(false);
 
   /** 是否处于不可编辑状态 */
   const isDisabled = isLocked || isReadOnly;
@@ -333,6 +337,19 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
             )}
           </button>
 
+          {/* ===== AI 图形生成（REQ-027）===== */}
+          <button
+            onClick={() => setShowDiagramModal(true)}
+            disabled={isDisabled}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
+                       hover:bg-amber-50 hover:text-amber-600 text-gray-600 transition-colors
+                       disabled:opacity-40 disabled:cursor-not-allowed"
+            title="AI 图形生成（思维导图/流程图等）"
+          >
+            <Sparkles size={16} />
+            <span className="hidden sm:inline">AI图形</span>
+          </button>
+
           {/* 隐藏的文件输入（图片）*/}
           <input
             ref={fileInputRef}
@@ -380,6 +397,11 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
           </button>
         </div>
       </div>
+
+      {/* AI 图形生成弹窗（REQ-027）*/}
+      {showDiagramModal && (
+        <DiagramModal onClose={() => setShowDiagramModal(false)} />
+      )}
     </>
   );
 };

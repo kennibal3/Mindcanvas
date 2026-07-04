@@ -4,6 +4,7 @@
 // REQ-019修复：学生端顶部右侧头像处点击展开修改昵称/头像面板
 // REQ-012修复：教师端成员浮层改用 MemberList 组件，启用 ⋯ 操作菜单
 // 跟随模式修复：向 ControlPanel 传入 excalidrawAPI，确保 ctrl_follow_sync 能广播
+// REQ-027：左侧新增 AI 工作台（仅教师，fixed 定位悬浮于画布上方）
 // =============================================================
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
@@ -22,6 +23,7 @@ import CanvasEngine from '@/components/canvas/CanvasEngine';
 import ControlPanel from '@/components/teacher/ControlPanel';
 import MemberList from '@/components/teacher/MemberList';
 import FloatingWidgets from '@/components/canvas/FloatingWidgets';
+import AIWorkbench from '@/components/canvas/AIWorkbench';
 import { API_BASE, AVATARS } from '@/utils/constants';
 
 // ===== 剪贴板工具函数 =====
@@ -727,6 +729,16 @@ const RoomPage = () => {
           );
         })}
       </main>
+
+      {/* REQ-027：AI 工作台（仅教师，fixed 定位悬浮在画布左侧上方）*/}
+      {isTeacher && roomId && (
+        <div
+          className="fixed z-[45] shadow-lg"
+          style={{ top: '44px', left: 0, bottom: 0 }}
+        >
+          <AIWorkbench roomId={roomId} isTeacher={isTeacher} />
+        </div>
+      )}
 
       {/* 教师控制面板：传入 excalidrawAPI 确保跟随模式 ctrl_follow_sync 能广播 */}
       {isTeacher && roomId && (

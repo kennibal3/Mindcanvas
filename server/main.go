@@ -170,6 +170,7 @@ func main() {
 	// Chat养成对话处理器
 	chatHandler := handlers.NewChatHandler(db)
 	chatDoubaoHandler := handlers.NewChatDoubaoHandler(db, aiSvc)
+	diagramHandler := handlers.NewDiagramHandler(aiSvc)
 
 	// ========== 7. 注册 WebSocket 消息处理器 ==========
 	wsHandler.SetupMessageHandler()
@@ -434,6 +435,12 @@ func main() {
 		chat.GET("/memory/files",                 chatHandler.ListMemoryFiles)
 		chat.PATCH("/memory/files/:fid/toggle",   chatHandler.ToggleMemoryFile)
 		chat.DELETE("/memory/files/:fid",         chatHandler.DeleteMemoryFile)
+	}
+	// ===== AI 图形生成路由（思维导图/流程图/时间轴/架构图/鱼骨图）=====
+	ai := r.Group("/api/ai")
+	ai.Use(middleware.AuthRequired())
+	{
+		ai.POST("/diagram", diagramHandler.Generate)
 	}
 
 	// 教学模块扩展路由预留
