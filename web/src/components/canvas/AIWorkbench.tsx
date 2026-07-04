@@ -210,16 +210,22 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   // ──────────────────────────────────────────────────────────
   // 渲染
   // ──────────────────────────────────────────────────────────
+  // REQ-027-UX：收起时不再是全高白条（会遮挡画布左侧 UI），改为垂直居中的小胶囊按钮；
+  // pointer-events-auto 配合外层容器的 pointer-events-none，只有面板/按钮本身拦截鼠标
   return (
     <div
-      className="flex flex-col h-full shrink-0 border-r border-gray-200 bg-white transition-all duration-300 overflow-hidden"
+      className={`flex flex-col shrink-0 bg-white transition-all duration-300 overflow-hidden pointer-events-auto ${
+        expanded
+          ? "h-full border-r border-gray-200 shadow-lg"
+          : "border border-l-0 border-amber-200 rounded-r-xl shadow-md"
+      }`}
       style={{ width: expanded ? 300 : 40, minWidth: expanded ? 300 : 40 }}
     >
-      {/* ── 收起状态：竖排 Tab ── */}
+      {/* ── 收起状态：垂直居中小胶囊 Tab ── */}
       {!expanded && (
         <button
           onClick={() => setExpanded(true)}
-          className="flex flex-col items-center justify-center gap-1 w-full h-full
+          className="flex flex-col items-center justify-center gap-1 w-full py-3
                      text-amber-600 hover:bg-amber-50 transition-colors"
           title="展开 AI 工作台"
         >
