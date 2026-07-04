@@ -163,8 +163,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const handleInsert = useCallback((item: WorkbenchItem) => {
     if (!excalidrawAPI) return;
     const appState = excalidrawAPI.getAppState();
-    const originX = -appState.scrollX / appState.zoom.value + 80;
-    const originY = -appState.scrollY / appState.zoom.value + 60;
+    const originX = -appState.scrollX + 80 / appState.zoom.value;
+    const originY = -appState.scrollY + 60 / appState.zoom.value;
     const newElements = buildDiagramElements(item.data, originX, originY);
     const current = excalidrawAPI.getSceneElements();
     excalidrawAPI.updateScene({ elements: [...current, ...newElements] });
