@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Users, Shuffle, Plus, Trash2, ChevronDown, ChevronRight, Crown, X } from 'lucide-react'
+import { Users, Shuffle, Plus, Trash2, ChevronDown, ChevronRight, Crown, X, Loader2 } from 'lucide-react'
 import { useRoomStore } from '@/store/roomStore'
 import type { Group } from '@/types/group'
 import { listGroups, createGroup, updateGroup, deleteGroup, autoGroup } from '@/utils/groupApi'
@@ -52,17 +52,25 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
     return () => window.removeEventListener('ws_group_update', handler)
   }, [loadGroups])
 
+  // BUG-002 修复: 超时保护,避免请求异常挂起时按钮永远转圈、教师以为程序死掉
   const handleAutoGroup = async () => {
     setAutoLoading(true)
+    const timeoutId = window.setTimeout(() => {
+      setAutoLoading(false)
+      alert('分组请求超时，请检查网络后重试')
+    }, 8000)
     try {
       const result = await autoGroup(roomId, autoMode, autoN)
+      window.clearTimeout(timeoutId)
       setGroups(result.groups.map(g => ({
         ...g, room_id: roomId, leader_uuid: '', created_at: '', updated_at: '',
       })))
       setShowAutoModal(false)
     } catch (e: any) {
+      window.clearTimeout(timeoutId)
       alert(e.message || '自动分组失败')
     } finally {
+      window.clearTimeout(timeoutId)
       setAutoLoading(false)
     }
   }
@@ -194,7 +202,13 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
       {showAutoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
           onClick={() => !autoLoading && setShowAutoModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-72" onClick={e => e.stopPropagation()}>
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 w-72" onClick={e => e.stopPropagation()}>
+            {autoLoading && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/85 rounded-2xl">
+                <Loader2 size={28} className="text-amber-600 animate-spin" />
+                <span className="text-xs text-gray-500">正在分组，请稍候…</span>
+              </div>
+            )}
             <h3 className="text-base font-semibold text-gray-800 mb-4">自动分组</h3>
             <div className="mb-4">
               <p className="text-xs font-medium text-gray-500 mb-2">分组方式</p>
@@ -226,8 +240,8 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
               <button onClick={() => setShowAutoModal(false)} disabled={autoLoading}
                 className="flex-1 py-2 text-sm text-gray-600 bg-gray-100 rounded-xl disabled:opacity-40">取消</button>
               <button onClick={handleAutoGroup} disabled={autoLoading}
-                className="flex-1 py-2 text-sm text-white bg-amber-700 hover:bg-amber-800 rounded-xl disabled:opacity-40 transition-colors">
-                {autoLoading ? '分组中...' : '开始分组'}
+                className="flex-1 py-2 text-sm text-white bg-amber-700 hover:bg-amber-800 rounded-xl disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5">
+                {autoLoading ? <><Loader2 size={13} className="animate-spin" /> 分组中…</> : '开始分组'}
               </button>
             </div>
           </div>

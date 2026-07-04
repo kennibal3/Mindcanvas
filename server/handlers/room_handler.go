@@ -612,9 +612,13 @@ func (h *RoomHandler) AutoGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "mode 须为 by_groups 或 by_count，n 须为正整数"})
 		return
 	}
-	ctx := c.Request.Context()
 
-	// 1. 获取房间学生列表
+	// BUG-002 修复(2026-07-04): 原实现每组单独一次 INSERT...RETURNING 往返数据库，
+	// 组数多或数据库瞬时抖动时前端长时间无响应；现改为一个事务+一次批量INSERT，
+	// 并加5秒超时，超时快速报错而不是无限挂起。
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
 	type student struct{ UUID, Name string }
 	rows, err := h.roomService.DB().QueryContext(ctx, `
 		SELECT DISTINCT ON (student_uuid) student_uuid,
@@ -624,10 +628,9 @@ func (h *RoomHandler) AutoGroup(c *gin.Context) {
 		ORDER BY student_uuid, joined_at DESC
 	`, roomID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询学生列表失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询学生列表失败: " + err.Error()})
 		return
 	}
-	defer rows.Close()
 	var students []student
 	for rows.Next() {
 		var s student
@@ -635,17 +638,16 @@ func (h *RoomHandler) AutoGroup(c *gin.Context) {
 			students = append(students, s)
 		}
 	}
+	rows.Close()
 	if len(students) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "房间内暂无学生记录，请先让学生加入房间"})
 		return
 	}
 
-	// 2. 随机打乱
 	rand.Shuffle(len(students), func(i, j int) {
 		students[i], students[j] = students[j], students[i]
 	})
 
-	// 3. 计算组数
 	groupCount := req.N
 	if req.Mode == "by_count" {
 		groupCount = (len(students) + req.N - 1) / req.N
@@ -654,20 +656,11 @@ func (h *RoomHandler) AutoGroup(c *gin.Context) {
 		groupCount = len(students)
 	}
 
-	// 4. 清空旧分组
-	if _, err := h.roomService.DB().ExecContext(ctx,
-		"DELETE FROM room_groups WHERE room_id=$1", roomID,
-	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "清除旧分组失败"})
-		return
-	}
-
-	// 5. 创建新分组
 	groupColors := []string{
 		"#E74C3C", "#3498DB", "#2ECC71", "#F39C12",
 		"#9B59B6", "#1ABC9C", "#E67E22", "#34495E",
 	}
-	chineseNums := []string{"一","二","三","四","五","六","七","八","九","十","十一","十二","十三","十四","十五"}
+	chineseNums := []string{"一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "十一", "十二", "十三", "十四", "十五"}
 	type groupResult struct {
 		ID        string   `json:"id"`
 		Name      string   `json:"name"`
@@ -675,7 +668,22 @@ func (h *RoomHandler) AutoGroup(c *gin.Context) {
 		Members   []string `json:"members"`
 		SortOrder int      `json:"sort_order"`
 	}
-	var newGroups []groupResult
+	newGroups := make([]groupResult, 0, groupCount)
+
+	tx, err := h.roomService.DB().BeginTx(ctx, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "开启事务失败: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM room_groups WHERE room_id=$1", roomID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清除旧分组失败: " + err.Error()})
+		return
+	}
+
+	valueStrs := make([]string, 0, groupCount)
+	args := make([]interface{}, 0, groupCount*5)
 	for i := 0; i < groupCount; i++ {
 		start := i * len(students) / groupCount
 		end := (i + 1) * len(students) / groupCount
@@ -692,19 +700,43 @@ func (h *RoomHandler) AutoGroup(c *gin.Context) {
 			name = fmt.Sprintf("第%s组", chineseNums[num-1])
 		}
 		color := groupColors[i%len(groupColors)]
-		var gid string
-		if err := h.roomService.DB().QueryRowContext(ctx,
-			`INSERT INTO room_groups (room_id, name, color, members, leader_uuid, sort_order)
-			 VALUES ($1,$2,$3,$4,'',$5) RETURNING id`,
-			roomID, name, color, postgresArray(memberUUIDs), i,
-		).Scan(&gid); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建第%d组失败: %v", num, err)})
-			return
-		}
-		newGroups = append(newGroups, groupResult{ID: gid, Name: name, Color: color, Members: memberUUIDs, SortOrder: i})
+
+		base := len(args)
+		valueStrs = append(valueStrs, fmt.Sprintf("($%d,$%d,$%d,$%d,'',$%d)", base+1, base+2, base+3, base+4, base+5))
+		args = append(args, roomID, name, color, postgresArray(memberUUIDs), i)
+
+		newGroups = append(newGroups, groupResult{Name: name, Color: color, Members: memberUUIDs, SortOrder: i})
 	}
 
-	// 6. 广播
+	insertSQL := fmt.Sprintf(
+		`INSERT INTO room_groups (room_id, name, color, members, leader_uuid, sort_order) VALUES %s`,
+		strings.Join(valueStrs, ","),
+	)
+	if _, err := tx.ExecContext(ctx, insertSQL, args...); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量创建分组失败: " + err.Error()})
+		return
+	}
+
+	idRows, err := tx.QueryContext(ctx,
+		"SELECT id, sort_order FROM room_groups WHERE room_id=$1 ORDER BY sort_order", roomID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取分组ID失败: " + err.Error()})
+		return
+	}
+	for idRows.Next() {
+		var id string
+		var so int
+		if idRows.Scan(&id, &so) == nil && so >= 0 && so < len(newGroups) {
+			newGroups[so].ID = id
+		}
+	}
+	idRows.Close()
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交事务失败: " + err.Error()})
+		return
+	}
+
 	msgBytes, _ := json.Marshal(map[string]interface{}{
 		"type": "group_update",
 		"payload": map[string]interface{}{
