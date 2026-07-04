@@ -276,6 +276,9 @@ const RoomPage = () => {
   const [showMembers, setShowMembers]     = useState(false);
   const [kickLoading, setKickLoading]     = useState<string | null>(null);
 
+  // REQ-027-UX：右侧控制面板收起状态（ControlPanel 广播 ctrl_panel_collapsed 事件）
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+
   // REQ-019：学生端修改昵称/头像弹窗状态
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [studentNickname, setStudentNickname] = useState(
@@ -401,6 +404,13 @@ const RoomPage = () => {
     return () => window.removeEventListener('ws_follow_mode', handler);
   }, [isTeacher, setFollowMode]);
 
+  // REQ-027-UX：监听右侧面板收起/展开，动态让出画布宽度
+  useEffect(() => {
+    const handler = (e: Event) => setPanelCollapsed(!!(e as CustomEvent).detail?.collapsed);
+    window.addEventListener('ctrl_panel_collapsed', handler);
+    return () => window.removeEventListener('ctrl_panel_collapsed', handler);
+  }, []);
+
   // REQ-021：光标发送节流 ref（50ms节流，避免频繁广播）
   const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCursorRef     = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -497,7 +507,7 @@ const RoomPage = () => {
       {/* 顶部导航栏 */}
       <header
         className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-sm border-b border-gray-200"
-        style={{ height: '44px', paddingRight: isTeacher ? '300px' : '0' }}
+        style={{ height: '44px', paddingRight: isTeacher && !panelCollapsed ? '300px' : '0' }}
       >
         <div className="flex items-center justify-between h-full px-3">
           {/* 左侧：返回 + 房间标题 + 模式标签 + 状态标签 */}
@@ -590,7 +600,7 @@ const RoomPage = () => {
       {isTeacher && showMembers && (
         <div
           className="fixed top-[44px] z-[60] bg-white rounded-xl shadow-xl border border-gray-200 w-72 max-h-[480px] overflow-y-auto animate-fade-in"
-          style={{ right: '304px' }}
+          style={{ right: panelCollapsed ? '8px' : '304px' }}
         >
           <div className="p-3 border-b border-gray-100">
             <div className="text-xs font-medium text-gray-400">在线成员 ({members.length})</div>
@@ -643,7 +653,7 @@ const RoomPage = () => {
           position: 'absolute',
           top:      '44px',
           left:     0,
-          right:    isTeacher ? '300px' : 0,
+          right:    isTeacher && !panelCollapsed ? '300px' : 0,
           bottom:   0,
           overflow: 'hidden',
         }}
@@ -730,10 +740,12 @@ const RoomPage = () => {
         })}
       </main>
 
-      {/* REQ-027：AI 工作台（仅教师，fixed 定位悬浮在画布左侧上方）*/}
+      {/* REQ-027：AI 工作台（仅教师，fixed 定位悬浮在画布左侧上方）
+          REQ-027-UX：容器 pointer-events-none + flex 居中，收起时只有小胶囊按钮拦截鼠标，
+          不再遮挡画布左侧的缩放控件等 UI */}
       {isTeacher && roomId && (
         <div
-          className="fixed z-[45] shadow-lg"
+          className="fixed z-[45] flex items-center pointer-events-none"
           style={{ top: '44px', left: 0, bottom: 0 }}
         >
           <AIWorkbench roomId={roomId} isTeacher={isTeacher} />

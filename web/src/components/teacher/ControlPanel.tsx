@@ -501,7 +501,7 @@ const ControlPanel = ({
     return (
       <div className="fixed right-0 top-1/2 -translate-y-1/2 z-50">
         <button
-          onClick={() => setCollapsed(false)}
+          onClick={() => { setCollapsed(false); window.dispatchEvent(new CustomEvent('ctrl_panel_collapsed', { detail: { collapsed: false } })); }}
           className="bg-white shadow-lg rounded-l-lg p-2 hover:bg-gray-50 transition-colors border border-r-0 border-gray-200"
           title={t('control.panel')}
         >
@@ -532,7 +532,7 @@ const ControlPanel = ({
             : <WifiOff size={14} className="text-red-500" />}
         </div>
         <button
-          onClick={() => setCollapsed(true)}
+          onClick={() => { setCollapsed(true); window.dispatchEvent(new CustomEvent('ctrl_panel_collapsed', { detail: { collapsed: true } })); }}
           className="p-1 rounded hover:bg-gray-100 text-gray-400"
         >
           <ChevronRight size={16} />

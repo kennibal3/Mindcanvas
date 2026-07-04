@@ -101,7 +101,7 @@ func (h *DiagramHandler) Generate(c *gin.Context) {
 
 	// 调用 AI（非流式）
 	log.Printf("[DiagramHandler] type=%s mdLen=%d", req.DiagramType, utf8.RuneCountInString(md))
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
 	defer cancel()
 	raw, _, err := h.aiSvc.Analyze(ctx, systemPrompt, md)
 	if err != nil {
