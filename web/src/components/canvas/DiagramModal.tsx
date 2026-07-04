@@ -120,8 +120,8 @@ export default function DiagramModal({ onClose }: DiagramModalProps) {
 
     // 获取当前视口中心作为 origin（略偏左上）
     const appState = excalidrawAPI.getAppState();
-    const originX = -appState.scrollX / appState.zoom.value + 80;
-    const originY = -appState.scrollY / appState.zoom.value + 60;
+    const originX = -appState.scrollX + 80 / appState.zoom.value;
+    const originY = -appState.scrollY + 60 / appState.zoom.value;
 
     const newElements = buildDiagramElements(diagramData, originX, originY);
     const currentElements = excalidrawAPI.getSceneElements();
