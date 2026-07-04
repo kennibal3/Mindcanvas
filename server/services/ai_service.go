@@ -114,7 +114,15 @@ func (s *AIService) doChat(ctx context.Context, messages []AIMessage, stream boo
 	if !s.IsConfigured() {
 		return "", AIUsage{}, fmt.Errorf("ai service not configured: ARK_API_KEY is empty")
 	}
-	body, err := json.Marshal(aiRequest{Model: s.model, Messages: messages, Stream: stream})
+	reqMap := map[string]interface{}{"model": s.model, "messages": messages}
+	if stream {
+		reqMap["stream"] = true
+	}
+	if fast, _ := ctx.Value(fastModeKey{}).(bool); fast {
+		reqMap["thinking"] = map[string]string{"type": "disabled"}
+		reqMap["max_tokens"] = 8192
+	}
+	body, err := json.Marshal(reqMap)
 	if err != nil {
 		return "", AIUsage{}, fmt.Errorf("ai marshal request: %w", err)
 	}
@@ -224,3 +232,11 @@ const AIPromptAssessSubmission = `你是一位公正、专业的作业评阅老�
   "issues": "需要改进的地方",
   "suggestions": "具体改进建议"
 }`
+
+// ── FastMode：结构化输出场景（AI 图形生成等）关闭深度思考并限制输出长度 ──
+type fastModeKey struct{}
+
+// WithFastMode 返回带快速模式标记的 context；doChat 检测到后在请求体加 thinking:disabled + max_tokens
+func WithFastMode(ctx context.Context) context.Context {
+	return context.WithValue(ctx, fastModeKey{}, true)
+}
