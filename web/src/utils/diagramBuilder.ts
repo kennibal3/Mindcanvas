@@ -94,6 +94,37 @@ const PALETTE = {
 };
 
 // ────────────────────────────────────────────────────────────────
+// 几何箭头工具（REQ-027 崩溃修复）
+// 绑定式箭头（start/end 指向元素 id）在 Excalidraw v0.18 插入场景后
+// 重算绑定会产生 NaN 坐标 → 渲染崩溃 + 持久化损坏（x/y 变 null）。
+// 节点布局本来就是我们显式计算的，箭头直接给定几何坐标即可，不需要绑定。
+// ────────────────────────────────────────────────────────────────
+function geoArrow(
+  id: string,
+  x1: number, y1: number,
+  x2: number, y2: number,
+  opts: { strokeColor?: string; strokeWidth?: number; label?: string } = {}
+) {
+  let dx = x2 - x1;
+  let dy = y2 - y1;
+  // 防零长度箭头（roughjs 对退化路径可能异常）
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) dx = 1;
+  return {
+    type: "arrow",
+    id,
+    x: x1,
+    y: y1,
+    width: Math.abs(dx),
+    height: Math.abs(dy),
+    points: [[0, 0], [dx, dy]],
+    strokeColor: opts.strokeColor ?? "#555",
+    strokeWidth: opts.strokeWidth ?? 1.5,
+    endArrowhead: "arrow",
+    ...(opts.label ? { label: { text: opts.label, fontSize: 12 } } : {}),
+  } as any;
+}
+
+// ────────────────────────────────────────────────────────────────
 // 1. 思维导图（左→右树形）
 // ────────────────────────────────────────────────────────────────
 const MM_NODE_W = 180;
@@ -175,19 +206,18 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
       },
     } as any);
 
-    // 箭头（从父指向子）
+    // 箭头（从父右边缘中点 → 子左边缘中点，几何式）
     if (n.parent && coords.has(n.parent)) {
       const parentColor = PALETTE.mindmap[Math.max(0, lvl - 1)];
-      skeletons.push({
-        type: "arrow",
-        id: edgeElemId(n.parent, n.id),
-        start: { id: nodeElemId(n.parent) },
-        end: { id: nodeElemId(n.id) },
-        strokeColor: parentColor.stroke,
-        strokeWidth: 1.5,
-        endArrowhead: "arrow",
-        roundness: { type: 2 },
-      } as any);
+      const pPos = coords.get(n.parent)!;
+      const pNode = nodeMap.get(n.parent);
+      const pW = pNode && !pNode.parent ? MM_NODE_W + 20 : MM_NODE_W;
+      skeletons.push(geoArrow(
+        edgeElemId(n.parent, n.id),
+        pPos.x + pW, pPos.y + MM_NODE_H / 2,
+        pos.x, pos.y + MM_NODE_H / 2,
+        { strokeColor: parentColor.stroke, strokeWidth: 1.5 }
+      ));
     }
   }
 
@@ -311,32 +341,45 @@ function buildFlowchart(
     }
   }
 
-  // parent 关系连线
+  // parent 关系连线（父底部中点 → 子顶部中点，几何式；getPos 的 x 是中心、y 是顶部）
   for (const n of nodes) {
     if (!n.parent) continue;
-    skeletons.push({
-      type: "arrow",
-      id: edgeElemId(n.parent, n.id, 0),
-      start: { id: nodeElemId(n.parent) },
-      end: { id: nodeElemId(n.id) },
-      strokeColor: "#555",
-      strokeWidth: 1.5,
-      endArrowhead: "arrow",
-    } as any);
+    const from = getPos(n.parent);
+    const to = getPos(n.id);
+    skeletons.push(geoArrow(
+      edgeElemId(n.parent, n.id, 0),
+      from.x, from.y + nodeHeight(n.parent),
+      to.x, to.y
+    ));
   }
 
-  // 额外 edges（decision 分支、回环等）
+  // 额外 edges（decision 分支、回环等，几何式，按相对方位选边缘连接点）
   edges.forEach((e, idx) => {
-    skeletons.push({
-      type: "arrow",
-      id: edgeElemId(e.from, e.to, idx + 100),
-      start: { id: nodeElemId(e.from) },
-      end: { id: nodeElemId(e.to) },
-      strokeColor: "#555",
-      strokeWidth: 1.5,
-      endArrowhead: "arrow",
-      label: e.label ? { text: e.label, fontSize: 12 } : undefined,
-    } as any);
+    const f = getPos(e.from);
+    const t = getPos(e.to);
+    const fh = nodeHeight(e.from);
+    const fw = nodeWidth(e.from);
+    const th = nodeHeight(e.to);
+    const tw = nodeWidth(e.to);
+    let x1: number, y1: number, x2: number, y2: number;
+    if (t.y > f.y + fh / 2) {
+      // 向下：父底部 → 子顶部
+      x1 = f.x; y1 = f.y + fh; x2 = t.x; y2 = t.y;
+    } else if (t.y + th / 2 < f.y) {
+      // 回环向上：父顶部 → 子底部
+      x1 = f.x; y1 = f.y; x2 = t.x; y2 = t.y + th;
+    } else if (t.x >= f.x) {
+      // 同层向右：父右侧 → 子左侧
+      x1 = f.x + fw / 2; y1 = f.y + fh / 2; x2 = t.x - tw / 2; y2 = t.y + th / 2;
+    } else {
+      // 同层向左：父左侧 → 子右侧
+      x1 = f.x - fw / 2; y1 = f.y + fh / 2; x2 = t.x + tw / 2; y2 = t.y + th / 2;
+    }
+    skeletons.push(geoArrow(
+      edgeElemId(e.from, e.to, idx + 100),
+      x1, y1, x2, y2,
+      { label: e.label || undefined }
+    ));
   });
 
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
@@ -475,15 +518,12 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
         roundness: { type: 3 },
         label: { text: sub.label, fontSize: 12, fontFamily: 2, color: subColor.text },
       } as any);
-      skeletons.push({
-        type: "arrow",
-        id: `tl_sub_edge_${sub.id}`,
-        start: { id: `tl_node_${n.id}` },
-        end: { id: `tl_sub_${sub.id}` },
-        strokeColor: "#d4a44c",
-        strokeWidth: 1,
-        endArrowhead: "arrow",
-      } as any);
+      skeletons.push(geoArrow(
+        `tl_sub_edge_${sub.id}`,
+        x, isTop ? nodeY : nodeY + TL_NODE_H,
+        x, isTop ? subY + TL_SUB_H : subY,
+        { strokeColor: "#d4a44c", strokeWidth: 1 }
+      ));
     });
   });
 
@@ -560,15 +600,15 @@ function buildOrgchart(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     } as any);
 
     if (n.parent) {
-      skeletons.push({
-        type: "arrow",
-        id: `org_edge_${n.parent}_${n.id}`,
-        start: { id: nodeElemId(n.parent) },
-        end: { id: nodeElemId(n.id) },
-        strokeColor: "#BA7517",
-        strokeWidth: 1.5,
-        endArrowhead: "arrow",
-      } as any);
+      const p = coords.get(n.parent);
+      if (p) {
+        skeletons.push(geoArrow(
+          `org_edge_${n.parent}_${n.id}`,
+          p.x + ORG_NODE_W / 2, p.y + ORG_NODE_H,
+          pos.x + ORG_NODE_W / 2, pos.y,
+          { strokeColor: "#BA7517", strokeWidth: 1.5 }
+        ));
+      }
     }
   }
 
