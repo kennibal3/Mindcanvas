@@ -28,9 +28,17 @@ import {
   Plus,
   ArrowUpRight,
   X,
+  Wand2,
 } from "lucide-react";
 import { generateDiagram, type DiagramType } from "../../utils/diagramApi";
+import { refineText } from "../../utils/refineApi";
 import { buildDiagramElements, type DiagramData } from "../../utils/diagramBuilder";
+import {
+  exportDiagramMarkdown,
+  exportDiagramPng,
+  exportDiagramSvg,
+  exportDiagramPdf,
+} from "../../utils/diagramExport";
 import { useCanvasStore } from "../../store/canvasStore";
 
 // ─────────────────────────────────────────────────────────────
@@ -96,6 +104,43 @@ function saveHistory(roomId: string, items: WorkbenchItem[]) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 工具：localStorage 草稿暂存（REQ-028）
+// 只在用户手动编辑文本框时写入（不跟随 inputText 的所有程序化变化），
+// 避免收起工作台 / 取消生成流程时把草稿意外清空——这正是这个功能要防的场景。
+// ─────────────────────────────────────────────────────────────
+const DRAFT_KEY = (roomId: string) => `mc_ai_workbench_draft_${roomId}`;
+
+function loadDraft(roomId: string): { type: DiagramType; text: string } | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY(roomId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.text === "string" && typeof parsed.type === "string") {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(roomId: string, type: DiagramType, text: string) {
+  try {
+    if (!text.trim()) {
+      localStorage.removeItem(DRAFT_KEY(roomId));
+      return;
+    }
+    localStorage.setItem(DRAFT_KEY(roomId), JSON.stringify({ type, text }));
+  } catch { /* ignore quota errors */ }
+}
+
+function clearDraft(roomId: string) {
+  try {
+    localStorage.removeItem(DRAFT_KEY(roomId));
+  } catch { /* ignore */ }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────
 interface AIWorkbenchProps {
@@ -117,8 +162,21 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const [errorMsg, setErrorMsg] = useState("");
   const [regenItem, setRegenItem] = useState<WorkbenchItem | null>(null); // 重新生成时复用
 
+  // REQ-028：文本→Markdown 智能提炼（生成图形前的可选预处理）
+  const [refining, setRefining] = useState(false);
+  const [refineErr, setRefineErr] = useState("");
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const excalidrawAPI = useCanvasStore(s => s.excalidrawAPI);
+
+  // REQ-028：草稿自动暂存（防止误关工作台/切换步骤丢失正在输入的文本）
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDraftSave = useCallback((text: string) => {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+    draftSaveTimer.current = setTimeout(() => {
+      saveDraft(roomId, selType, text);
+    }, 600);
+  }, [roomId, selType]);
 
   // 教师以外不渲染
   if (!isTeacher) return null;
@@ -150,6 +208,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
 
       setHistory(prev => [item, ...prev].slice(0, MAX_HISTORY));
       setGenStep("done");
+      clearDraft(roomId); // 文本已生成为正式图形并入历史，草稿失去保护意义，清掉避免和下次新建混淆
 
       // 自动收起生成区，返回历史列表
       setTimeout(() => setGenStep("idle"), 1200);
@@ -157,7 +216,25 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
       setErrorMsg(e.message ?? "未知错误");
       setGenStep("error");
     }
-  }, [inputText, selType]);
+  }, [inputText, selType, roomId]);
+
+  // ── 智能提炼（REQ-028）───────────────────────────────────────
+  const handleRefine = useCallback(async () => {
+    const text = textareaRef.current?.value.trim() ?? inputText.trim();
+    if (!text) return;
+    setRefining(true);
+    setRefineErr("");
+    try {
+      const result = await refineText({ text });
+      setInputText(result.markdown);
+      if (textareaRef.current) textareaRef.current.value = result.markdown;
+      saveDraft(roomId, selType, result.markdown); // 提炼结果立即落草稿，防止提炼完还没点生成就误关丢失
+    } catch (e: any) {
+      setRefineErr(e.message ?? "提炼失败，请稍后重试");
+    } finally {
+      setRefining(false);
+    }
+  }, [inputText, roomId, selType]);
 
   // ── 插入画布 ────────────────────────────────────────────────
   const handleInsert = useCallback((item: WorkbenchItem) => {
@@ -190,11 +267,37 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     setHistory(prev => prev.filter(item => item.id !== id));
   }, []);
 
+  // ── 导出（REQ-028 导出中心）──────────────────────────────────
+  // 一次只允许一个导出任务在跑（简单起见，跨条目也互斥），避免用户连点触发多个大画布导出占满内存
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const handleExportItem = useCallback(async (item: WorkbenchItem, format: "md" | "png" | "svg" | "pdf") => {
+    const key = `${item.id}:${format}`;
+    setExportingKey(key);
+    try {
+      if (format === "md") {
+        exportDiagramMarkdown(item.inputText, item.title);
+      } else if (format === "png") {
+        await exportDiagramPng(item.data, item.title);
+      } else if (format === "svg") {
+        await exportDiagramSvg(item.data, item.title);
+      } else {
+        await exportDiagramPdf(item.data, item.title);
+      }
+    } catch (e) {
+      console.error("[AIWorkbench] 导出失败", format, e);
+      window.alert("导出失败，请重试");
+    } finally {
+      setExportingKey(null);
+    }
+  }, []);
+
   // ── 取消生成流程 ─────────────────────────────────────────────
   const cancelGen = () => {
     setGenStep("idle");
     setRegenItem(null);
     setInputText("");
+    setRefineErr("");
+    setRefining(false);
   };
 
   // ── 格式化时间 ──────────────────────────────────────────────
@@ -338,6 +441,29 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                           插入画布
                         </button>
                       </div>
+
+                      {/* 导出（REQ-028）：MD 原文 / PNG / SVG / PDF，与画布位置无关的独立导出 */}
+                      <div className="flex border-t border-gray-100">
+                        {(["md", "png", "svg", "pdf"] as const).map(fmt => {
+                          const key = `${item.id}:${fmt}`;
+                          const busy = exportingKey === key;
+                          return (
+                            <button
+                              key={fmt}
+                              onClick={() => handleExportItem(item, fmt)}
+                              disabled={exportingKey !== null}
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5
+                                         text-[10px] font-medium uppercase tracking-wide
+                                         text-gray-400 hover:text-amber-600 hover:bg-amber-50
+                                         transition-colors border-r border-gray-100 last:border-r-0
+                                         disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={`导出为 ${fmt.toUpperCase()}`}
+                            >
+                              {busy ? <Loader2 size={10} className="animate-spin" /> : fmt.toUpperCase()}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ))
                 )}
@@ -357,7 +483,15 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                   {DIAGRAM_TYPES.map(t => (
                     <button
                       key={t.id}
-                      onClick={() => { setSelType(t.id); setGenStep("input"); setInputText(""); setTimeout(() => { if (textareaRef.current) textareaRef.current.value = ""; }, 50); }}
+                      onClick={() => {
+                        setSelType(t.id);
+                        setGenStep("input");
+                        // REQ-028：同类型有未完成草稿时恢复，避免误关工作台/切步骤丢内容
+                        const draft = loadDraft(roomId);
+                        const initial = draft && draft.type === t.id ? draft.text : "";
+                        setInputText(initial);
+                        setTimeout(() => { if (textareaRef.current) textareaRef.current.value = initial; }, 50);
+                      }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl
                                  border border-gray-200 hover:border-amber-400 hover:bg-amber-50
                                  text-left transition-all"
@@ -397,8 +531,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                 <textarea
                   ref={textareaRef}
                   defaultValue={inputText}
-                  onChange={e => setInputText(e.target.value)}
-                  onInput={e => setInputText((e.target as HTMLTextAreaElement).value)}
+                  onChange={e => { setInputText(e.target.value); scheduleDraftSave(e.target.value); }}
+                  onInput={e => { const v = (e.target as HTMLTextAreaElement).value; setInputText(v); scheduleDraftSave(v); }}
                   className="w-full h-40 text-xs font-mono border border-gray-300 rounded-xl p-2.5
                              resize-none focus:outline-none focus:ring-2 focus:ring-amber-400
                              focus:border-transparent text-gray-700"
@@ -409,9 +543,24 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                   粘贴课件、大纲或任意文字
                 </p>
                 <button
+                  onClick={handleRefine}
+                  disabled={refining || (!inputText.trim() && !textareaRef.current?.value.trim())}
+                  className="w-full mt-2 flex items-center justify-center gap-1.5 py-1.5
+                             border border-amber-300 text-amber-700 text-xs font-medium
+                             rounded-xl hover:bg-amber-50 transition-colors
+                             disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="用 AI 把杂乱文本整理成结构化 Markdown，再生成图形效果更好"
+                >
+                  {refining ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
+                  {refining ? "提炼中…" : "智能提炼为 Markdown"}
+                </button>
+                {refineErr && (
+                  <p className="text-xs text-red-500 mt-1">{refineErr}</p>
+                )}
+                <button
                   onClick={handleGenerate}
                   disabled={!inputText.trim() && !textareaRef.current?.value.trim()}
-                  className="w-full mt-2.5 flex items-center justify-center gap-1.5 py-2
+                  className="w-full mt-2 flex items-center justify-center gap-1.5 py-2
                              bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium
                              rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >

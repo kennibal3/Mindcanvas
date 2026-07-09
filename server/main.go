@@ -171,6 +171,7 @@ func main() {
 	chatHandler := handlers.NewChatHandler(db)
 	chatDoubaoHandler := handlers.NewChatDoubaoHandler(db, aiSvc)
 	diagramHandler := handlers.NewDiagramHandler(aiSvc)
+	refineHandler := handlers.NewRefineHandler(aiSvc) // REQ-028：文本→Markdown AI 提炼
 
 	// ========== 7. 注册 WebSocket 消息处理器 ==========
 	wsHandler.SetupMessageHandler()
@@ -441,6 +442,7 @@ func main() {
 	ai.Use(middleware.AuthRequired())
 	{
 		ai.POST("/diagram", diagramHandler.Generate)
+		ai.POST("/refine", refineHandler.Refine) // REQ-028：文本→Markdown AI 提炼
 	}
 
 	// 教学模块扩展路由预留

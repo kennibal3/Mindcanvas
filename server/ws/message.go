@@ -22,6 +22,9 @@ const (
 	// Excalidraw 场景同步
 	MsgSceneUpdate = "scene_update"
 
+	// REQ-029：场景容量提示，携带当前场景字节数与告警/拒绝阈值
+	MsgSceneSizeUpdate = "scene_size_update"
+
 	// 画笔与光标
 	MsgDrawStroke = "draw_stroke"
 	MsgCursorMove = "cursor_move"
