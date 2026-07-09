@@ -64,12 +64,8 @@ export function buildDiagramElements(
 // 配色方案
 // ────────────────────────────────────────────────────────────────
 const PALETTE = {
-  mindmap: [
-    { bg: "#BA7517", stroke: "#8a5511", text: "#ffffff" }, // root — 暖木主色
-    { bg: "#FBE8C3", stroke: "#BA7517", text: "#5a3a00" }, // level 1
-    { bg: "#FFF4E0", stroke: "#d4a44c", text: "#5a3a00" }, // level 2
-    { bg: "#FFFAF4", stroke: "#e8c87a", text: "#5a3a00" }, // level 3+
-  ],
+  // mindmap 配色已改为按分支上色（REQ-031），见下方 MM_BRANCH_PALETTE / MM_ROOT_COLOR，
+  // 不再使用固定深度调色板。
   flowchart: {
     start:    { bg: "#d5e8d4", stroke: "#82b366", text: "#1a3a1a" },
     end:      { bg: "#f8cecc", stroke: "#b85450", text: "#3a1a1a" },
@@ -126,11 +122,69 @@ function geoArrow(
 
 // ────────────────────────────────────────────────────────────────
 // 1. 思维导图（左→右树形）
+// REQ-031（2026-07-09）：配色从「按深度统一」改为「按一级分支上色」——
+// 每条从根节点出发的一级分支各分配一个颜色，其全部后代节点与连线继承
+// 同一色相，深度越深背景色越浅（保留层级感，色相不变）。
+// 调色板取自用户 markdown-mindmap 项目 MindmapPreview.tsx 的暖色 5 色组，
+// 比参考图的高饱和彩虹色更贴近 MindCanvas 暖木教育主题。
+// 连线改用 mindmapEdge()：三点几何路径 + roundness 制造有机曲线感，
+// 仍是显式坐标、不涉及绑定，遵守 REQ-027 PR#6 定下的「严禁 skeleton
+// start/end:{id} 绑定式箭头」铁律。
 // ────────────────────────────────────────────────────────────────
 const MM_NODE_W = 180;
 const MM_NODE_H = 52;
 const MM_H_GAP = 80;   // 水平间距
 const MM_V_GAP = 22;   // 垂直间距
+
+const MM_BRANCH_PALETTE: { bg: string; stroke: string; text: string }[] = [
+  { bg: "#f7ded7", stroke: "#c95138", text: "#6b2213" }, // 橙红
+  { bg: "#dfe6e1", stroke: "#536b59", text: "#28362d" }, // 灰绿
+  { bg: "#ede2d0", stroke: "#8b6b45", text: "#4a3823" }, // 土黄
+  { bg: "#d8e8ec", stroke: "#2d7185", text: "#173c46" }, // 靛蓝
+  { bg: "#ece0ea", stroke: "#87637f", text: "#453040" }, // 藕紫
+];
+const MM_ROOT_COLOR = { bg: "#BA7517", stroke: "#8a5511", text: "#ffffff" };
+
+// 把颜色往白色方向混合 amt（0~1），用于同一分支内按深度做浅色过渡
+function lightenHex(hex: string, amt: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amt);
+  return `#${[mix(r), mix(g), mix(b)]
+    .map(v => v.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+// 分支曲线连线：显式三点路径（起点→中段水平探出→终点）+ roundness 平滑，
+// 全程几何坐标，不使用绑定机制。
+function mindmapEdge(
+  id: string,
+  x1: number, y1: number,
+  x2: number, y2: number,
+  opts: { strokeColor?: string; strokeWidth?: number } = {}
+) {
+  let dx = x2 - x1;
+  const dy = y2 - y1;
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) dx = 1;
+  const midX = dx * 0.55;
+  const midY = dy * 0.12;
+  return {
+    type: "arrow",
+    id,
+    x: x1,
+    y: y1,
+    width: Math.abs(dx) || 1,
+    height: Math.abs(dy) || 1,
+    points: [[0, 0], [midX, midY], [dx, dy]],
+    roundness: { type: 2 },
+    strokeColor: opts.strokeColor ?? "#555",
+    strokeWidth: opts.strokeWidth ?? 2,
+    endArrowhead: null,
+    startArrowhead: null,
+  } as any;
+}
 
 function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
@@ -160,12 +214,14 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
   }
   calcHeight(root.id);
 
-  // 分配坐标
+  // 分配坐标（同时记录真实树深度，不依赖 AI 返回的 level 字段是否可靠）
   const coords = new Map<string, { x: number; y: number }>();
+  const depthOf = new Map<string, number>();
   function layout(id: string, depth: number, topY: number) {
     const h = treeHeight.get(id) ?? 1;
     const centerY = topY + (h * (MM_NODE_H + MM_V_GAP)) / 2 - MM_NODE_H / 2;
     coords.set(id, { x: ox + depth * (MM_NODE_W + MM_H_GAP), y: oy + centerY });
+    depthOf.set(id, depth);
     let cursor = topY;
     for (const kid of children.get(id) ?? []) {
       const kidH = treeHeight.get(kid) ?? 1;
@@ -175,6 +231,19 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
   }
   layout(root.id, 0, 0);
 
+  // REQ-031：按一级分支分配颜色，向下传给该分支全部后代（不再按深度统一配色）
+  const branchColorOf = new Map<string, { bg: string; stroke: string; text: string }>();
+  branchColorOf.set(root.id, MM_ROOT_COLOR);
+  const rootChildren = children.get(root.id) ?? [];
+  rootChildren.forEach((childId, idx) => {
+    const branchColor = MM_BRANCH_PALETTE[idx % MM_BRANCH_PALETTE.length];
+    const assign = (id: string) => {
+      branchColorOf.set(id, branchColor);
+      for (const kid of children.get(id) ?? []) assign(kid);
+    };
+    assign(childId);
+  });
+
   // 生成 Excalidraw skeleton
   const skeletons: NonNullable<Parameters<typeof convertToExcalidrawElements>[0]> = [];
   const nodeElemId = (id: string) => `mm_node_${id}`;
@@ -183,9 +252,18 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
   for (const n of nodes) {
     const pos = coords.get(n.id);
     if (!pos) continue;
-    const lvl = Math.min(n.level ?? 0, PALETTE.mindmap.length - 1);
-    const color = PALETTE.mindmap[lvl];
     const isRoot = !n.parent;
+    const depth = depthOf.get(n.id) ?? 0;
+    const branchColor = branchColorOf.get(n.id) ?? MM_BRANCH_PALETTE[0];
+    // 分支节点本身（depth1）用基础色，越往下的子孙节点背景色越浅，色相不变
+    const lightenAmt = isRoot ? 0 : Math.min(0.55, Math.max(0, depth - 1) * 0.22);
+    const color = isRoot
+      ? MM_ROOT_COLOR
+      : {
+          bg: lightenHex(branchColor.bg, lightenAmt),
+          stroke: branchColor.stroke,
+          text: branchColor.text,
+        };
 
     skeletons.push({
       type: "rectangle",
@@ -196,7 +274,7 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
       height: MM_NODE_H,
       backgroundColor: color.bg,
       strokeColor: color.stroke,
-      strokeWidth: isRoot ? 2 : 1,
+      strokeWidth: isRoot ? 2 : 1.5,
       roundness: { type: 3 },
       label: {
         text: n.label,
@@ -206,17 +284,19 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
       },
     } as any);
 
-    // 箭头（从父右边缘中点 → 子左边缘中点，几何式）
+    // 连线（从父右边缘中点 → 子左边缘中点，几何式三点曲线）
+    // 取子节点自己所属分支的颜色，这样从根部辐射出去的第一段就已经是分支色，
+    // 与参考图「每条主干一个颜色贯穿到底」的效果一致。
     if (n.parent && coords.has(n.parent)) {
-      const parentColor = PALETTE.mindmap[Math.max(0, lvl - 1)];
       const pPos = coords.get(n.parent)!;
       const pNode = nodeMap.get(n.parent);
       const pW = pNode && !pNode.parent ? MM_NODE_W + 20 : MM_NODE_W;
-      skeletons.push(geoArrow(
+      const edgeColor = branchColorOf.get(n.id) ?? MM_BRANCH_PALETTE[0];
+      skeletons.push(mindmapEdge(
         edgeElemId(n.parent, n.id),
         pPos.x + pW, pPos.y + MM_NODE_H / 2,
         pos.x, pos.y + MM_NODE_H / 2,
-        { strokeColor: parentColor.stroke, strokeWidth: 1.5 }
+        { strokeColor: edgeColor.stroke, strokeWidth: depth <= 1 ? 2.5 : 1.5 }
       ));
     }
   }
