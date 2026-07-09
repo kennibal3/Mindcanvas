@@ -55,6 +55,8 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
   const uploadedFilesRef    = useRef<Map<string, string>>(new Map());
   const uploadingRef        = useRef<Set<string>>(new Set());
   const pendingUploadIds    = useRef<Set<string>>(new Set());
+  // REQ-032：记录已经现拉过 dataURL 的 fileId，避免重复 fetch 同一张图
+  const hydratedFileIdsRef  = useRef<Set<string>>(new Set());
   const uploadPollRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingRemoteRef    = useRef<any[]>([]);
   const apiReadyRef         = useRef(false);
@@ -106,6 +108,17 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
     return false;
   };
 
+  // =============================================================
+  // REQ-032（2026-07-09 修复）：画布粘贴/拖拽插入的图片走 Excalidraw
+  // 原生 files 机制，此前上传到服务器拿到 URL 后，广播给其他人时又把
+  // 原始 base64（originalBase64）重新塞回 scene_update 里——上传等于白做，
+  // base64 该多大还是多大，照样占 REQ-029 那 2MB/5MB 的场景容量额度。
+  // 改为只广播 { url }（几十字节），接收端在 applyRemote 里现拉现渲染
+  // （见下方 hydrateRemoteImages）。持久化到 room_scenes 的也是同一份
+  // 轻量数据，从根上解决"画布里插几张照片就把场景撑爆"的问题。
+  // 兼容：房间里已有的历史场景可能还是旧格式（files 里存的是完整 dataURL），
+  // applyRemote 两种格式都认，不需要迁移脚本。
+  // =============================================================
   const uploadFileAndBroadcast = useCallback(async (fileId: string) => {
     const api = apiRef.current;
     if (!api) return;
@@ -121,17 +134,22 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
       return;
     }
     if (!dataURL.startsWith('data:')) return;
-    const originalBase64 = dataURL;
     uploadingRef.current.add(fileId);
     pendingUploadIds.current.delete(fileId);
     try {
       const blob = dataURLtoBlob(dataURL);
-      if (blob) {
-        const ext = blob.type.split('/')[1]?.split('+')[0] || 'png';
-        const file = new File([blob], `canvas_${fileId}.${ext}`, { type: blob.type });
-        const result = await uploadImage(file);
-        if (result) uploadedFilesRef.current.set(fileId, result.url);
+      if (!blob) return;
+      const ext = blob.type.split('/')[1]?.split('+')[0] || 'png';
+      const file = new File([blob], `canvas_${fileId}.${ext}`, { type: blob.type });
+      const result = await uploadImage(file);
+      if (!result) {
+        // 上传失败（网络抖动等瞬时问题）：重新排队，靠 500ms 轮询下次重试
+        pendingUploadIds.current.add(fileId);
+        return;
       }
+      uploadedFilesRef.current.set(fileId, result.url);
+      hydratedFileIdsRef.current.add(fileId); // 自己本地已经有真实图，不用再去拉
+
       const elements = api.getSceneElements() || [];
       const relatedEls = elements
         .filter((el: any) => el.type === 'image' && el.fileId === fileId && !el.isDeleted)
@@ -144,15 +162,48 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
       if (relatedEls.length > 0) {
         sendMessageRef.current('scene_update', {
           elements: relatedEls,
-          files: { [fileId]: { ...f, dataURL: originalBase64 } },
+          files: { [fileId]: { id: fileId, mimeType: f.mimeType, url: result.url } },
         });
       }
     } catch (err) {
       console.warn('[Canvas] 上传失败:', err);
+      pendingUploadIds.current.add(fileId);
     } finally {
       uploadingRef.current.delete(fileId);
     }
   }, [uploadImage]);
+
+  // REQ-032：接收端按 URL 现拉图片字节，转成 dataURL 后喂给 Excalidraw
+  // 的 addFiles——用户看到的还是完整原图，不是压缩版，只是数据传输方式
+  // 从"塞进 WS 广播"换成了"按需 HTTP 拉取"。
+  const hydrateRemoteImages = useCallback(
+    async (items: { fileId: string; url: string; mimeType?: string }[]) => {
+      const api = apiRef.current;
+      if (!api) return;
+      for (const { fileId, url, mimeType } of items) {
+        if (hydratedFileIdsRef.current.has(fileId)) continue;
+        hydratedFileIdsRef.current.add(fileId);
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const blob = await resp.blob();
+          const dataURL: string = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          apiRef.current?.addFiles?.([
+            { id: fileId, dataURL, mimeType: mimeType || blob.type || 'image/png', created: Date.now() },
+          ]);
+        } catch (err) {
+          console.warn('[Canvas] 图片拉取失败，允许下次同步重试:', fileId, err);
+          hydratedFileIdsRef.current.delete(fileId); // 失败不计数，下次 applyRemote 再试
+        }
+      }
+    },
+    []
+  );
 
   const startUploadPoller = useCallback(() => {
     if (uploadPollRef.current) return;
@@ -214,16 +265,26 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
 
       if (detail?.files) {
         const toAdd: any[] = [];
+        const toFetch: { fileId: string; url: string; mimeType?: string }[] = [];
         for (const [fid, fdata] of Object.entries(detail.files) as [string, any][]) {
           const dataURL: string = fdata?.dataURL || '';
           if (dataURL.startsWith('data:')) {
+            // 兼容旧数据：房间历史场景里可能还留着 REQ-032 修复前存的完整 base64
             toAdd.push({ id: fid, ...fdata });
             uploadedFilesRef.current.set(fid, dataURL);
             uploadingRef.current.delete(fid);
             pendingUploadIds.current.delete(fid);
+            hydratedFileIdsRef.current.add(fid);
+          } else if (fdata?.url) {
+            // REQ-032 新格式：场景里只存了 URL，本地按需现拉
+            uploadedFilesRef.current.set(fid, fdata.url);
+            if (!hydratedFileIdsRef.current.has(fid)) {
+              toFetch.push({ fileId: fid, url: fdata.url, mimeType: fdata.mimeType });
+            }
           }
         }
         if (toAdd.length > 0 && api.addFiles) { api.addFiles(toAdd); changed = true; }
+        if (toFetch.length > 0) void hydrateRemoteImages(toFetch);
       }
 
       if (changed) {

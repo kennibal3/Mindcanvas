@@ -13,6 +13,7 @@ import {
   Radio, Palette, Sun,
   Download, Loader2, BookOpen, Share2,
   LayoutTemplate, FileText, AlertTriangle, X,
+  HardDrive,
 } from 'lucide-react';
 
 // 自定义 RadioOff 图标
@@ -116,6 +117,59 @@ const ConfirmModal = ({
     </div>
   </div>
 );
+
+// =============================================================
+// REQ-029：场景容量指示条
+// <40% 绿 / 40-70% 黄 / >70% 红，参考 Claude Code 的上下文用量条交互
+// =============================================================
+const formatBytes = (n: number) => {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)}KB`;
+  return `${(n / 1024 / 1024).toFixed(1)}MB`;
+};
+
+interface SceneCapacityBarProps {
+  size: number;
+  warnBytes: number;
+  rejectBytes: number;
+  status: 'ok' | 'warn' | 'reject';
+}
+
+const SceneCapacityBar = ({ size, warnBytes, rejectBytes, status }: SceneCapacityBarProps) => {
+  const pct = rejectBytes > 0 ? Math.min(100, (size / rejectBytes) * 100) : 0;
+  const barColor =
+    status === 'reject' ? 'bg-red-500' : status === 'warn' ? 'bg-amber-500' : 'bg-green-500';
+  const textColor =
+    status === 'reject' ? 'text-red-600' : status === 'warn' ? 'text-amber-700' : 'text-gray-400';
+
+  return (
+    <div className="px-1">
+      <div className="flex items-center justify-between text-xs mb-1">
+        <span className="flex items-center gap-1 text-gray-500">
+          <HardDrive size={12} />
+          画布容量
+        </span>
+        <span className={textColor}>
+          {formatBytes(size)} / {formatBytes(rejectBytes)}
+        </span>
+      </div>
+      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {status === 'warn' && (
+        <p className="text-xs text-amber-700 mt-1">画布内容较多，可能影响加载速度</p>
+      )}
+      {status === 'reject' && (
+        <p className="text-xs text-red-600 mt-1">
+          ⛔ 已达上限，新的改动暂时不会保存！建议导出存档后清理画布，或拆分到新房间
+        </p>
+      )}
+    </div>
+  );
+};
 
 // ===== 保存模板弹窗（内联小弹窗）=====
 interface SaveTemplateModalProps {
@@ -270,6 +324,11 @@ const ControlPanel = ({
   const [showShareModal, setShowShareModal] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 
+  // REQ-029：场景容量（byte数 + 告警/拒绝阈值），来自 room_sync 初始值 + scene_size_update 增量广播
+  const [sceneSize, setSceneSize] = useState<{
+    size: number; warnBytes: number; rejectBytes: number; status: 'ok' | 'warn' | 'reject';
+  } | null>(null);
+
   // REQ-006：React确认弹窗状态（替代window.confirm）
   const [confirmModal, setConfirmModal] = useState<{
     title: string;
@@ -318,6 +377,22 @@ const ControlPanel = ({
       if (followTimerRef.current) clearInterval(followTimerRef.current);
     };
   }, [isFollowMode, sendMessage, excalidrawAPI]);
+
+  // REQ-029：监听场景容量事件（room_sync 初始值 + scene_update 后的增量广播共用同一个事件）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || typeof detail.size !== 'number') return;
+      setSceneSize({
+        size: detail.size,
+        warnBytes: detail.warnBytes || 0,
+        rejectBytes: detail.rejectBytes || 0,
+        status: detail.status || 'ok',
+      });
+    };
+    window.addEventListener('ws_scene_size', handler);
+    return () => window.removeEventListener('ws_scene_size', handler);
+  }, []);
 
   // 背景色修改
   const handleBgChange = useCallback((color: string) => {
@@ -592,6 +667,18 @@ const ControlPanel = ({
                 <div className="text-xs text-gray-500">{t('control.elementCount')}</div>
               </div>
             </div>
+
+            {/* REQ-029：场景容量提示条（room_sync 到达前 sceneSize 为 null，不渲染） */}
+            {sceneSize && (
+              <div className="px-4 pb-1">
+                <SceneCapacityBar
+                  size={sceneSize.size}
+                  warnBytes={sceneSize.warnBytes}
+                  rejectBytes={sceneSize.rejectBytes}
+                  status={sceneSize.status}
+                />
+              </div>
+            )}
 
             {/* 场控按钮组 */}
             <div className="px-4 py-2 space-y-2">

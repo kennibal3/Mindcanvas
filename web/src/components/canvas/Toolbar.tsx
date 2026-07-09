@@ -8,12 +8,13 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Type, ImagePlus, ZoomIn, ZoomOut, Maximize,
-  Lock, BookOpen, FolderOpen, Check, Sparkles,
+  Lock, BookOpen, FolderOpen, Check, Sparkles, Loader2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useRoomStore } from '@/store/roomStore';
 import { CANVAS_CONFIG, IMAGE_MIMES, FILE_LIMITS } from '@/utils/constants';
+import { useImageUpload } from '@/hooks/useImageUpload';
 import DiagramModal from './DiagramModal';
 
 /**
@@ -48,6 +49,9 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
   // AI 图形生成弹窗（REQ-027）
   const [showDiagramModal, setShowDiagramModal] = useState(false);
 
+  // REQ-032：图片真实上传（替代此前的本地 blob URL 占位，见下方 handleFileSelected 说明）
+  const { uploadImage, uploading: uploadingImage } = useImageUpload();
+
   /** 是否处于不可编辑状态 */
   const isDisabled = isLocked || isReadOnly;
 
@@ -80,31 +84,46 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
    * 触发图片选择
    */
   const handleImageUpload = useCallback(() => {
-    if (isDisabled) return;
+    if (isDisabled || uploadingImage) return;
     fileInputRef.current?.click();
-  }, [isDisabled]);
+  }, [isDisabled, uploadingImage]);
 
   /**
    * 处理图片文件选择
+   * REQ-032（2026-07-09 修复）：此前这里用 URL.createObjectURL(file) 生成的是
+   * 浏览器内存中的临时 blob: 地址，只有上传者自己这一个浏览器标签页能解析——
+   * 发给其他学生/教师的 image_card 元素里那个 url 字段对他们来说完全无效，
+   * 表现为"我这边能看到图，别人那边是裂图"。改为先调 /api/upload/image
+   * 真正把文件存到服务器（该接口早已存在且工作正常，只是这里一直没调用），
+   * 拿到全员可访问的永久 URL 再建元素。图片本身走静态文件服务，不进
+   * Excalidraw 场景的 scene_data，不占 REQ-029 那个 2MB/5MB 的额度。
    */
   const handleFileSelected = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
       // MIME 检查
       if (!IMAGE_MIMES.includes(file.type)) {
         alert('不支持的图片格式，请选择 JPG/PNG/GIF/WebP');
+        e.target.value = '';
         return;
       }
 
       // 大小检查
       if (file.size > FILE_LIMITS.IMAGE_MAX_SIZE) {
         alert('图片大小不能超过 5MB');
+        e.target.value = '';
         return;
       }
 
-      const localUrl = URL.createObjectURL(file);
+      const result = await uploadImage(file);
+      e.target.value = '';
+      if (!result) {
+        alert('图片上传失败，请检查网络后重试');
+        return;
+      }
+
       const centerX = -transform.scrollX + (window.innerWidth / 2) / transform.zoom;
       const centerY = -transform.scrollY + (window.innerHeight / 2) / transform.zoom;
 
@@ -115,15 +134,13 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
           y: Math.round(centerY - 110),
           width: 280,
           height: 220,
-          url: localUrl,
+          url: result.url,
           caption: file.name,
           likes: 0,
         },
       });
-
-      e.target.value = '';
     },
-    [transform, sendMessage]
+    [transform, sendMessage, uploadImage]
   );
 
   /**
@@ -299,17 +316,19 @@ const Toolbar: React.FC<ToolbarProps> = ({ sendMessage }) => {
             <span className="hidden sm:inline">{t('canvas.textCard')}</span>
           </button>
 
-          {/* ===== 图片上传按钮 ===== */}
+          {/* ===== 图片上传按钮（REQ-032：上传中禁用+转圈，避免误判卡死重复点击） ===== */}
           <button
             onClick={handleImageUpload}
-            disabled={isDisabled}
+            disabled={isDisabled || uploadingImage}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium
                        hover:bg-green-50 hover:text-green-600 text-gray-600 transition-colors
                        disabled:opacity-40 disabled:cursor-not-allowed"
             title={t('canvas.imageCard')}
           >
-            <ImagePlus size={16} />
-            <span className="hidden sm:inline">{t('canvas.imageCard')}</span>
+            {uploadingImage
+              ? <Loader2 size={16} className="animate-spin" />
+              : <ImagePlus size={16} />}
+            <span className="hidden sm:inline">{uploadingImage ? '上传中…' : t('canvas.imageCard')}</span>
           </button>
 
           {/* ===== 导入 .excalidraw 文件（需求7）===== */}

@@ -90,6 +90,19 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
             window.dispatchEvent(new CustomEvent('excalidraw-remote-update', { detail: msg.payload.excalidraw_scene }));
           }
           if (msg.payload?.room) store.setCurrentRoom(msg.payload.room);
+          // REQ-029：入场时携带当前场景容量，让场控面板一开始就能显示
+          if (typeof msg.scene_size === 'number') {
+            const warnBytes = msg.scene_size_warn ?? 0;
+            const rejectBytes = msg.scene_size_reject ?? 0;
+            window.dispatchEvent(new CustomEvent('ws_scene_size', {
+              detail: {
+                size: msg.scene_size,
+                warnBytes,
+                rejectBytes,
+                status: msg.scene_size >= rejectBytes ? 'reject' : msg.scene_size >= warnBytes ? 'warn' : 'ok',
+              },
+            }));
+          }
           break;
         }
 
@@ -106,6 +119,19 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
           if (restoreData) {
             window.dispatchEvent(new CustomEvent('excalidraw-scene-restore', { detail: restoreData }));
           }
+          break;
+        }
+
+        // REQ-029：场景容量提示，每次 scene_update 落地后服务端都会广播一次
+        case 'scene_size_update': {
+          window.dispatchEvent(new CustomEvent('ws_scene_size', {
+            detail: {
+              size: msg.size,
+              warnBytes: msg.warn_bytes,
+              rejectBytes: msg.reject_bytes,
+              status: msg.status,
+            },
+          }));
           break;
         }
 

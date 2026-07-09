@@ -299,12 +299,16 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		time.Sleep(800 * time.Millisecond)
 		var sceneData interface{}
 		sceneLoaded := false
+		// REQ-029：记录场景字节数，入场时随 room_sync 一起带给前端，
+		// 不用等到下一次编辑触发 scene_update 才第一次看到容量
+		sceneSizeBytes := 0
 
 		if h.rdb != nil {
 			ctx := context.Background()
 			if sceneJSON, err := h.rdb.Get(ctx, sceneKey(roomID)).Result(); err == nil && len(sceneJSON) > 10 {
 				if json.Unmarshal([]byte(sceneJSON), &sceneData) == nil {
 					sceneLoaded = true
+					sceneSizeBytes = len(sceneJSON)
 					log.Printf("[场景恢复] Redis命中 room:%s size:%d", roomID, len(sceneJSON))
 				}
 			}
@@ -313,6 +317,7 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			if sceneBytes, err := h.loadSceneFromDB(roomID); err == nil && len(sceneBytes) > 10 {
 				if json.Unmarshal(sceneBytes, &sceneData) == nil {
 					sceneLoaded = true
+					sceneSizeBytes = len(sceneBytes)
 					log.Printf("[场景恢复] PostgreSQL兜底 room:%s size:%d", roomID, len(sceneBytes))
 					if h.rdb != nil {
 						ctx := context.Background()
@@ -336,6 +341,10 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			"sender_uuid":      senderUUID,
 			"sender_name":      senderName,
 			"sender_role":      senderRole,
+			// REQ-029：场景容量三件套，前端场控面板据此渲染进度条
+			"scene_size":        sceneSizeBytes,
+			"scene_size_warn":   sceneSizeWarnBytes,
+			"scene_size_reject": sceneSizeRejectBytes,
 		})
 		client.Send <- syncBytes
 	}()
@@ -398,6 +407,25 @@ func (h *WSHandler) SetupMessageHandler() {
 				existing, _ := h.rdb.Get(ctx, sceneKey(rid)).Bytes()
 				merged := mergeSceneElements(existing, scene)
 				mergedSize := len(merged)
+
+				// REQ-029：不管接受/告警/拒绝，都把当前容量广播给房间所有人。
+				// 拒绝时也必须广播，否则前端只看到"编辑没生效"却不知道是容量超限，
+				// 就是 REQ-029 立项那次 1.4MB 房间恶性循环的根源。
+				status := "ok"
+				if mergedSize >= sceneSizeRejectBytes {
+					status = "reject"
+				} else if mergedSize >= sceneSizeWarnBytes {
+					status = "warn"
+				}
+				sizeBytes, _ := json.Marshal(map[string]interface{}{
+					"type":         ws.MsgSceneSizeUpdate,
+					"size":         mergedSize,
+					"warn_bytes":   sceneSizeWarnBytes,
+					"reject_bytes": sceneSizeRejectBytes,
+					"status":       status,
+				})
+				room.BroadcastRaw(sizeBytes)
+
 				if mergedSize >= sceneSizeRejectBytes {
 					log.Printf("[场景大小] ⛔ 拒绝写入 room:%s size:%.2fMB", rid, float64(mergedSize)/1024/1024)
 					return

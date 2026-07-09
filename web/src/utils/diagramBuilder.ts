@@ -121,6 +121,36 @@ function geoArrow(
 }
 
 // ────────────────────────────────────────────────────────────────
+// Frame 容器化（REQ-030）
+// 把一次生成的全部元素包进一个 Excalidraw Frame：有边框 + 标题栏，
+// 拖动 Frame 时内部元素整体跟随（Excalidraw 原生行为，不用手动维护）。
+// 技术依据（2026-07-09 用 @excalidraw/excalidraw@0.18.1 实际源码核实，
+// 非猜测）：convertToExcalidrawElements 内部会对 type:"frame" 的 skeleton
+// 做二次处理——按 children 里给的（转换前）id，通过内部 oldToNewElementIdMap
+// 换算成转换后的真实 id，再把 frameId 反向写回每个子元素；边界框也会按
+// children 实际坐标自动算好（+10px padding），不用自己算。
+// 这跟 REQ-027 PR#6 禁掉的"箭头 start/end 绑定"是两套完全不同的机制——
+// 箭头绑定会触发坐标重算产生 NaN，Frame 的 children 只是做 id 归属登记，
+// 不涉及坐标重算，翻源码确认过没有同类风险，不违反"禁绑定"铁律。
+// ────────────────────────────────────────────────────────────────
+let frameSeq = 0;
+function wrapInFrame(
+  skeletons: NonNullable<Parameters<typeof convertToExcalidrawElements>[0]>,
+  namePrefix: string,
+  name: string
+) {
+  const children = (skeletons as any[]).map(s => s.id).filter(Boolean);
+  if (children.length === 0) return;
+  frameSeq++;
+  skeletons.push({
+    type: "frame",
+    id: `frame_${namePrefix}_${Date.now().toString(36)}_${frameSeq}`,
+    name: name || undefined,
+    children,
+  } as any);
+}
+
+// ────────────────────────────────────────────────────────────────
 // 1. 思维导图（左→右树形）
 // REQ-031（2026-07-09）：配色从「按深度统一」改为「按一级分支上色」——
 // 每条从根节点出发的一级分支各分配一个颜色，其全部后代节点与连线继承
@@ -301,6 +331,7 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
     }
   }
 
+  wrapInFrame(skeletons, "mm", root.label ? `AI 思维导图 · ${root.label}` : "AI 思维导图");
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
 }
 
@@ -462,6 +493,7 @@ function buildFlowchart(
     ));
   });
 
+  wrapInFrame(skeletons, "fc", root.label ? `AI 流程图 · ${root.label}` : "AI 流程图");
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
 }
 
@@ -607,6 +639,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     });
   });
 
+  wrapInFrame(skeletons, "tl", titleNode?.label ? `AI 时间轴 · ${titleNode.label}` : "AI 时间轴");
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
 }
 
@@ -692,6 +725,7 @@ function buildOrgchart(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     }
   }
 
+  wrapInFrame(skeletons, "org", root.label ? `AI 组织架构图 · ${root.label}` : "AI 组织架构图");
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
 }
 
@@ -844,5 +878,6 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     drawCause(cause, boneX, false);
   });
 
+  wrapInFrame(skeletons, "fb", effectNode.label ? `AI 鱼骨图 · ${effectNode.label}` : "AI 鱼骨图");
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
 }
