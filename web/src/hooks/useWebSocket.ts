@@ -6,6 +6,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
+import { useWidgetStore } from '@/store/widgetStore';
 import { WS_CONFIG } from '@/utils/constants';
 import type { WSMessage } from '@/types/message';
 
@@ -90,6 +91,12 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
             window.dispatchEvent(new CustomEvent('excalidraw-remote-update', { detail: msg.payload.excalidraw_scene }));
           }
           if (msg.payload?.room) store.setCurrentRoom(msg.payload.room);
+          // BUG-008：崩溃/断线重连后，widgetStore（无持久化）会丢失"我是否已提交"状态，
+          // 用服务端随 room_sync 带回的本人已提交组件列表补齐，避免投票/问答等组件误显示成未提交表单。
+          if (Array.isArray(msg.my_submissions)) {
+            const { markSubmitted } = useWidgetStore.getState();
+            msg.my_submissions.forEach((elementId: string) => markSubmitted(elementId));
+          }
           // REQ-029：入场时携带当前场景容量，让场控面板一开始就能显示
           if (typeof msg.scene_size === 'number') {
             const warnBytes = msg.scene_size_warn ?? 0;
