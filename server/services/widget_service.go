@@ -905,6 +905,39 @@ func (s *WidgetService) GetDropzoneSubmissions(elementID string) ([]map[string]i
 	return submissions, nil
 }
 
+// GetStudentSubmittedElements 返回该学生在本房间内已提交过互动的组件 ID 列表（去重）。
+// BUG-008：崩溃/断线重连后，前端 widgetStore（Zustand，无持久化）会丢失"我是否已提交"这一客户端状态，
+// 导致投票/问答等组件重新渲染成未提交表单，即使后端数据完全正确。room_sync 时把这份列表带给前端，
+// 前端据此重新调用 markSubmitted 补齐状态。
+func (s *WidgetService) GetStudentSubmittedElements(roomID, studentUUID string) ([]string, error) {
+	if studentUUID == "" {
+		return nil, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT DISTINCT element_id FROM widget_interactions
+		 WHERE room_id = $1 AND student_uuid = $2`,
+		roomID, studentUUID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询学生已提交组件失败: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			log.Printf("[BUG-008] 扫描已提交组件ID失败: %v", err)
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 // =============================================================
 // 通用元素操作
 // =============================================================

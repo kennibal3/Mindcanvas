@@ -331,6 +331,14 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		}
 
 		elements, _ := h.widgetService.GetElementsByRoom(roomID)
+
+		// BUG-008：崩溃/断线重连时，把该学生在本房间已提交过互动的组件ID列表一并带回，
+		// 供前端 widgetStore 补齐"我是否已提交"状态（教师不投票，跳过查询）。
+		var mySubmissions []string
+		if senderRole != "teacher" {
+			mySubmissions, _ = h.widgetService.GetStudentSubmittedElements(roomID, senderUUID)
+		}
+
 		syncBytes, _ := json.Marshal(map[string]interface{}{
 			"type":             ws.MsgRoomSync,
 			"room_id":          roomID,
@@ -345,6 +353,8 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			"scene_size":        sceneSizeBytes,
 			"scene_size_warn":   sceneSizeWarnBytes,
 			"scene_size_reject": sceneSizeRejectBytes,
+			// BUG-008：本学生已提交过的组件ID列表
+			"my_submissions": mySubmissions,
 		})
 		client.Send <- syncBytes
 	}()
@@ -516,17 +526,12 @@ func (h *WSHandler) SetupMessageHandler() {
 			req.StudentUUID = senderUUID
 			req.StudentName = client.Nickname
 			elementID, _ := jsonGetString(msg.Payload, "element_id")
-			_, submissionID, err := h.widgetService.HandleDropzoneSubmit(roomID, elementID, req)
+			updatedPayload, submissionID, err := h.widgetService.HandleDropzoneSubmit(roomID, elementID, req)
 			if err != nil {
 				errBytes, _ := json.Marshal(map[string]interface{}{"type": ws.MsgDropzoneError, "error": err.Error()})
 				client.Send <- errBytes
 				return
 			}
-			// BUG-006修复：HandleDropzoneSubmit返回内层业务对象（无x/y/width/height包装），
-			// 与element_update的完整两层结构不一致，前端按两层结构merge时业务字段被错误摊平
-			// 到顶层，作品收集组件读嵌套层的status/提交内容永远读不到最新数据。统一改为
-			// 提交成功后重新整行读库再广播，与vote/add_word/answer对齐。
-			updatedPayload := h.readElementPayload(elementID)
 			newSubmission := map[string]interface{}{
 				"id": submissionID, "student_uuid": req.StudentUUID, "student_name": req.StudentName,
 				"content_type": req.ContentType, "content": req.Content, "thumbnail": req.Thumbnail,
@@ -551,15 +556,12 @@ func (h *WSHandler) SetupMessageHandler() {
 				return
 			}
 			elementID, _ := jsonGetString(msg.Payload, "element_id")
-			_, err := h.widgetService.HandleDropzoneAction(roomID, elementID, req, senderUUID)
+			updatedPayload, err := h.widgetService.HandleDropzoneAction(roomID, elementID, req, senderUUID)
 			if err != nil {
 				errBytes, _ := json.Marshal(map[string]interface{}{"type": ws.MsgDropzoneError, "error": err.Error()})
 				client.Send <- errBytes
 				return
 			}
-			// BUG-006修复：同上，教师侧点赞/置顶/标签/隐藏/删除操作也统一改为
-			// 操作成功后重新整行读库再广播，避免同样的状态摊平问题。
-			updatedPayload := h.readElementPayload(elementID)
 			updatedSubmission := map[string]interface{}{"id": req.SubmissionID, "deleted": req.ActionType == "delete_submission"}
 			var rawData []byte
 			h.db.QueryRow(`SELECT action_data FROM widget_interactions WHERE id=$1`, req.SubmissionID).Scan(&rawData)
@@ -683,14 +685,11 @@ func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws
 		}
 
 	case "answer":
-		// BUG-006修复：HandleAnswer原本返回的是内层业务对象（无x/y/width/height包装），
-		// 与vote/add_word广播的完整两层结构不一致；useWebSocket.ts的widget_update
-		// 分支统一按两层结构处理，导致业务字段被错误摊平到顶层，问答组件读嵌套层
-		// 永远读不到最新答题统计。统一改为提交成功后重新整行读库，与vote/add_word对齐。
-		_, submitErr = h.widgetService.HandleAnswer(
+		updatedPayload, submitErr = h.widgetService.HandleAnswer(
 			submitData.ElementID, room.ID, client.UUID, client.Nickname, submitData.Data,
 		)
-		if submitErr == nil {
+		// 问答HandleAnswer已返回updatedPayload，但也做兜底
+		if submitErr == nil && updatedPayload == nil {
 			updatedPayload = h.readElementPayload(submitData.ElementID)
 		}
 
