@@ -202,7 +202,11 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
           const elemId        = msg.element_id || msg.payload?.element_id;
           const widgetPayload = msg.payload;
           if (elemId && widgetPayload) {
-            store.updateElement(elemId, { payload: widgetPayload });
+            // BUG-004修复：服务端广播的 widgetPayload 已经是完整两层结构
+            // {x,y,width,height,payload:{业务字段}}（对齐 element_update /
+            // dropzone_update 的用法），不能再包一层 payload，否则会变成
+            // 三层嵌套，导致组件 extractInner() 读错层级、业务字段全部丢失
+            store.updateElement(elemId, widgetPayload);
           }
           if (elemId) {
             window.dispatchEvent(new CustomEvent('ws_widget_vote_result', {
