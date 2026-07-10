@@ -675,11 +675,14 @@ func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws
 		}
 
 	case "answer":
-		updatedPayload, submitErr = h.widgetService.HandleAnswer(
+		// BUG-006修复：HandleAnswer原本返回的是内层业务对象（无x/y/width/height包装），
+		// 与vote/add_word广播的完整两层结构不一致；useWebSocket.ts的widget_update
+		// 分支统一按两层结构处理，导致业务字段被错误摊平到顶层，问答组件读嵌套层
+		// 永远读不到最新答题统计。统一改为提交成功后重新整行读库，与vote/add_word对齐。
+		_, submitErr = h.widgetService.HandleAnswer(
 			submitData.ElementID, room.ID, client.UUID, client.Nickname, submitData.Data,
 		)
-		// 问答HandleAnswer已返回updatedPayload，但也做兜底
-		if submitErr == nil && updatedPayload == nil {
+		if submitErr == nil {
 			updatedPayload = h.readElementPayload(submitData.ElementID)
 		}
 
