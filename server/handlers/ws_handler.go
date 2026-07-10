@@ -516,12 +516,17 @@ func (h *WSHandler) SetupMessageHandler() {
 			req.StudentUUID = senderUUID
 			req.StudentName = client.Nickname
 			elementID, _ := jsonGetString(msg.Payload, "element_id")
-			updatedPayload, submissionID, err := h.widgetService.HandleDropzoneSubmit(roomID, elementID, req)
+			_, submissionID, err := h.widgetService.HandleDropzoneSubmit(roomID, elementID, req)
 			if err != nil {
 				errBytes, _ := json.Marshal(map[string]interface{}{"type": ws.MsgDropzoneError, "error": err.Error()})
 				client.Send <- errBytes
 				return
 			}
+			// BUG-006修复：HandleDropzoneSubmit返回内层业务对象（无x/y/width/height包装），
+			// 与element_update的完整两层结构不一致，前端按两层结构merge时业务字段被错误摊平
+			// 到顶层，作品收集组件读嵌套层的status/提交内容永远读不到最新数据。统一改为
+			// 提交成功后重新整行读库再广播，与vote/add_word/answer对齐。
+			updatedPayload := h.readElementPayload(elementID)
 			newSubmission := map[string]interface{}{
 				"id": submissionID, "student_uuid": req.StudentUUID, "student_name": req.StudentName,
 				"content_type": req.ContentType, "content": req.Content, "thumbnail": req.Thumbnail,
@@ -546,12 +551,15 @@ func (h *WSHandler) SetupMessageHandler() {
 				return
 			}
 			elementID, _ := jsonGetString(msg.Payload, "element_id")
-			updatedPayload, err := h.widgetService.HandleDropzoneAction(roomID, elementID, req, senderUUID)
+			_, err := h.widgetService.HandleDropzoneAction(roomID, elementID, req, senderUUID)
 			if err != nil {
 				errBytes, _ := json.Marshal(map[string]interface{}{"type": ws.MsgDropzoneError, "error": err.Error()})
 				client.Send <- errBytes
 				return
 			}
+			// BUG-006修复：同上，教师侧点赞/置顶/标签/隐藏/删除操作也统一改为
+			// 操作成功后重新整行读库再广播，避免同样的状态摊平问题。
+			updatedPayload := h.readElementPayload(elementID)
 			updatedSubmission := map[string]interface{}{"id": req.SubmissionID, "deleted": req.ActionType == "delete_submission"}
 			var rawData []byte
 			h.db.QueryRow(`SELECT action_data FROM widget_interactions WHERE id=$1`, req.SubmissionID).Scan(&rawData)
