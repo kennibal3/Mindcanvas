@@ -39,6 +39,7 @@ const OVERLAY_TYPES: ReadonlySet<string> = new Set<string>([
   ELEMENT_TYPES.QA_WIDGET,
   ELEMENT_TYPES.DROPZONE,
   ELEMENT_TYPES.DROPZONE_WIDGET,
+  'shelf_widget', // BUG-007修复：协作墙类型漏掉，导致FloatingWidgets的OVERLAY_TYPES白名单把它过滤掉，组件建好了但从未进入渲染循环
 ]);
 
 // 顶部导航栏高度（px），与 RoomPage main.top 一致
