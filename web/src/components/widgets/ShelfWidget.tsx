@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Image, Link, Type, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Image, Link, Type, Loader2, Pencil, Check, X as XIcon } from 'lucide-react';
+import { useImageUpload } from '@/hooks/useImageUpload';
 
 interface ShelfCard {
   id: string;
@@ -17,18 +18,18 @@ interface ShelfCard {
   created_at: string;
 }
 
+// REQ-036：协作墙改为"主题 + 回复"模式。老师创建时先写好 topic_text（必填）/
+// topic_image_url/topic_link_url（都可选），固定展示在墙顶部；所有学生的
+// shelf_cards 都是围绕这一个主题的回复，统一显示为一条留言流，不再按学生分组
+// 分栏、不再有"各组隔离"的可见性开关——回复默认互相可见（讨论区风格）。
 interface ShelfPayload {
   title?: string;
   status?: 'open' | 'closed';
-  visibility?: 'isolated' | 'open';
   allow_types?: ('text' | 'image' | 'link')[];
-}
-
-interface Group {
-  id: string;
-  name: string;
-  color: string;
-  members: string[];
+  topic_text?: string;
+  topic_image_url?: string;
+  topic_link_url?: string;
+  topic_link_title?: string;
 }
 
 interface ShelfWidgetProps {
@@ -38,7 +39,6 @@ interface ShelfWidgetProps {
   isTeacher: boolean;
   studentUUID?: string;
   studentName?: string;
-  studentGroupId?: string | null;
   onUpdate?: (patch: Partial<ShelfPayload>) => void;
   /**
    * REQ-035-a：删除整个协作墙组件。此前完全没有这个入口——组件里唯一的 Trash2
@@ -61,9 +61,8 @@ function cardBg(authorUUID: string) {
   return CARD_BG[h % CARD_BG.length];
 }
 
-async function fetchCards(roomId: string, elementId: string, groupId?: string | null) {
-  const params = groupId ? `?group_id=${groupId}` : '';
-  const res = await fetch(`/api/rooms/${roomId}/elements/${elementId}/shelf-cards${params}`,
+async function fetchCards(roomId: string, elementId: string) {
+  const res = await fetch(`/api/rooms/${roomId}/elements/${elementId}/shelf-cards`,
     { credentials: 'include' });
   if (!res.ok) return [];
   const data = await res.json();
@@ -71,7 +70,6 @@ async function fetchCards(roomId: string, elementId: string, groupId?: string | 
 }
 
 async function postCard(roomId: string, elementId: string, payload: {
-  group_id?: string | null;
   card_type: string;
   content: string;
   image_url?: string;
@@ -100,22 +98,12 @@ async function deleteCard(roomId: string, elementId: string, cardId: string, aut
   });
 }
 
-async function setVisibility(roomId: string, elementId: string, visibility: 'isolated' | 'open') {
-  await fetch(`/api/rooms/${roomId}/elements/${elementId}/shelf-visibility`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ visibility }),
-  });
-}
-
 export function ShelfWidget({
   elementId, roomId, payload, isTeacher,
-  studentUUID, studentName, studentGroupId,
+  studentUUID, studentName,
   onUpdate, onDelete,
 }: ShelfWidgetProps) {
   const [cards, setCards] = useState<ShelfCard[]>([]);
-  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<'text' | 'image' | 'link'>('text');
@@ -124,28 +112,22 @@ export function ShelfWidget({
   const [linkTitle, setLinkTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [showInput, setShowInput] = useState(false);
+  const [editingTopic, setEditingTopic] = useState(false);
 
   const textRef = useRef<HTMLTextAreaElement>(null);
   const linkUrlRef = useRef<HTMLInputElement>(null);
 
   const allowTypes = payload.allow_types ?? ['text', 'image', 'link'];
-  const visibility = payload.visibility ?? 'open';
   const isOpen = payload.status !== 'closed';
-  const viewGroupId = (isTeacher || visibility === 'open') ? null : studentGroupId;
 
   useEffect(() => {
     load();
-    if (isTeacher) {
-      fetch(`/api/rooms/${roomId}/groups`, { credentials: 'include' })
-        .then(r => r.json())
-        .then(d => setGroups(d.groups ?? []))
-        .catch(() => {});
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elementId, roomId]);
 
   async function load() {
     setLoading(true);
-    const data = await fetchCards(roomId, elementId, viewGroupId);
+    const data = await fetchCards(roomId, elementId);
     setCards(data);
     setLoading(false);
   }
@@ -155,19 +137,14 @@ export function ShelfWidget({
       const { type, data } = (e as CustomEvent).detail ?? {};
       if (data?.element_id !== elementId) return;
       if (type === 'shelf_card_create') {
-        const card = data.card as ShelfCard;
-        if (!isTeacher && visibility === 'isolated' &&
-            card.group_id && card.group_id !== studentGroupId) return;
-        setCards(prev => [...prev, card]);
+        setCards(prev => [...prev, data.card as ShelfCard]);
       } else if (type === 'shelf_card_delete') {
         setCards(prev => prev.filter(c => c.id !== data.card_id));
-      } else if (type === 'shelf_visibility') {
-        onUpdate?.({ visibility: data.visibility });
       }
     }
     window.addEventListener('ws_shelf', handleWS);
     return () => window.removeEventListener('ws_shelf', handleWS);
-  }, [elementId, isTeacher, visibility, studentGroupId, onUpdate]);
+  }, [elementId]);
 
   async function handleSubmit() {
     const content = activeTab === 'text'
@@ -179,7 +156,6 @@ export function ShelfWidget({
     setSubmitting(true);
     try {
       await postCard(roomId, elementId, {
-        group_id: studentGroupId,
         card_type: activeTab,
         content: activeTab === 'text' ? content : '',
         image_url: activeTab === 'image' ? content : undefined,
@@ -203,15 +179,6 @@ export function ShelfWidget({
     await deleteCard(roomId, elementId, card.id, studentUUID);
   }
 
-  const columns: { label: string; color: string; cards: ShelfCard[] }[] =
-    isTeacher && groups.length > 0
-      ? groups.map(g => ({
-          label: g.name,
-          color: g.color,
-          cards: cards.filter(c => c.group_id === g.id),
-        }))
-      : [{ label: '全部', color: '#BA7517', cards }];
-
   return (
     <div className="flex flex-col h-full rounded-2xl overflow-hidden"
          style={{ color: '#1f2937', background: '#FFF8F0', border: '1.5px solid #E5E2D9' }}>
@@ -223,17 +190,6 @@ export function ShelfWidget({
         <div className="flex items-center gap-2">
           {isTeacher && (
             <>
-              <button
-                title={visibility === 'isolated' ? '各组隔离，点击开放互看' : '全组互看，点击隔离'}
-                onClick={() => {
-                  const next = visibility === 'isolated' ? 'open' : 'isolated';
-                  setVisibility(roomId, elementId, next);
-                  onUpdate?.({ visibility: next });
-                }}
-                className="text-white/80 hover:text-white transition-colors"
-              >
-                {visibility === 'isolated' ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
               <button
                 onClick={() => onUpdate?.({ status: isOpen ? 'closed' : 'open' })}
                 className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${
@@ -247,7 +203,7 @@ export function ShelfWidget({
                 <button
                   title="删除整个协作墙"
                   onClick={() => {
-                    if (confirm('确定删除整个协作墙？所有栏目和卡片都会一并删除，且无法恢复。')) {
+                    if (confirm('确定删除整个协作墙？主题和所有留言都会一并删除，且无法恢复。')) {
                       onDelete();
                     }
                   }}
@@ -263,11 +219,20 @@ export function ShelfWidget({
               onClick={() => setShowInput(v => !v)}
               className="flex items-center gap-1 text-xs bg-white/20 hover:bg-white/30 text-white px-2 py-0.5 rounded-full transition-colors"
             >
-              <Plus size={12} />贴卡片
+              <Plus size={12} />写留言
             </button>
           )}
         </div>
       </div>
+
+      <TopicSection
+        payload={payload}
+        isTeacher={isTeacher}
+        editing={editingTopic}
+        onStartEdit={() => setEditingTopic(true)}
+        onCancelEdit={() => setEditingTopic(false)}
+        onSave={(patch) => { onUpdate?.(patch); setEditingTopic(false); }}
+      />
 
       {!isTeacher && showInput && isOpen && (
         <div className="px-3 py-2 border-b" style={{ borderColor: '#E5E2D9', background: '#fff' }}>
@@ -298,7 +263,7 @@ export function ShelfWidget({
               onChange={e => setTextContent(e.target.value)}
               onInput={e => setTextContent((e.target as HTMLTextAreaElement).value)}
               onBlur={e => setTextContent(e.target.value)}
-              placeholder="写点什么..." rows={3}
+              placeholder="回复这个主题…" rows={3}
               className="w-full text-sm border rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
               style={{ borderColor: '#E5E2D9' }} />
           )}
@@ -338,40 +303,140 @@ export function ShelfWidget({
         </div>
       )}
 
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {loading ? (
           <div className="flex items-center justify-center h-full text-gray-400 text-xs">
             <Loader2 size={16} className="animate-spin mr-1" />加载中...
           </div>
+        ) : cards.length === 0 ? (
+          <div className="text-center text-xs text-gray-400 py-4">暂无留言</div>
         ) : (
-          <div className="flex gap-3 h-full p-3"
-               style={{ minWidth: isTeacher && columns.length > 1 ? `${columns.length * 180}px` : undefined }}>
-            {columns.map(col => (
-              <div key={col.label} className="flex flex-col flex-shrink-0"
-                   style={{ width: isTeacher && columns.length > 1 ? 176 : '100%' }}>
-                {isTeacher && columns.length > 1 && (
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: col.color }} />
-                    <span className="text-xs font-medium text-gray-600 truncate">{col.label}</span>
-                    <span className="text-xs text-gray-400">({col.cards.length})</span>
-                  </div>
-                )}
-                <div className="flex-1 overflow-y-auto space-y-2">
-                  {col.cards.length === 0 ? (
-                    <div className="text-center text-xs text-gray-400 py-4">暂无内容</div>
-                  ) : (
-                    col.cards.map(card => (
-                      <CardItem key={card.id} card={card}
-                        canDelete={isTeacher || card.author_uuid === studentUUID}
-                        onDelete={() => handleDelete(card)} />
-                    ))
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          cards.map(card => (
+            <CardItem key={card.id} card={card}
+              canDelete={isTeacher || card.author_uuid === studentUUID}
+              onDelete={() => handleDelete(card)} />
+          ))
         )}
       </div>
+    </div>
+  );
+}
+
+function TopicSection({ payload, isTeacher, editing, onStartEdit, onCancelEdit, onSave }: {
+  payload: ShelfPayload;
+  isTeacher: boolean;
+  editing: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSave: (patch: Partial<ShelfPayload>) => void;
+}) {
+  const [text, setText] = useState(payload.topic_text || '');
+  const [imageUrl, setImageUrl] = useState(payload.topic_image_url || '');
+  const [linkUrl, setLinkUrl] = useState(payload.topic_link_url || '');
+  const [linkTitle, setLinkTitle] = useState(payload.topic_link_title || '');
+  const { uploading, uploadImage } = useImageUpload();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setText(payload.topic_text || '');
+      setImageUrl(payload.topic_image_url || '');
+      setLinkUrl(payload.topic_link_url || '');
+      setLinkTitle(payload.topic_link_title || '');
+    }
+  }, [editing, payload.topic_text, payload.topic_image_url, payload.topic_link_url, payload.topic_link_title]);
+
+  async function handlePickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await uploadImage(file);
+    if (result) setImageUrl(result.url);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function handleSave() {
+    if (!text.trim()) { alert('主题内容不能为空'); return; }
+    onSave({
+      topic_text: text.trim(),
+      topic_image_url: imageUrl.trim() || undefined,
+      topic_link_url: linkUrl.trim() || undefined,
+      topic_link_title: linkTitle.trim() || undefined,
+    });
+  }
+
+  if (editing) {
+    return (
+      <div className="px-3 py-2.5 border-b space-y-2" style={{ borderColor: '#E5E2D9', background: '#fff' }}>
+        <textarea value={text} onChange={e => setText(e.target.value)}
+          rows={3} placeholder="写下这次讨论的主题或问题…"
+          className="w-full text-sm border rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+          style={{ borderColor: '#E5E2D9' }} />
+        {imageUrl ? (
+          <div className="relative">
+            <img src={imageUrl} alt="主题配图" className="w-full rounded-lg max-h-32 object-cover" />
+            <button onClick={() => setImageUrl('')}
+              className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-0.5">
+              <XIcon size={12} />
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
+            className="w-full flex items-center justify-center gap-1.5 text-xs py-1.5 rounded-lg border border-dashed text-gray-500 hover:bg-gray-50 transition-colors"
+            style={{ borderColor: '#E5E2D9' }}>
+            {uploading ? <Loader2 size={12} className="animate-spin" /> : <Image size={12} />}
+            {uploading ? '上传中...' : '加一张配图（可选）'}
+          </button>
+        )}
+        <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden" onChange={handlePickImage} />
+        <input value={linkUrl} onChange={e => setLinkUrl(e.target.value)}
+          placeholder="参考链接（可选）"
+          className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+          style={{ borderColor: '#E5E2D9' }} />
+        {linkUrl.trim() && (
+          <input value={linkTitle} onChange={e => setLinkTitle(e.target.value)}
+            placeholder="链接标题（可选）"
+            className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+            style={{ borderColor: '#E5E2D9' }} />
+        )}
+        <div className="flex gap-2 pt-0.5">
+          <button onClick={onCancelEdit}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs border border-gray-200 text-gray-500 hover:bg-gray-50">
+            <XIcon size={12} />取消
+          </button>
+          <button onClick={handleSave} disabled={uploading}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs text-white disabled:opacity-50"
+            style={{ background: '#BA7517' }}>
+            <Check size={12} />保存
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 py-2.5 border-b relative" style={{ borderColor: '#E5E2D9', background: '#FFFCF7' }}>
+      {isTeacher && (
+        <button onClick={onStartEdit} title="编辑主题"
+          className="absolute top-2 right-2 text-gray-400 hover:text-amber-700 transition-colors">
+          <Pencil size={13} />
+        </button>
+      )}
+      <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed pr-5">
+        {payload.topic_text || (isTeacher ? '（还没写主题，点右上角铅笔补充）' : '')}
+      </p>
+      {payload.topic_image_url && (
+        <img src={payload.topic_image_url} alt="主题配图"
+          className="w-full rounded-lg mt-2 max-h-40 object-cover"
+          onError={e => (e.currentTarget.style.display = 'none')} />
+      )}
+      {payload.topic_link_url && (
+        <a href={payload.topic_link_url} target="_blank" rel="noopener noreferrer"
+          className="mt-2 flex items-center gap-1 text-xs text-amber-700 underline break-all">
+          <Link size={11} className="flex-shrink-0" />
+          <span className="truncate">{payload.topic_link_title || payload.topic_link_url}</span>
+        </a>
+      )}
     </div>
   );
 }
