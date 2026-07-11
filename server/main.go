@@ -220,8 +220,8 @@ func main() {
 	r.GET("/ws/room/:id", wsHandler.HandleWebSocket)
 
 	// 文件上传
-	r.POST("/api/upload/image", uploadHandler.UploadImage)
-	r.POST("/api/upload/file", uploadHandler.UploadFile)
+	r.POST("/api/upload/image", middleware.OptionalAuth(), uploadHandler.UploadImage)
+	r.POST("/api/upload/file", middleware.OptionalAuth(), uploadHandler.UploadFile)
 	r.GET("/api/upload/file/:id", uploadHandler.GetFileInfo)
 	// 需求3：头像上传（公开接口，学生入场前调用；教师携带JWT时自动更新avatar_url）
 	r.POST("/api/upload/avatar", middleware.OptionalAuth(), uploadHandler.UploadAvatar)
