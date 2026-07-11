@@ -938,6 +938,43 @@ func (s *WidgetService) GetStudentSubmittedElements(roomID, studentUUID string) 
 	return ids, nil
 }
 
+// GetStudentWordCloudSubmissions BUG-009：返回该学生在本房间内所有词云组件下已提交的具体词语，
+// 按 element_id 分组。与 GetStudentSubmittedElements（只返回组件ID的布尔标记场景）不同，
+// 词云需要恢复"具体提交过哪些词"这份内容本身，供前端 WordCloudWidget 初始化 myWords。
+func (s *WidgetService) GetStudentWordCloudSubmissions(roomID, studentUUID string) (map[string][]string, error) {
+	result := make(map[string][]string)
+	if studentUUID == "" {
+		return result, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT element_id, action_data->>'word' AS word
+		 FROM widget_interactions
+		 WHERE room_id = $1 AND student_uuid = $2 AND action_type = 'add_word'
+		 ORDER BY created_at ASC`,
+		roomID, studentUUID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询学生词云提交记录失败: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var elementID, word string
+		if err := rows.Scan(&elementID, &word); err != nil {
+			log.Printf("[BUG-009] 扫描词云提交记录失败: %v", err)
+			continue
+		}
+		if word == "" {
+			continue
+		}
+		result[elementID] = append(result[elementID], word)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // =============================================================
 // 通用元素操作
 // =============================================================
