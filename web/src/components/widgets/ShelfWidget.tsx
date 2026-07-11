@@ -258,48 +258,55 @@ export function ShelfWidget({
               )}
             </div>
           )}
-          {activeTab === 'text' && (
-            <textarea ref={textRef} value={textContent}
-              onChange={e => setTextContent(e.target.value)}
-              onInput={e => setTextContent((e.target as HTMLTextAreaElement).value)}
-              onBlur={e => setTextContent(e.target.value)}
-              placeholder="回复这个主题…" rows={3}
-              className="w-full text-sm border rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
-              style={{ borderColor: '#E5E2D9' }} />
-          )}
-          {activeTab === 'image' && (
-            <input value={imageUrl}
-              onChange={e => setImageUrl(e.target.value)}
-              onInput={e => setImageUrl((e.target as HTMLInputElement).value)}
-              onBlur={e => setImageUrl(e.target.value)}
-              placeholder="粘贴图片链接..."
-              className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
-              style={{ borderColor: '#E5E2D9' }} />
-          )}
-          {activeTab === 'link' && (
-            <div className="space-y-1.5">
-              <input ref={linkUrlRef} value={linkUrl}
-                onChange={e => setLinkUrl(e.target.value)}
-                onInput={e => setLinkUrl((e.target as HTMLInputElement).value)}
-                onBlur={e => setLinkUrl(e.target.value)}
-                placeholder="https://..."
-                className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                style={{ borderColor: '#E5E2D9' }} />
-              <input value={linkTitle}
-                onChange={e => setLinkTitle(e.target.value)}
-                onInput={e => setLinkTitle((e.target as HTMLInputElement).value)}
-                onBlur={e => setLinkTitle(e.target.value)}
-                placeholder="链接标题（可选）"
-                className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                style={{ borderColor: '#E5E2D9' }} />
+          {/* REQ-037：发送按钮原来是输入框下方独占一行（w-full + mt-2），主题配图较高时
+              会被固定高度组件的底部裁切、几乎不可见。改为把输入框与发送键放在同一横排，
+              发送键贴在输入框右侧、随输入区高度撑满，始终显眼可点。 */}
+          <div className="flex gap-2 items-stretch">
+            <div className="flex-1 min-w-0">
+              {activeTab === 'text' && (
+                <textarea ref={textRef} value={textContent}
+                  onChange={e => setTextContent(e.target.value)}
+                  onInput={e => setTextContent((e.target as HTMLTextAreaElement).value)}
+                  onBlur={e => setTextContent(e.target.value)}
+                  placeholder="回复这个主题…" rows={3}
+                  className="w-full text-sm border rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  style={{ borderColor: '#E5E2D9' }} />
+              )}
+              {activeTab === 'image' && (
+                <input value={imageUrl}
+                  onChange={e => setImageUrl(e.target.value)}
+                  onInput={e => setImageUrl((e.target as HTMLInputElement).value)}
+                  onBlur={e => setImageUrl(e.target.value)}
+                  placeholder="粘贴图片链接..."
+                  className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  style={{ borderColor: '#E5E2D9' }} />
+              )}
+              {activeTab === 'link' && (
+                <div className="space-y-1.5">
+                  <input ref={linkUrlRef} value={linkUrl}
+                    onChange={e => setLinkUrl(e.target.value)}
+                    onInput={e => setLinkUrl((e.target as HTMLInputElement).value)}
+                    onBlur={e => setLinkUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    style={{ borderColor: '#E5E2D9' }} />
+                  <input value={linkTitle}
+                    onChange={e => setLinkTitle(e.target.value)}
+                    onInput={e => setLinkTitle((e.target as HTMLInputElement).value)}
+                    onBlur={e => setLinkTitle(e.target.value)}
+                    placeholder="链接标题（可选）"
+                    className="w-full text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    style={{ borderColor: '#E5E2D9' }} />
+                </div>
+              )}
             </div>
-          )}
-          <button onClick={handleSubmit} disabled={submitting}
-            className="mt-2 w-full flex items-center justify-center gap-1 text-xs py-1.5 rounded-lg text-white transition-colors"
-            style={{ background: '#BA7517' }}>
-            {submitting ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-            {submitting ? '发送中...' : '发布'}
-          </button>
+            <button onClick={handleSubmit} disabled={submitting}
+              className="shrink-0 flex flex-col items-center justify-center gap-1 px-4 text-xs font-medium rounded-lg text-white transition-colors disabled:opacity-60"
+              style={{ background: '#BA7517' }}>
+              {submitting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              <span className="whitespace-nowrap">{submitting ? '发送中' : '发布'}</span>
+            </button>
+          </div>
         </div>
       )}
 
