@@ -172,6 +172,7 @@ func main() {
 	chatDoubaoHandler := handlers.NewChatDoubaoHandler(db, aiSvc)
 	diagramHandler := handlers.NewDiagramHandler(aiSvc)
 	refineHandler := handlers.NewRefineHandler(aiSvc) // REQ-028：文本→Markdown AI 提炼
+	parseFileHandler := handlers.NewParseFileHandler(assignmentService) // REQ-038：AI 工作台文件→Markdown 解析
 
 	// ========== 7. 注册 WebSocket 消息处理器 ==========
 	wsHandler.SetupMessageHandler()
@@ -443,6 +444,7 @@ func main() {
 	{
 		ai.POST("/diagram", diagramHandler.Generate)
 		ai.POST("/refine", refineHandler.Refine) // REQ-028：文本→Markdown AI 提炼
+		ai.POST("/parse-file", parseFileHandler.ParseFile) // REQ-038：文件→Markdown（MarkItDown）
 	}
 
 	// 教学模块扩展路由预留
