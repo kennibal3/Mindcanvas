@@ -39,6 +39,11 @@ const OVERLAY_TYPES: ReadonlySet<string> = new Set<string>([
   ELEMENT_TYPES.QA_WIDGET,
   ELEMENT_TYPES.DROPZONE,
   ELEMENT_TYPES.DROPZONE_WIDGET,
+  // BUG-007 修复（2026-07-10，commit fe2aaf8）：渲染白名单必须包含 'shelf_widget'，
+  // 否则协作墙元素能正常建库/广播，却在这一步被过滤掉、永远进不了浮层渲染循环。
+  // 本条是在 REQ-035-a 里踩回的坑——用来编辑的本地文件副本是 BUG-004 诊断阶段拉取的
+  // 旧版本，没跟上 BUG-007 之后的修复，直接改完推回服务器等于把这行白名单条目覆盖没了。
+  'shelf_widget',
 ]);
 
 // 顶部导航栏高度（px），与 RoomPage main.top 一致
