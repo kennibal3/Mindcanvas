@@ -142,6 +142,13 @@ export const DropZoneWidget: React.FC<Props> = ({
     setShowResetConfirm(false);
   };
 
+  // REQ-035-a：删除整个作品收集组件（此前只有删单条提交的入口，没有删组件本身的入口）
+  const handleDeleteWidget = () => {
+    if (confirm('确定删除整个作品收集组件？已提交的作品也会一并删除，且无法恢复。')) {
+      onUpdate({ __delete: true });
+    }
+  };
+
   const sendAction = useCallback((
     submissionId: string,
     actionType: 'like' | 'pin' | 'tag' | 'hide' | 'delete_submission',
@@ -389,6 +396,16 @@ export const DropZoneWidget: React.FC<Props> = ({
           >
             <Maximize2 size={13} />
           </button>
+          {/* REQ-035-a：此前作品收集组件没有删除整个组件的入口，只能删单条提交 */}
+          {isTeacher && (
+            <button
+              onClick={handleDeleteWidget}
+              className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+              title="删除整个组件"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       </div>
 

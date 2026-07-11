@@ -39,7 +39,6 @@ const OVERLAY_TYPES: ReadonlySet<string> = new Set<string>([
   ELEMENT_TYPES.QA_WIDGET,
   ELEMENT_TYPES.DROPZONE,
   ELEMENT_TYPES.DROPZONE_WIDGET,
-  'shelf_widget', // BUG-007修复：协作墙类型漏掉，导致FloatingWidgets的OVERLAY_TYPES白名单把它过滤掉，组件建好了但从未进入渲染循环
 ]);
 
 // 顶部导航栏高度（px），与 RoomPage main.top 一致
@@ -306,6 +305,10 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                       isTeacher={isTeacher}
                       studentUUID={isTeacher ? undefined : currentUserUUID}
                       onUpdate={(p) => handleElementUpdate(element.id, { payload: p })}
+                      // REQ-035-a：单独传 onDelete 而不是让 ShelfWidget 复用 onUpdate({__delete:true})——
+                      // 上面这个 onUpdate 会把参数包进 { payload: p }，__delete 标记会被包在 payload 里，
+                      // 对不上 handleElementUpdate 检查 patch?.__delete 的顶层位置，直接复用会导致删除不生效。
+                      onDelete={() => handleElementUpdate(element.id, { __delete: true })}
                     />
                   );
                 }
