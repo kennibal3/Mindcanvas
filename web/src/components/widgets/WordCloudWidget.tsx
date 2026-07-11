@@ -8,6 +8,7 @@ import {
   Cloud, Hash, Users, Play, Pause, StopCircle, Trash2,
 } from 'lucide-react';
 import { useRoomStore } from '@/store/roomStore';
+import { useWidgetStore } from '@/store/widgetStore';
 
 interface WordCloudWidgetProps {
   id: string;
@@ -143,20 +144,20 @@ const WordCloudWidget: React.FC<WordCloudWidgetProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // BUG-009：组件挂载/room_sync 到达时，若服务端带回了本人在这个词云组件下提交过的词，
-  // 用它初始化 myWords——修复此前 reload/断线重连后"已提交 X/3 个词"回退成 0/3 的问题。
-  // 只在本地 myWords 为空时采用服务端数据，避免覆盖用户本次会话里刚提交、尚未收到下一次 room_sync 的词。
+  // BUG-009：从 widgetStore 读取服务端 room_sync 带回的"本人在这个词云组件下提交过的词"。
+  // 用 Zustand selector 而非 CustomEvent 监听——room_sync 到达和本组件挂载谁先谁后不确定，
+  // CustomEvent 是一次性广播，若组件还没挂载好来不及注册监听器就会错过；selector 不管何时
+  // 渲染都能读到 store 里的当前值，从根上避免这个时序问题。
+  const storedMyWords = useWidgetStore(s => s.myWordSubmissions[id]);
+
+  // 只在本地 myWords 为空时采用服务端数据，避免覆盖用户本次会话里刚提交、
+  // 服务端数据尚未来得及包含的词（正常提交走 handleSubmit 的乐观本地更新，不依赖这里）。
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as Record<string, string[]> | undefined;
-      const words = detail?.[id];
-      if (Array.isArray(words) && words.length > 0) {
-        setMyWords(prev => (prev.length > 0 ? prev : words));
-      }
-    };
-    window.addEventListener('ws_wordcloud_my_words', handler);
-    return () => window.removeEventListener('ws_wordcloud_my_words', handler);
-  }, [id]);
+    if (myWords.length === 0 && Array.isArray(storedMyWords) && storedMyWords.length > 0) {
+      setMyWords(storedMyWords);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedMyWords]);
 
   // SVG 尺寸
   const svgRef  = useRef<SVGSVGElement>(null);
