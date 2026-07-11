@@ -259,11 +259,11 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                 onMouseDown={(e) => handleDragStart(e, element.id, x, y)}
                 style={{
                   position:       'absolute',
-                  top:            -14,
+                  top:            -24,
                   left:           '50%',
                   transform:      'translateX(-50%)',
-                  width:          48,
-                  height:         14,
+                  width:          90,
+                  height:         24,
                   cursor:         dragging === element.id ? 'grabbing' : 'grab',
                   zIndex:         30,
                   display:        'flex',
@@ -271,9 +271,9 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                   justifyContent: 'center',
                   pointerEvents:  'auto',  // 把手需要捕获鼠标事件
                 }}
-                className="opacity-30 hover:opacity-100 transition-opacity"
+                className="opacity-50 hover:opacity-100 transition-opacity"
               >
-                <div className="w-10 h-1.5 bg-gray-400 rounded-full" />
+                <div className="w-16 h-2 bg-gray-400 rounded-full" />
               </div>
             )}
 
