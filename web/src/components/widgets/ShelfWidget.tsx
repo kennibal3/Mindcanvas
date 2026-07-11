@@ -40,6 +40,15 @@ interface ShelfWidgetProps {
   studentName?: string;
   studentGroupId?: string | null;
   onUpdate?: (patch: Partial<ShelfPayload>) => void;
+  /**
+   * REQ-035-a：删除整个协作墙组件。此前完全没有这个入口——组件里唯一的 Trash2
+   * 图标（见下方卡片渲染处）删的是单张卡片，不是组件本身。
+   * 单独开一个 onDelete prop 而不是复用 onUpdate({__delete:true})，是因为
+   * FloatingWidgets.tsx 里 ShelfWidget 的 onUpdate 会把参数包进 { payload: p }
+   * 再转给 handleElementUpdate，__delete 标记会被包在 payload 里而不是顶层，
+   * 对不上 handleElementUpdate 检查 patch?.__delete 的位置，直接复用会导致删除不生效。
+   */
+  onDelete?: () => void;
 }
 
 const CARD_BG = [
@@ -103,7 +112,7 @@ async function setVisibility(roomId: string, elementId: string, visibility: 'iso
 export function ShelfWidget({
   elementId, roomId, payload, isTeacher,
   studentUUID, studentName, studentGroupId,
-  onUpdate,
+  onUpdate, onDelete,
 }: ShelfWidgetProps) {
   const [cards, setCards] = useState<ShelfCard[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -233,6 +242,20 @@ export function ShelfWidget({
               >
                 {isOpen ? '收集中' : '已关闭'}
               </button>
+              {/* REQ-035-a：此前协作墙没有删除整个组件的入口 */}
+              {onDelete && (
+                <button
+                  title="删除整个协作墙"
+                  onClick={() => {
+                    if (confirm('确定删除整个协作墙？所有栏目和卡片都会一并删除，且无法恢复。')) {
+                      onDelete();
+                    }
+                  }}
+                  className="text-white/80 hover:text-white transition-colors"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </>
           )}
           {!isTeacher && isOpen && (
