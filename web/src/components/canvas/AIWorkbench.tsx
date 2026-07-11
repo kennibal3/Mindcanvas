@@ -29,9 +29,11 @@ import {
   ArrowUpRight,
   X,
   Wand2,
+  Upload,
 } from "lucide-react";
 import { generateDiagram, type DiagramType } from "../../utils/diagramApi";
 import { refineText } from "../../utils/refineApi";
+import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
 import { buildDiagramElements, type DiagramData } from "../../utils/diagramBuilder";
 import {
   exportDiagramMarkdown,
@@ -166,6 +168,13 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const [refining, setRefining] = useState(false);
   const [refineErr, setRefineErr] = useState("");
 
+  // REQ-038：文件上传 → MarkItDown 解析为 Markdown
+  const [parsingFile, setParsingFile] = useState(false);
+  const [parseFileErr, setParseFileErr] = useState("");
+  const [parseFileHint, setParseFileHint] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const excalidrawAPI = useCanvasStore(s => s.excalidrawAPI);
 
@@ -236,6 +245,31 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     }
   }, [inputText, roomId, selType]);
 
+  // ── 文件上传解析（REQ-038）───────────────────────────────────
+  const handleParseFile = useCallback(async (file: File) => {
+    setParseFileErr("");
+    setParseFileHint("");
+    setParsingFile(true);
+    try {
+      const result = await parseFile(file);
+      setInputText(result.markdown);
+      if (textareaRef.current) textareaRef.current.value = result.markdown;
+      saveDraft(roomId, selType, result.markdown); // 解析结果立即落草稿，防误关丢失
+      if (result.char_count > 3000) {
+        setParseFileHint(
+          `已解析「${file.name}」（${result.char_count} 字符）。文本较长，建议先点「智能提炼」压缩再生成图形`
+        );
+      } else {
+        setParseFileHint(`已解析「${file.name}」（${result.char_count} 字符）`);
+      }
+    } catch (e: any) {
+      setParseFileErr(e.message ?? "解析失败，请稍后重试");
+    } finally {
+      setParsingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = ""; // 允许再次选同一文件
+    }
+  }, [roomId, selType]);
+
   // ── 插入画布 ────────────────────────────────────────────────
   const handleInsert = useCallback((item: WorkbenchItem) => {
     if (!excalidrawAPI) return;
@@ -298,6 +332,10 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     setInputText("");
     setRefineErr("");
     setRefining(false);
+    setParseFileErr("");
+    setParseFileHint("");
+    setParsingFile(false);
+    setDragOver(false);
   };
 
   // ── 格式化时间 ──────────────────────────────────────────────
@@ -533,15 +571,53 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                   defaultValue={inputText}
                   onChange={e => { setInputText(e.target.value); scheduleDraftSave(e.target.value); }}
                   onInput={e => { const v = (e.target as HTMLTextAreaElement).value; setInputText(v); scheduleDraftSave(v); }}
-                  className="w-full h-40 text-xs font-mono border border-gray-300 rounded-xl p-2.5
+                  onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={e => {
+                    e.preventDefault();
+                    setDragOver(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f && !parsingFile) handleParseFile(f); // REQ-038：拖文件进输入框直接解析
+                  }}
+                  className={`w-full h-40 text-xs font-mono border rounded-xl p-2.5
                              resize-none focus:outline-none focus:ring-2 focus:ring-amber-400
-                             focus:border-transparent text-gray-700"
-                  placeholder={"# 主题\n## 章节一\n- 要点\n## 章节二\n- 要点"}
+                             focus:border-transparent text-gray-700
+                             ${dragOver ? "border-amber-500 ring-2 ring-amber-300 bg-amber-50" : "border-gray-300"}`}
+                  placeholder={"# 主题\n## 章节一\n- 要点\n## 章节二\n- 要点\n\n（也可以把 PDF/Word/PPT 等文件直接拖进这里）"}
                   spellCheck={false}
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  粘贴课件、大纲或任意文字
+                  粘贴课件、大纲或任意文字，也可上传 / 拖入文件自动解析
                 </p>
+                {/* REQ-038：文件上传解析入口 */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={PARSE_FILE_ACCEPT}
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) handleParseFile(f);
+                  }}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={parsingFile || refining}
+                  className="w-full mt-2 flex items-center justify-center gap-1.5 py-1.5
+                             border border-amber-300 text-amber-700 text-xs font-medium
+                             rounded-xl hover:bg-amber-50 transition-colors
+                             disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="上传 PDF/Word/PPT/Excel/图片/文本，自动解析为 Markdown 填入输入框"
+                >
+                  {parsingFile ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                  {parsingFile ? "文件解析中…" : "上传文件解析（PDF / Word / PPT…）"}
+                </button>
+                {parseFileHint && (
+                  <p className="text-xs text-green-600 mt-1">{parseFileHint}</p>
+                )}
+                {parseFileErr && (
+                  <p className="text-xs text-red-500 mt-1">{parseFileErr}</p>
+                )}
                 <button
                   onClick={handleRefine}
                   disabled={refining || (!inputText.trim() && !textareaRef.current?.value.trim())}
