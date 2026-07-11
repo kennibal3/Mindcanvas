@@ -97,10 +97,12 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
             const { markSubmitted } = useWidgetStore.getState();
             msg.my_submissions.forEach((elementId: string) => markSubmitted(elementId));
           }
-          // BUG-009：词云"本人已提交内容"是具体词语列表而非布尔标记，widgetStore 存不下这个粒度，
-          // 直接广播给对应的 WordCloudWidget 实例（按 element_id 过滤）去初始化本地 myWords。
+          // BUG-009：词云"本人已提交内容"是具体词语列表而非布尔标记，写入 widgetStore 的
+          // myWordSubmissions 字段（而非 CustomEvent）——用 store 是为了避免"room_sync 处理时
+          // WordCloudWidget 还没挂载、监听器没来得及注册就错过事件"这个时序问题，Zustand selector
+          // 不管组件何时渲染都能读到当前值。
           if (msg.my_word_submissions && typeof msg.my_word_submissions === 'object') {
-            window.dispatchEvent(new CustomEvent('ws_wordcloud_my_words', { detail: msg.my_word_submissions }));
+            useWidgetStore.getState().setMyWordSubmissions(msg.my_word_submissions);
           }
           // REQ-029：入场时携带当前场景容量，让场控面板一开始就能显示
           if (typeof msg.scene_size === 'number') {

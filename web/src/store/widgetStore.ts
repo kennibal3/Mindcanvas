@@ -16,6 +16,13 @@ interface WidgetState {
   selectedWidgetId: string | null;
   /** 教师正在编辑的组件 ID */
   editingWidgetId: string | null;
+  /**
+   * BUG-009：各词云组件下，本人已提交过的具体词语列表（{element_id: [word,...]}）。
+   * 词云要恢复的是内容本身而非布尔标记，submittedWidgets（Set）装不下，单独开一个字段。
+   * 存进全局 store（而非 CustomEvent）是为了避免"事件先于组件挂载触发导致监听器错过"的时序问题——
+   * Zustand selector 在组件任意时刻渲染都能读到当前值，不依赖谁先谁后。
+   */
+  myWordSubmissions: Record<string, string[]>;
 
   // === 操作方法 ===
 
@@ -29,6 +36,8 @@ interface WidgetState {
   setSelectedWidget: (id: string | null) => void;
   /** 设置正在编辑的组件 */
   setEditingWidget: (id: string | null) => void;
+  /** BUG-009：批量写入本人词云提交记录（room_sync 到达时调用） */
+  setMyWordSubmissions: (submissions: Record<string, string[]>) => void;
   /** 重置组件状态 */
   resetWidgets: () => void;
 }
@@ -42,6 +51,7 @@ export const useWidgetStore = create<WidgetState>((set, get) => ({
   submittedWidgets: new Set<string>(),
   selectedWidgetId: null,
   editingWidgetId: null,
+  myWordSubmissions: {},
 
   // === 操作方法 ===
 
@@ -64,11 +74,17 @@ export const useWidgetStore = create<WidgetState>((set, get) => ({
   /** 设置正在编辑的组件 */
   setEditingWidget: (id) => set({ editingWidgetId: id }),
 
+  /** BUG-009：批量写入本人词云提交记录（合并而非覆盖，避免多次 room_sync 时丢掉旧数据） */
+  setMyWordSubmissions: (submissions) => set((state) => ({
+    myWordSubmissions: { ...state.myWordSubmissions, ...submissions },
+  })),
+
   /** 重置组件状态 */
   resetWidgets: () => set({
     creatingType: null,
     submittedWidgets: new Set<string>(),
     selectedWidgetId: null,
     editingWidgetId: null,
+    myWordSubmissions: {},
   }),
 }));
