@@ -202,15 +202,24 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
 
   const handleCreateShelf = useCallback((config: {
     title: string; status: 'open';
-    visibility: 'isolated' | 'open';
+    topic_text: string;
+    topic_image_url?: string;
+    topic_link_url?: string;
+    topic_link_title?: string;
     allow_types: ('text' | 'image' | 'link')[];
   }) => {
+    // REQ-036：协作墙改为"主题+回复"模式，创建时把主题内容一并写入 payload；
+    // 默认尺寸从 500x420 放大到 900x640——一个主题+多条回复留言流，
+    // 比其他互动组件需要的展示空间大不少。
     createWidget('shelf_widget', {
-      title:       config.title,
-      status:      config.status,
-      visibility:  config.visibility,
-      allow_types: config.allow_types,
-    }, 500, 420);
+      title:            config.title,
+      status:           config.status,
+      topic_text:       config.topic_text,
+      topic_image_url:  config.topic_image_url,
+      topic_link_url:   config.topic_link_url,
+      topic_link_title: config.topic_link_title,
+      allow_types:      config.allow_types,
+    }, 900, 640);
     setShowShelfModal(false);
   }, [createWidget]);
 
