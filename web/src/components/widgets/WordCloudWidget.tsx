@@ -137,11 +137,26 @@ const WordCloudWidget: React.FC<WordCloudWidgetProps> = ({
   const isOpen    = !!(inner?.is_open as boolean);
   const status    = rawStatus || (isOpen ? 'open' : 'draft');
 
-  // 学生已提交词语（从本地追踪）
+  // 学生已提交词语（从本地追踪；BUG-009：reload/断线重连后靠下方 useEffect 从服务端补齐，而非永远清零）
   const [myWords, setMyWords]       = useState<string[]>([]);
   const [inputWord, setInputWord]   = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+
+  // BUG-009：组件挂载/room_sync 到达时，若服务端带回了本人在这个词云组件下提交过的词，
+  // 用它初始化 myWords——修复此前 reload/断线重连后"已提交 X/3 个词"回退成 0/3 的问题。
+  // 只在本地 myWords 为空时采用服务端数据，避免覆盖用户本次会话里刚提交、尚未收到下一次 room_sync 的词。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as Record<string, string[]> | undefined;
+      const words = detail?.[id];
+      if (Array.isArray(words) && words.length > 0) {
+        setMyWords(prev => (prev.length > 0 ? prev : words));
+      }
+    };
+    window.addEventListener('ws_wordcloud_my_words', handler);
+    return () => window.removeEventListener('ws_wordcloud_my_words', handler);
+  }, [id]);
 
   // SVG 尺寸
   const svgRef  = useRef<SVGSVGElement>(null);

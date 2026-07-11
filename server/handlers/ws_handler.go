@@ -335,8 +335,12 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		// BUG-008：崩溃/断线重连时，把该学生在本房间已提交过互动的组件ID列表一并带回，
 		// 供前端 widgetStore 补齐"我是否已提交"状态（教师不投票，跳过查询）。
 		var mySubmissions []string
+		// BUG-009：词云要恢复的是"具体提交过哪些词"这份内容本身（而非布尔标记），
+		// 按 element_id 分组带回，供前端 WordCloudWidget 初始化 myWords。
+		var myWordSubmissions map[string][]string
 		if senderRole != "teacher" {
 			mySubmissions, _ = h.widgetService.GetStudentSubmittedElements(roomID, senderUUID)
+			myWordSubmissions, _ = h.widgetService.GetStudentWordCloudSubmissions(roomID, senderUUID)
 		}
 
 		syncBytes, _ := json.Marshal(map[string]interface{}{
@@ -355,6 +359,8 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			"scene_size_reject": sceneSizeRejectBytes,
 			// BUG-008：本学生已提交过的组件ID列表
 			"my_submissions": mySubmissions,
+			// BUG-009：本学生在各词云组件下已提交过的具体词语（{element_id: [word,...]}）
+			"my_word_submissions": myWordSubmissions,
 		})
 		client.Send <- syncBytes
 	}()
