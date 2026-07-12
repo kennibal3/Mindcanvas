@@ -29,6 +29,9 @@ export interface WidgetMeta {
   description?: string;
   category?: string;
   defaultPayload: Record<string, unknown>;
+  // REQ-041：是否出现在教师插入工具栏。false = 仍注册可渲染（存量元素兼容），但不再可新建。
+  // 作品收集（dropzone_widget）被 HTML 展示组件替代后设为 false。
+  insertable?: boolean;
 }
 
 // ===== 投票 =====

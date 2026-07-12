@@ -14,11 +14,13 @@ import WordCloudCreateModal, { type WordCloudConfig } from '@/components/widgets
 import QACreateModal, { type QAInitPayload } from '@/components/widgets/QACreateModal';
 import { DropZoneCreateModal } from '@/components/widgets/DropZoneCreateModal';
 import { ShelfCreateModal } from '@/components/widgets/ShelfCreateModal';
+import HtmlCreateModal from '@/components/widgets/HtmlCreateModal';
 import type { DropzonePayload } from '@/types/widget';
 
 // Widget类型集合，用于过滤现有Widget
 const WIDGET_TYPES = new Set([
   'polling_widget', 'wordcloud_widget', 'qa_widget', 'dropzone_widget', 'shelf_widget',
+  'html_widget',
 ]);
 
 // Widget默认尺寸
@@ -27,6 +29,7 @@ const WIDGET_SIZES: Record<string, { w: number; h: number }> = {
   wordcloud_widget: { w: 360, h: 380 },
   qa_widget:        { w: 360, h: 400 },
   dropzone_widget:  { w: 420, h: 500 },
+  html_widget:      { w: 480, h: 360 },
 };
 
 // Widget之间的最小间距（画布坐标单位）
@@ -51,8 +54,10 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
   const [showQAModal, setShowQAModal]               = useState(false);
   const [showDropzoneModal, setShowDropzoneModal]   = useState(false);
   const [showShelfModal, setShowShelfModal]         = useState(false);
+  const [showHtmlModal, setShowHtmlModal]           = useState(false);
 
-  const widgetMetas = WidgetRegistry.getAllMetas();
+  // REQ-041：只显示可插入的组件（dropzone_widget 已设 insertable:false，被 HTML 展示组件替代）
+  const widgetMetas = WidgetRegistry.getAllMetas().filter(m => m.insertable !== false);
 
   // 计算画布中心坐标（屏幕中心 → 画布坐标）
   const getCanvasCenter = useCallback(() => {
@@ -154,7 +159,30 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
     if (type === 'qa_widget')        { setShowQAModal(true);        return; }
     if (type === 'dropzone_widget')  { setShowDropzoneModal(true);  return; }
     if (type === 'shelf_widget')     { setShowShelfModal(true);     return; }
+    if (type === 'html_widget')      { setShowHtmlModal(true);      return; }
   }, []);
+
+  // REQ-041：HTML 展示组件不走 element_create（源码不能进 payload），
+  // 改为 POST /html-widget：后端建元素 + 存源码 + 广播 element_create，组件随广播出现在画布。
+  const handleCreateHtml = useCallback(async (title: string, html: string) => {
+    const { w, h } = WIDGET_SIZES.html_widget;
+    const { x, y } = calcNonOverlapPosition('html_widget');
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/html-widget`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, html, x, y, width: w, height: h }),
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error((e as { error?: string }).error || '创建失败');
+      }
+      setShowHtmlModal(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '创建 HTML 组件失败');
+    }
+  }, [roomId, calcNonOverlapPosition]);
 
   const handleCreatePolling = useCallback((config: PollingConfig) => {
     createWidget('polling_widget', {
@@ -280,6 +308,12 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
         <DropZoneCreateModal
           onConfirm={handleCreateDropzone}
           onClose={() => setShowDropzoneModal(false)}
+        />
+      )}
+      {showHtmlModal && (
+        <HtmlCreateModal
+          onConfirm={handleCreateHtml}
+          onClose={() => setShowHtmlModal(false)}
         />
       )}
     </>

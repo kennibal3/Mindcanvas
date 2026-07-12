@@ -34,4 +34,5 @@ const (
 	ElementTypeQAWidget          = "qa_widget"          // 问答组件
 	ElementTypeExcalidrawStroke  = "excalidraw_stroke"  // 画笔轨迹
 	ElementTypeDropzone          = "dropzone"           // 收集区
+	ElementTypeHtmlWidget        = "html_widget"        // REQ-041 HTML 展示组件
 )

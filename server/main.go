@@ -231,6 +231,8 @@ func main() {
 	r.GET("/api/rooms/:id/flow/progress", flowHandler.GetStudentProgress)
 	r.GET("/api/rooms/:id/elements/:eid/shelf-cards", middleware.OptionalAuth(), shelfHandler.ListShelfCards)
 	r.POST("/api/rooms/:id/elements/:eid/shelf-cards", middleware.OptionalAuth(), shelfHandler.CreateShelfCard)
+	// REQ-041 HTML 展示组件源码拉取：学生也需渲染，走 OptionalAuth 公共路由（同 shelf-cards 模式）
+	r.GET("/api/rooms/:id/elements/:eid/html", middleware.OptionalAuth(), roomHandler.GetHtmlWidgetContent)
 
 	// Phase7 公开分享页接口（无需认证）
 	sharePublic := r.Group("/api/share")
@@ -340,6 +342,10 @@ func main() {
 		// 作品墙
 		rooms.GET("/:id/elements/:eid/submissions", roomHandler.GetDropzoneSubmissions)
 		rooms.GET("/:id/elements/:eid/download", roomHandler.DownloadDropzoneZip)
+
+		// REQ-041 HTML 展示组件（教师：创建 / 替换源码）
+		rooms.POST("/:id/html-widget", roomHandler.CreateHtmlWidget)
+		rooms.PUT("/:id/elements/:eid/html", roomHandler.UpdateHtmlWidgetContent)
 
 		// Phase6 互评
 		rooms.POST("/:id/elements/:eid/reviews", reviewHandler.CreateReview)
