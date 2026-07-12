@@ -226,7 +226,9 @@ const QAWidget: React.FC<QAWidgetProps> = ({
   return (
     // REQ-020修复：固定白色背景+固定文字颜色，不随暗色主题变化
     <div
-      className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 w-72 select-none"
+      // REQ-035-c：原 w-72（288px 定宽，与创建时 payload 写入的 360 宽本就不一致）改为
+      // w-full h-full 跟随缩放容器；flex-col + 中部滚动区，教师操作按钮固定底部
+      className="bg-white rounded-xl shadow-lg border border-gray-200 p-4 w-full h-full select-none flex flex-col overflow-hidden"
       style={{ color: '#1f2937' }}
     >
       {/* 头部 */}
@@ -252,6 +254,9 @@ const QAWidget: React.FC<QAWidgetProps> = ({
           </button>
         )}
       </div>
+
+      {/* REQ-035-c：中部内容随组件高度滚动 */}
+      <div className="flex-1 overflow-y-auto min-h-0">
 
       <p className="text-sm font-medium text-gray-900 leading-snug">{question}</p>
 
@@ -284,6 +289,8 @@ const QAWidget: React.FC<QAWidgetProps> = ({
           {selected === correctIdx ? '回答正确！' : '回答错误'}
         </div>
       )}
+
+      </div>{/* REQ-035-c：中部滚动区结束 */}
 
       {/* 教师主操作按钮（直接显示在底部，1次点击）—— REQ-020：无 dark: class */}
       {isTeacher && (
