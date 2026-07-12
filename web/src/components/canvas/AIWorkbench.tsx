@@ -172,6 +172,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const [parsingFile, setParsingFile] = useState(false);
   const [parseFileErr, setParseFileErr] = useState("");
   const [parseFileHint, setParseFileHint] = useState("");
+  const [parseFileWarn, setParseFileWarn] = useState(""); // REQ-040：0 字符黄色警告
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -249,17 +250,27 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const handleParseFile = useCallback(async (file: File) => {
     setParseFileErr("");
     setParseFileHint("");
+    setParseFileWarn("");
     setParsingFile(true);
     try {
       const result = await parseFile(file);
       setInputText(result.markdown);
       if (textareaRef.current) textareaRef.current.value = result.markdown;
       saveDraft(roomId, selType, result.markdown); // 解析结果立即落草稿，防误关丢失
-      if (result.char_count > 3000) {
+      if (result.char_count === 0) {
+        // REQ-040：0 字符不再显示绿色"已解析"，给出黄色警告
+        setParseFileErr("");
+        setParseFileHint("");
+        setParseFileWarn(
+          `「${file.name}」未提取到文字——可能是扫描件/纯图片 PDF。图片文件（png/jpg）已支持 AI 识别，扫描 PDF 支持后续版本提供`
+        );
+      } else if (result.char_count > 3000) {
+        setParseFileWarn("");
         setParseFileHint(
           `已解析「${file.name}」（${result.char_count} 字符）。文本较长，建议先点「智能提炼」压缩再生成图形`
         );
       } else {
+        setParseFileWarn("");
         setParseFileHint(`已解析「${file.name}」（${result.char_count} 字符）`);
       }
     } catch (e: any) {
@@ -334,6 +345,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     setRefining(false);
     setParseFileErr("");
     setParseFileHint("");
+    setParseFileWarn("");
     setParsingFile(false);
     setDragOver(false);
   };
@@ -614,6 +626,9 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                 </button>
                 {parseFileHint && (
                   <p className="text-xs text-green-600 mt-1">{parseFileHint}</p>
+                )}
+                {parseFileWarn && (
+                  <p className="text-xs text-amber-600 mt-1">{parseFileWarn}</p>
                 )}
                 {parseFileErr && (
                   <p className="text-xs text-red-500 mt-1">{parseFileErr}</p>

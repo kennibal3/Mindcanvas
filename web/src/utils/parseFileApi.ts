@@ -21,7 +21,7 @@ export const PARSE_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
 /** 文件选择器的建议格式（MarkItDown 支持范围） */
 export const PARSE_FILE_ACCEPT =
-  ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.html,.png,.jpg,.jpeg";
+  ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.html,.png,.jpg,.jpeg,.webp,.gif,.bmp";
 
 /**
  * parseFile
