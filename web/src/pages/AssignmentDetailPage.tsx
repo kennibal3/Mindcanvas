@@ -8,7 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Upload, FileText, Trash2, RefreshCw,
   CheckCircle, AlertCircle, Loader2, Plus, Users,
-  Star, Eye, Download, Key, Copy,
+  Star, Eye, Download, Key, Copy, ClipboardList,
 } from 'lucide-react';
 import type {
   Assignment, AssignmentMaterial, AssignmentRubric,
@@ -127,7 +127,9 @@ const AssignmentDetailPage: React.FC = () => {
   const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
-  const [activeTab, setActiveTab] = useState<'materials' | 'rubric' | 'submissions' | 'tokens'>('materials');
+  const [activeTab, setActiveTab] = useState<'materials' | 'rubric' | 'submissions' | 'tokens' | 'lecture'>('materials');
+  // ===== 讲评报告二级页签（REQ-039 第一期）=====
+  const [lectureSubTab, setLectureSubTab] = useState<'analysis' | 'report' | 'recommend' | 'remediation'>('analysis');
 
   // ===== 材料状态 =====
   const [uploading, setUploading] = useState(false);
@@ -224,7 +226,7 @@ const AssignmentDetailPage: React.FC = () => {
 
   // 切换到作业码Tab时加载
   useEffect(() => {
-    if (activeTab === 'tokens') {
+    if (activeTab === 'tokens' || activeTab === 'lecture') {
       loadTokensAndRoster();
     }
   }, [activeTab, loadTokensAndRoster]);
@@ -561,6 +563,7 @@ const AssignmentDetailPage: React.FC = () => {
               { key: 'rubric',      label: '评分标准', icon: Star,     count: rubric ? rubric.version : 0 },
               { key: 'submissions', label: '学生提交', icon: Users,    count: submissions.length },
               { key: 'tokens',      label: '作业码',   icon: Key,      count: tokens.length },
+              { key: 'lecture',     label: '讲评报告', icon: ClipboardList, count: 0 },
             ].map(tab => (
               <button
                 key={tab.key}
@@ -1191,6 +1194,145 @@ const AssignmentDetailPage: React.FC = () => {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* ===== 讲评报告Tab（REQ-039 第一期·数据视图，不调AI）===== */}
+        {activeTab === 'lecture' && (
+          <div className="space-y-4">
+            {/* 二级页签 */}
+            <div className="flex gap-1 bg-white rounded-xl border border-gray-100 p-1">
+              {[
+                { key: 'analysis',    label: '班级分析' },
+                { key: 'report',      label: '报告编辑' },
+                { key: 'recommend',   label: '推荐练习' },
+                { key: 'remediation', label: '学生补救' },
+              ].map(st => (
+                <button
+                  key={st.key}
+                  onClick={() => setLectureSubTab(st.key as any)}
+                  className={`flex-1 text-sm py-2 rounded-lg transition-colors ${
+                    lectureSubTab === st.key
+                      ? 'bg-amber-100 text-amber-800 font-medium'
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  {st.label}
+                </button>
+              ))}
+            </div>
+
+            {/* --- 班级分析（真实数据视图）--- */}
+            {lectureSubTab === 'analysis' && (() => {
+              let criteria: RubricCriterion[] = [];
+              if (rubric?.criteria_json) {
+                try { criteria = JSON.parse(rubric.criteria_json); } catch { criteria = []; }
+              }
+              const expected = rosterSummary?.total_expected ?? 0;
+              const submitted = rosterSummary?.total_submitted ?? submissions.length;
+              const submitRate = rosterSummary?.submit_rate
+                ?? (expected > 0 ? (submitted / expected) * 100 : 0);
+              return (
+                <div className="space-y-4">
+                  {/* 任务概览 */}
+                  <div className="bg-white rounded-xl border border-gray-100 p-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">任务概览</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-gray-800">{expected}</div>
+                        <div className="text-xs text-gray-500 mt-1">花名册人数</div>
+                      </div>
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-gray-800">{submitted}</div>
+                        <div className="text-xs text-gray-500 mt-1">已提交</div>
+                      </div>
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-gray-800">{submitRate.toFixed(0)}%</div>
+                        <div className="text-xs text-gray-500 mt-1">提交率</div>
+                      </div>
+                      <div className="text-center p-3 bg-gray-50 rounded-lg">
+                        <div className="text-2xl font-bold text-gray-800">{criteria.length}</div>
+                        <div className="text-xs text-gray-500 mt-1">评价维度</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rubric 维度 */}
+                  <div className="bg-white rounded-xl border border-gray-100 p-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">评价维度（来自 Rubric）</h3>
+                    {criteria.length === 0 ? (
+                      <div className="text-center py-6 text-gray-400 text-xs">
+                        尚未生成评分标准，请先到「评分标准」Tab 生成并确认 Rubric
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {criteria.map((c, i) => (
+                          <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                            <span className="text-sm text-gray-700">{c.name}</span>
+                            <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">权重 {c.weight}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 提交原文预览 */}
+                  <div className="bg-white rounded-xl border border-gray-100 p-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-3">学生提交预览（{submissions.length}）</h3>
+                    {submissions.length === 0 ? (
+                      <div className="text-center py-6 text-gray-400 text-xs">暂无学生提交</div>
+                    ) : (
+                      <div className="space-y-2 max-h-80 overflow-y-auto">
+                        {submissions.map(s => (
+                          <div key={s.id} className="px-3 py-2 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium text-gray-700">{s.student_name}</span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(s.submitted_at).toLocaleDateString('zh-CN')}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              {s.content_text ? s.content_text.slice(0, 160) : '（非文字提交）'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 现况说明 + 生成入口占位（第二期填实）*/}
+                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      以上为本次作业的现有数据汇总。下一步「一键生成讲评分析」将基于 Rubric 维度与学生提交原文，由 AI 生成班级共性问题、维度研判与讲评重点（开发中）。
+                    </p>
+                    <button
+                      disabled
+                      className="mt-3 px-4 py-2 text-sm rounded-lg bg-gray-200 text-gray-400 cursor-not-allowed"
+                      title="讲评分析生成功能开发中（第二期）"
+                    >
+                      一键生成讲评分析（开发中）
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* --- 其余三页签占位 --- */}
+            {lectureSubTab === 'report' && (
+              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+                生成讲评分析后，可在此编辑报告内容块（第三期）
+              </div>
+            )}
+            {lectureSubTab === 'recommend' && (
+              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+                基于讲评重点生成推荐练习题，支持采用/修改/发布为新作业（第四期）
+              </div>
+            )}
+            {lectureSubTab === 'remediation' && (
+              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+                针对单个学生生成补救建议与温和版反馈（第五期）
+              </div>
+            )}
           </div>
         )}
 
