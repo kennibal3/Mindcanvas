@@ -260,7 +260,8 @@ const PollingWidget: React.FC<PollingWidgetProps> = ({
   return (
     // REQ-020修复：固定白色背景+固定文字颜色，不随暗色主题变化
     <div
-      className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden w-full"
+      // REQ-035-c：h-full flex flex-col 跟随缩放容器高度，内容区改为滚动
+      className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden w-full h-full flex flex-col"
       style={{ minHeight: '180px', color: '#1f2937' }}
     >
       {/* 头部 */}
@@ -297,8 +298,8 @@ const PollingWidget: React.FC<PollingWidgetProps> = ({
         )}
       </div>
 
-      {/* 内容区 */}
-      <div className="px-4 py-3">
+      {/* 内容区（REQ-035-c：flex-1 + 滚动，跟随组件高度） */}
+      <div className="px-4 py-3 flex-1 overflow-y-auto min-h-0">
 
         {/* 图表 */}
         {shouldShowChart && (

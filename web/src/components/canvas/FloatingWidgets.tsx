@@ -49,6 +49,16 @@ const OVERLAY_TYPES: ReadonlySet<string> = new Set<string>([
 // 顶部导航栏高度（px），与 RoomPage main.top 一致
 const HEADER_HEIGHT = 44;
 
+// REQ-035-c：缩放尺寸边界（画布坐标单位，不随 zoom 变化）
+// 最小值兜底各 Widget 的 minHeight（词云 260），协作墙默认 900x640 内容密度高、下限单独放宽
+const RESIZE_MIN_DEFAULT = { w: 260, h: 260 };
+const RESIZE_MIN_SHELF   = { w: 480, h: 360 };
+const RESIZE_MAX         = { w: 1600, h: 1200 };
+
+function clampSize(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
 // ===== 坐标与 payload 工具函数 =====
 
 function extractPosition(p: Record<string, any>): {
@@ -119,6 +129,12 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
   const [dragging, setDragging] = useState<string | null>(null);
   const dragStartRef = useRef<{
     mouseX: number; mouseY: number; elemX: number; elemY: number;
+  } | null>(null);
+
+  // REQ-035-c：右下角缩放把手状态
+  const [resizing, setResizing] = useState<string | null>(null);
+  const resizeStartRef = useRef<{
+    mouseX: number; mouseY: number; elemW: number; elemH: number;
   } | null>(null);
 
   // 只渲染 Widget 类型的元素，排除已删除
@@ -213,6 +229,65 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
     document.addEventListener('mouseup', handleUp);
   }, [isLocked, isReadOnly, sendMessage, updateElement]);
 
+  /**
+   * REQ-035-c：右下角缩放把手。交互模式与移动把手完全一致——
+   * 按下快照 zoom 与起始宽高；拖动中屏幕位移除以 zoom 得画布尺寸增量，
+   * 只更新本地 store 即时预览；抬起时按标准两层结构广播 element_update。
+   * 尺寸夹在 RESIZE_MIN/MAX 之间（协作墙下限单独放宽）。
+   */
+  const handleResizeStart = useCallback((
+    e: React.MouseEvent, elementId: string, elemType: string, elemW: number, elemH: number,
+  ) => {
+    if (isLocked || isReadOnly) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setResizing(elementId);
+    resizeStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, elemW, elemH };
+    // 快照 zoom，避免缩放过程中画布 zoom 变化导致尺寸跳变
+    const z = useCanvasStore.getState().transform.zoom;
+    const min = elemType === 'shelf_widget' ? RESIZE_MIN_SHELF : RESIZE_MIN_DEFAULT;
+
+    const calcSize = (me: MouseEvent) => {
+      const dw = (me.clientX - resizeStartRef.current!.mouseX) / z;
+      const dh = (me.clientY - resizeStartRef.current!.mouseY) / z;
+      return {
+        w: Math.round(clampSize(resizeStartRef.current!.elemW + dw, min.w, RESIZE_MAX.w)),
+        h: Math.round(clampSize(resizeStartRef.current!.elemH + dh, min.h, RESIZE_MAX.h)),
+      };
+    };
+
+    const handleMove = (me: MouseEvent) => {
+      if (!resizeStartRef.current) return;
+      const { w, h } = calcSize(me);
+      // 拖动过程中只更新本地 store，不广播（与移动把手同策略）
+      updateElement(elementId, { width: w, height: h });
+    };
+
+    const handleUp = (me: MouseEvent) => {
+      if (!resizeStartRef.current) return;
+      const { w, h } = calcSize(me);
+      const currentEl = useRoomStore.getState().elements.find(el => el.id === elementId);
+      if (currentEl) {
+        // 抬起时才广播最终尺寸（标准两层结构，同移动把手的 handleUp）
+        const newPayload = {
+          ...extractPosition(currentEl.payload ?? {}),
+          width: w,
+          height: h,
+          payload: extractBusinessFields(currentEl.payload ?? {}),
+        };
+        updateElement(elementId, newPayload);
+        sendMessage('element_update', { id: elementId, payload: newPayload });
+      }
+      setResizing(null);
+      resizeStartRef.current = null;
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleUp);
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleUp);
+  }, [isLocked, isReadOnly, sendMessage, updateElement]);
+
   if (floatingElements.length === 0) return null;
 
   const { scrollX, scrollY, zoom } = transform;
@@ -250,7 +325,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
               zIndex:        20,
               pointerEvents: 'none',       // 外层不捕获事件，由内层 scale 容器处理
               overflow:      'visible',
-              userSelect:    dragging === element.id ? 'none' : undefined,
+              userSelect:    dragging === element.id || resizing === element.id ? 'none' : undefined,
             }}
           >
             {/* 拖拽把手：放在 scale 容器外层，避免把手本身也被缩放 */}
@@ -274,6 +349,30 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                 className="opacity-50 hover:opacity-100 transition-opacity"
               >
                 <div className="w-16 h-2 bg-gray-400 rounded-full" />
+              </div>
+            )}
+
+            {/* REQ-035-c：右下角缩放把手（教师专属，放 scale 容器外不被缩放，
+                定位用 screenW/screenH 跟随缩放后的实际角点） */}
+            {isTeacher && !isLocked && !isReadOnly && (
+              <div
+                onMouseDown={(e) => handleResizeStart(e, element.id, element.type, width, height)}
+                style={{
+                  position:       'absolute',
+                  left:           `${screenW - 8}px`,
+                  top:            `${screenH - 8}px`,
+                  width:          20,
+                  height:         20,
+                  cursor:         'nwse-resize',
+                  zIndex:         30,
+                  display:        'flex',
+                  alignItems:     'center',
+                  justifyContent: 'center',
+                  pointerEvents:  'auto',
+                }}
+                className="opacity-50 hover:opacity-100 transition-opacity"
+              >
+                <div className="w-3 h-3 border-r-2 border-b-2 border-gray-400 rounded-br-md" />
               </div>
             )}
 

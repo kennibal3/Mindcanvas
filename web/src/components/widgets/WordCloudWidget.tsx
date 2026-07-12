@@ -219,7 +219,8 @@ const WordCloudWidget: React.FC<WordCloudWidgetProps> = ({
   return (
     // REQ-020修复：固定白色背景+固定文字颜色，不随暗色主题变化
     <div
-      className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col overflow-hidden"
+      // REQ-035-c：w-full h-full 让根元素跟随缩放容器尺寸，SVG 已有 ResizeObserver 自适应
+      className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col overflow-hidden w-full h-full"
       style={{ minHeight: '260px', color: '#1f2937' }}
     >
       {/* 头部 */}
