@@ -172,7 +172,7 @@ func main() {
 	chatDoubaoHandler := handlers.NewChatDoubaoHandler(db, aiSvc)
 	diagramHandler := handlers.NewDiagramHandler(aiSvc)
 	refineHandler := handlers.NewRefineHandler(aiSvc) // REQ-028：文本→Markdown AI 提炼
-	parseFileHandler := handlers.NewParseFileHandler(assignmentService) // REQ-038：AI 工作台文件→Markdown 解析
+	parseFileHandler := handlers.NewParseFileHandler(assignmentService, aiSvc) // REQ-038：AI 工作台文件→Markdown 解析；REQ-040：图片走豆包 OCR
 
 	// ========== 7. 注册 WebSocket 消息处理器 ==========
 	wsHandler.SetupMessageHandler()
