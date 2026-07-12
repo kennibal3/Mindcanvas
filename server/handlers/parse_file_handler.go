@@ -1,11 +1,18 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -38,6 +45,23 @@ const ocrSystemPrompt = `你是一个精准的图片文字识别助手。请提�
 - 有明显标题层级的用 #/## 表示；列表用 - 表示；表格尽量还原为 Markdown 表格
 - 保持原文语言，不翻译、不概括、不评论、不补充图片里没有的内容
 - 如果图片里没有任何可识别文字，只输出：（未识别到文字）`
+
+// ── REQ-040 二期：扫描 PDF 分页 OCR ─────────────────────────────
+// ocrPDFConcurrency 逐页 OCR 的并发数（网络 IO 密集，3 路并发把 10 页
+// 最坏耗时从 ~200s 压到 ~70s，仍在 Nginx 300s / Ark 客户端 120s 之内）
+const ocrPDFConcurrency = 3
+
+// ocrPDFTimeout 整个分页 OCR 流程的总超时
+const ocrPDFTimeout = 240 * time.Second
+
+// pdfRenderResult 对应 markitdown-service /render/pdf-pages 的返回
+type pdfRenderResult struct {
+	Success       bool     `json:"success"`
+	PageCount     int      `json:"page_count"`
+	RenderedPages int      `json:"rendered_pages"`
+	Pages         []string `json:"pages"`
+	Error         string   `json:"error"`
+}
 
 // ocrImageExts 走豆包视觉 OCR 的图片扩展名 → MIME
 var ocrImageExts = map[string]string{
@@ -117,6 +141,15 @@ func (h *ParseFileHandler) ParseFile(c *gin.Context) {
 		return
 	}
 
+	// ── REQ-040 二期：扫描 PDF（MarkItDown 解出 0 字符）→ 分页 OCR ──
+	// 严格 0 字符才触发（用户拍板），OCR 全程失败则回退到原 0 字符结果，
+	// 前端行为与一期一致（黄色警告），不因 OCR 故障把整个解析变成报错。
+	if ext == ".pdf" && result.CharCount == 0 && h.aiSvc.IsConfigured() {
+		if h.parsePDFByOCR(c, tmpPath, fh.Filename) {
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"markdown":   result.Markdown,
 		"word_count": result.WordCount,
@@ -125,6 +158,124 @@ func (h *ParseFileHandler) ParseFile(c *gin.Context) {
 		"file_name":  fh.Filename,
 		"source":     "markitdown",
 	})
+}
+
+// parsePDFByOCR 扫描 PDF：渲染分页 → 逐页豆包 OCR → 拼接（REQ-040 二期）。
+// 成功写出响应返回 true；任何环节失败返回 false，由调用方回退 MarkItDown 结果。
+func (h *ParseFileHandler) parsePDFByOCR(c *gin.Context, tmpPath, filename string) bool {
+	start := time.Now()
+
+	render, err := h.renderPDFPages(tmpPath, filename)
+	if err != nil || !render.Success || len(render.Pages) == 0 {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(services.WithFastMode(c.Request.Context()), ocrPDFTimeout)
+	defer cancel()
+
+	// 3 路并发逐页 OCR，结果按页序写入定长切片
+	texts := make([]string, len(render.Pages))
+	errs := make([]error, len(render.Pages))
+	sem := make(chan struct{}, ocrPDFConcurrency)
+	var wg sync.WaitGroup
+	for i, b64 := range render.Pages {
+		wg.Add(1)
+		go func(i int, b64 string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			dataURL := "data:image/jpeg;base64," + b64
+			text, _, err := h.aiSvc.AnalyzeWithImage(
+				ctx,
+				ocrSystemPrompt,
+				fmt.Sprintf("这是一份 PDF 的第 %d 页，请提取本页全部文字，按系统要求输出 Markdown。", i+1),
+				dataURL,
+			)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			text = strings.TrimSpace(text)
+			if text == "（未识别到文字）" {
+				text = ""
+			}
+			texts[i] = text
+		}(i, b64)
+	}
+	wg.Wait()
+
+	// 全部页都失败 → 回退；个别页失败 → 占位说明，保住已识别内容
+	allFailed := true
+	for _, e := range errs {
+		if e == nil {
+			allFailed = false
+			break
+		}
+	}
+	if allFailed {
+		return false
+	}
+
+	var parts []string
+	for i, t := range texts {
+		if errs[i] != nil {
+			parts = append(parts, fmt.Sprintf("> （第 %d 页识别失败，可稍后重试）", i+1))
+			continue
+		}
+		if t != "" {
+			parts = append(parts, t)
+		}
+	}
+	markdown := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	if markdown != "" && render.PageCount > render.RenderedPages {
+		markdown += fmt.Sprintf("\n\n> （原文共 %d 页，仅识别前 %d 页）", render.PageCount, render.RenderedPages)
+	}
+
+	charCount := utf8.RuneCountInString(markdown)
+	c.JSON(http.StatusOK, gin.H{
+		"markdown":   markdown,
+		"word_count": charCount,
+		"char_count": charCount,
+		"elapsed_ms": time.Since(start).Milliseconds(),
+		"file_name":  filename,
+		"source":     "doubao_ocr_pdf",
+		"page_count": render.PageCount,
+		"ocr_pages":  render.RenderedPages,
+	})
+	return true
+}
+
+// renderPDFPages 调 markitdown-service 把 PDF 渲染成 base64 JPEG 分页
+func (h *ParseFileHandler) renderPDFPages(tmpPath, filename string) (*pdfRenderResult, error) {
+	f, err := os.Open(tmpPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, err := w.CreateFormFile("file", filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = io.Copy(fw, f); err != nil {
+		return nil, err
+	}
+	w.Close()
+
+	client := &http.Client{Timeout: 90 * time.Second}
+	resp, err := client.Post(h.assignmentSvc.GetParserURL()+"/render/pdf-pages", w.FormDataContentType(), &buf)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result pdfRenderResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // parseImageByOCR 图片文件走豆包多模态识别（REQ-040 一期）

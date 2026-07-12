@@ -252,28 +252,45 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     setParseFileHint("");
     setParseFileWarn("");
     setParsingFile(true);
+    // REQ-040 二期：扫描 PDF 会自动转分页 AI 识别，耗时明显更长，提前给预期
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      setParseFileHint(`正在解析「${file.name}」…若为扫描件将自动 AI 识别，最长约 1-2 分钟`);
+    }
     try {
       const result = await parseFile(file);
       setInputText(result.markdown);
       if (textareaRef.current) textareaRef.current.value = result.markdown;
       saveDraft(roomId, selType, result.markdown); // 解析结果立即落草稿，防误关丢失
+      // REQ-040 二期：扫描 PDF OCR 结果的专属提示（含截断说明）
+      const ocrNote =
+        result.source === "doubao_ocr_pdf" &&
+        result.page_count != null &&
+        result.ocr_pages != null &&
+        result.page_count > result.ocr_pages
+          ? `；原文 ${result.page_count} 页，仅识别前 ${result.ocr_pages} 页`
+          : "";
+      const parsedLabel =
+        result.source === "doubao_ocr_pdf" ? "已 AI 识别扫描件" : "已解析";
       if (result.char_count === 0) {
         // REQ-040：0 字符不再显示绿色"已解析"，给出黄色警告
         setParseFileErr("");
         setParseFileHint("");
         setParseFileWarn(
-          `「${file.name}」未提取到文字——可能是扫描件/纯图片 PDF。图片文件（png/jpg）已支持 AI 识别，扫描 PDF 支持后续版本提供`
+          result.source === "doubao_ocr_pdf"
+            ? `「${file.name}」已尝试 AI 识别扫描件，仍未找到可读文字，请确认文件内容清晰且包含文字`
+            : `「${file.name}」未提取到文字——请确认文件中包含可读文字（图片与扫描 PDF 均已支持 AI 识别）`
         );
       } else if (result.char_count > 3000) {
         setParseFileWarn("");
         setParseFileHint(
-          `已解析「${file.name}」（${result.char_count} 字符）。文本较长，建议先点「智能提炼」压缩再生成图形`
+          `${parsedLabel}「${file.name}」（${result.char_count} 字符${ocrNote}）。文本较长，建议先点「智能提炼」压缩再生成图形`
         );
       } else {
         setParseFileWarn("");
-        setParseFileHint(`已解析「${file.name}」（${result.char_count} 字符）`);
+        setParseFileHint(`${parsedLabel}「${file.name}」（${result.char_count} 字符${ocrNote}）`);
       }
     } catch (e: any) {
+      setParseFileHint(""); // 清掉 PDF 预设的"正在解析"提示
       setParseFileErr(e.message ?? "解析失败，请稍后重试");
     } finally {
       setParsingFile(false);

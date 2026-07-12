@@ -4,15 +4,18 @@
 # 端口：8081（仅监听 localhost，不对外暴露）
 # =============================================================
 import os
+import io
 import sys
 import json
 import time
+import base64
 import logging
 import tempfile
 import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify
 from markitdown import MarkItDown
+import pypdfium2 as pdfium  # REQ-040 二期：扫描 PDF 逐页渲染
 
 # 配置日志
 logging.basicConfig(
@@ -57,6 +60,11 @@ SUPPORTED_MIME_TYPES = {
 
 # 文件大小限制：50MB
 MAX_FILE_SIZE = 50 * 1024 * 1024
+
+# REQ-040 二期：PDF 渲染参数
+MAX_RENDER_PAGES = 10   # 最多渲染前 10 页（防超时防爆内存，2核1.6G）
+RENDER_SCALE = 2.0      # A4@72dpi × 2 ≈ 1190×1684，OCR 分辨率足够
+JPEG_QUALITY = 85
 
 
 @app.route('/health', methods=['GET'])
@@ -150,6 +158,92 @@ def parse_file():
 
     finally:
         # 清理临时文件
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+@app.route('/render/pdf-pages', methods=['POST'])
+def render_pdf_pages():
+    """
+    REQ-040 二期：把 PDF 逐页渲染为 JPEG 图片（扫描件 OCR 的前置步骤）
+    请求：multipart/form-data，字段名 file（PDF 文件）
+    返回：{success, page_count, rendered_pages, pages: [base64...], elapsed_ms}
+    说明：最多渲染前 MAX_RENDER_PAGES 页；OCR 由 Go 后端逐页调豆包完成，
+          本服务只做渲染，不碰 AI。逐页渲染、渲染完即释放，控制内存峰值。
+    """
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': '缺少 file 字段'}), 400
+
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'success': False, 'error': '文件名为空'}), 400
+
+    f.seek(0, 2)
+    file_size = f.tell()
+    f.seek(0)
+    if file_size > MAX_FILE_SIZE:
+        return jsonify({
+            'success': False,
+            'error': f'文件过大（{file_size // 1024 // 1024}MB），最大支持 50MB'
+        }), 413
+
+    start_time = time.time()
+    tmp_path = None
+    pdf = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False, dir='/tmp') as tmp:
+            tmp_path = tmp.name
+            f.save(tmp)
+
+        pdf = pdfium.PdfDocument(tmp_path)
+        page_count = len(pdf)
+        if page_count == 0:
+            return jsonify({'success': False, 'error': 'PDF 没有任何页面'}), 422
+
+        n = min(page_count, MAX_RENDER_PAGES)
+        logger.info(f'开始渲染 PDF: {f.filename} 共{page_count}页，渲染前{n}页')
+
+        pages = []
+        for i in range(n):
+            page = pdf[i]
+            bitmap = page.render(scale=RENDER_SCALE)
+            pil_img = bitmap.to_pil().convert('RGB')
+            buf = io.BytesIO()
+            pil_img.save(buf, format='JPEG', quality=JPEG_QUALITY)
+            pages.append(base64.b64encode(buf.getvalue()).decode('ascii'))
+            page.close()
+
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        logger.info(f'渲染完成: {f.filename} {n}页 耗时={elapsed_ms}ms')
+
+        return jsonify({
+            'success': True,
+            'page_count': page_count,
+            'rendered_pages': n,
+            'pages': pages,
+            'elapsed_ms': elapsed_ms,
+        })
+
+    except Exception as e:
+        elapsed_ms = int((time.time() - start_time) * 1000)
+        err_msg = str(e)
+        logger.error(f'PDF 渲染失败: {f.filename} 错误={err_msg}')
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': err_msg,
+            'elapsed_ms': elapsed_ms,
+        }), 500
+
+    finally:
+        if pdf is not None:
+            try:
+                pdf.close()
+            except Exception:
+                pass
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)

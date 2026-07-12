@@ -10,6 +10,11 @@ export interface ParseFileResult {
   char_count: number;
   elapsed_ms: number;
   file_name: string;
+  /** 解析来源：markitdown | doubao_ocr | doubao_ocr_pdf（REQ-040） */
+  source?: string;
+  /** 扫描 PDF OCR 时返回：原文总页数 / 实际识别页数（REQ-040 二期） */
+  page_count?: number;
+  ocr_pages?: number;
 }
 
 export interface ParseFileError {
