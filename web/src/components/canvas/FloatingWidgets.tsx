@@ -44,6 +44,8 @@ const OVERLAY_TYPES: ReadonlySet<string> = new Set<string>([
   // 本条是在 REQ-035-a 里踩回的坑——用来编辑的本地文件副本是 BUG-004 诊断阶段拉取的
   // 旧版本，没跟上 BUG-007 之后的修复，直接改完推回服务器等于把这行白名单条目覆盖没了。
   'shelf_widget',
+  // REQ-041：HTML 展示组件也走浮层渲染，加入白名单后自动继承 035-c 缩放（scale 容器 + 右下角把手）
+  ELEMENT_TYPES.HTML_WIDGET,
 ]);
 
 // 顶部导航栏高度（px），与 RoomPage main.top 一致
@@ -294,6 +296,19 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 
   return (
     <>
+      {/* REQ-041：拖拽/缩放时铺一层透明护罩，防止 html_widget 的 iframe 吞掉 mousemove
+          导致拖动/缩放卡顿（iframe 会截获鼠标事件，父页面 document 监听收不到）。
+          z-index 25 在 Widget 容器(20)之上、把手(30)之下——把手的监听已挂 document，不受影响。 */}
+      {(dragging || resizing) && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 25,
+            cursor: resizing ? 'nwse-resize' : 'grabbing',
+          }}
+        />
+      )}
       {floatingElements.map(element => {
         const outerPayload = element.payload || {};
 

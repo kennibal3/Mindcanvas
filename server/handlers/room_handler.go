@@ -927,6 +927,164 @@ func (h *RoomHandler) DownloadDropzoneZip(c *gin.Context) {
 }
 
 // =============================================================
+// REQ-041 HTML 展示组件接口
+//   源码不进 room_elements.payload（REQ-032 教训），单独落 html_widget_contents，
+//   按 element_id 引用；创建时后端建元素 + 存源码 + 广播 element_create（渲染层复用现有 Widget 浮层）。
+// =============================================================
+
+// htmlWidgetMaxBytes HTML 源码体积上限（512KB，防超大代码拖垮渲染/传输）
+const htmlWidgetMaxBytes = 512 * 1024
+
+// CreateHtmlWidget POST /api/rooms/:id/html-widget （教师）
+// 建 html_widget 元素（payload 仅 {title}）+ 存 HTML 源码 + 广播 element_create
+func (h *RoomHandler) CreateHtmlWidget(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	role := middleware.GetRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if err := h.roomService.CheckRoomOwnership(roomID, userID, role, tenantID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		HTML   string  `json:"html"`
+		Title  string  `json:"title"`
+		X      float64 `json:"x"`
+		Y      float64 `json:"y"`
+		Width  float64 `json:"width"`
+		Height float64 `json:"height"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "数据格式错误"})
+		return
+	}
+	if strings.TrimSpace(req.HTML) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HTML 代码不能为空"})
+		return
+	}
+	if len(req.HTML) > htmlWidgetMaxBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HTML 代码超过 512KB 上限"})
+		return
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = "HTML 展示"
+	}
+	if req.Width <= 0 {
+		req.Width = 480
+	}
+	if req.Height <= 0 {
+		req.Height = 360
+	}
+
+	// 元素 payload 只放位置 + 标题，绝不含 HTML 源码
+	elemData := map[string]interface{}{
+		"type":    models.ElementTypeHtmlWidget,
+		"x":       req.X,
+		"y":       req.Y,
+		"width":   req.Width,
+		"height":  req.Height,
+		"payload": map[string]interface{}{"title": title},
+	}
+	payloadJSON, _ := json.Marshal(elemData)
+
+	elem, err := h.widgetService.CreateElement(roomID, userID, "老师", models.ElementTypeHtmlWidget, payloadJSON)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建组件失败"})
+		return
+	}
+	// 先存源码再广播，确保各端收到 element_create 后 GET 一定能拿到 HTML
+	if err := h.widgetService.SaveHtmlContent(elem.ID, roomID, req.HTML); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存 HTML 源码失败"})
+		return
+	}
+
+	elemData["id"] = elem.ID
+	broadcastBytes, _ := json.Marshal(map[string]interface{}{
+		"type": ws.MsgElementCreate,
+		"data": elemData,
+		"from": userID,
+	})
+	if room := h.hub.GetRoom(roomID); room != nil {
+		room.BroadcastRaw(broadcastBytes)
+	}
+	log.Printf("[HtmlWidget] 创建 room:%s element:%s size:%dB", roomID, elem.ID, len(req.HTML))
+	c.JSON(http.StatusOK, gin.H{"id": elem.ID})
+}
+
+// GetHtmlWidgetContent GET /api/rooms/:id/elements/:eid/html （OptionalAuth，学生也可拉取）
+func (h *RoomHandler) GetHtmlWidgetContent(c *gin.Context) {
+	roomID := c.Param("id")
+	elementID := c.Param("eid")
+	var count int
+	if err := h.roomService.DB().QueryRowContext(
+		c.Request.Context(),
+		`SELECT COUNT(*) FROM room_elements WHERE id=$1 AND room_id=$2 AND type=$3 AND is_deleted=FALSE`,
+		elementID, roomID, models.ElementTypeHtmlWidget,
+	).Scan(&count); err != nil || count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "HTML 组件不存在"})
+		return
+	}
+	html, err := h.widgetService.GetHtmlContent(elementID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"html": html})
+}
+
+// UpdateHtmlWidgetContent PUT /api/rooms/:id/elements/:eid/html （教师，替换源码）
+func (h *RoomHandler) UpdateHtmlWidgetContent(c *gin.Context) {
+	roomID := c.Param("id")
+	elementID := c.Param("eid")
+	userID := middleware.GetUserID(c)
+	role := middleware.GetRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if err := h.roomService.CheckRoomOwnership(roomID, userID, role, tenantID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	var count int
+	if err := h.roomService.DB().QueryRowContext(
+		c.Request.Context(),
+		`SELECT COUNT(*) FROM room_elements WHERE id=$1 AND room_id=$2 AND type=$3 AND is_deleted=FALSE`,
+		elementID, roomID, models.ElementTypeHtmlWidget,
+	).Scan(&count); err != nil || count == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "HTML 组件不存在"})
+		return
+	}
+	var req struct {
+		HTML string `json:"html"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "数据格式错误"})
+		return
+	}
+	if strings.TrimSpace(req.HTML) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HTML 代码不能为空"})
+		return
+	}
+	if len(req.HTML) > htmlWidgetMaxBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "HTML 代码超过 512KB 上限"})
+		return
+	}
+	if err := h.widgetService.SaveHtmlContent(elementID, roomID, req.HTML); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存 HTML 源码失败"})
+		return
+	}
+	broadcastBytes, _ := json.Marshal(map[string]interface{}{
+		"type":       ws.MsgHtmlWidgetUpdate,
+		"element_id": elementID,
+	})
+	if room := h.hub.GetRoom(roomID); room != nil {
+		room.BroadcastRaw(broadcastBytes)
+	}
+	log.Printf("[HtmlWidget] 更新源码 room:%s element:%s size:%dB", roomID, elementID, len(req.HTML))
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// =============================================================
 // 工具函数
 // =============================================================
 

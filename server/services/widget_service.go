@@ -1063,6 +1063,43 @@ func (s *WidgetService) SoftDeleteElement(elementID string) error {
 }
 
 // =============================================================
+// REQ-041 HTML 展示组件：源码存 html_widget_contents 表（不进 payload）
+//   元素本体仍是一条 room_elements（type=html_widget，payload 仅 {title}），
+//   源码按 element_id 引用落此表，广播只传 element_id，客户端各自 GET 拉取。
+// =============================================================
+
+// SaveHtmlContent 落库/更新 HTML 组件源码（按 element_id upsert）
+func (s *WidgetService) SaveHtmlContent(elementID, roomID, html string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO html_widget_contents (element_id, room_id, html, byte_size, updated_at)
+		 VALUES ($1, $2, $3, $4, NOW())
+		 ON CONFLICT (element_id)
+		 DO UPDATE SET html = EXCLUDED.html, byte_size = EXCLUDED.byte_size, updated_at = NOW()`,
+		elementID, roomID, html, len(html),
+	)
+	if err != nil {
+		return fmt.Errorf("保存 HTML 源码失败: %w", err)
+	}
+	return nil
+}
+
+// GetHtmlContent 读取 HTML 组件源码（无记录返回空串，非错误）
+func (s *WidgetService) GetHtmlContent(elementID string) (string, error) {
+	var html string
+	err := s.db.QueryRow(
+		`SELECT html FROM html_widget_contents WHERE element_id = $1`,
+		elementID,
+	).Scan(&html)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("读取 HTML 源码失败: %w", err)
+	}
+	return html, nil
+}
+
+// =============================================================
 // 辅助函数
 // =============================================================
 
@@ -1095,6 +1132,7 @@ func FlattenWidgetPayload(elemType string, rawPayload []byte) []byte {
 		"wordcloud_widget": true,
 		"qa_widget":        true,
 		"dropzone_widget":  true,
+		"html_widget":      true,
 	}
 	if !widgetTypes[elemType] {
 		return rawPayload

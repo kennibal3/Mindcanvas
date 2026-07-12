@@ -8,6 +8,7 @@ import WordCloudWidget from '@/components/widgets/WordCloudWidget';
 import QAWidget from '@/components/widgets/QAWidget';
 import DropZoneWidget from '@/components/widgets/DropZoneWidget';
 import ShelfWidget from '@/components/widgets/ShelfWidget';
+import HtmlWidget from '@/components/widgets/HtmlWidget';
 
 // 投票组件
 WidgetRegistry.register('polling_widget', PollingWidget, {
@@ -67,12 +68,15 @@ WidgetRegistry.register('qa_widget', QAWidget, {
 });
 
 // ⭐ 作品收集区
+// REQ-041：被 HTML 展示组件替代，insertable:false —— 仍注册以渲染存量房间里的旧组件，
+// 但不再出现在教师插入工具栏（新建一律走 HTML 展示组件）。
 WidgetRegistry.register('dropzone_widget', DropZoneWidget, {
   type: 'dropzone_widget',
   label: '作品收集',
   icon: '📥',
   description: '收集学生文字、图片、文件或链接作品',
   category: 'interaction',
+  insertable: false,
   defaultPayload: {
     title: '作品收集',
     prompt: '请提交你的作品',
@@ -101,5 +105,20 @@ WidgetRegistry.register('shelf_widget', ShelfWidget as any, {
     status: 'open',
     visibility: 'open',
     allow_types: ['text', 'image', 'link'],
+  },
+});
+
+// REQ-041 HTML 展示组件（改造/替代作品收集）
+// 老师粘贴外部 AI 生成的 HTML 交互课件，在 iframe sandbox=allow-scripts 中渲染。
+// 源码不进 payload（走 REST 落库引用），payload 仅存标题。
+WidgetRegistry.register('html_widget', HtmlWidget as any, {
+  type: 'html_widget',
+  label: 'HTML 展示',
+  icon: '🖥️',
+  description: '粘贴 HTML 代码，在画布上渲染交互式课件（沙箱隔离）',
+  category: 'interaction',
+  insertable: true,
+  defaultPayload: {
+    title: 'HTML 展示',
   },
 });

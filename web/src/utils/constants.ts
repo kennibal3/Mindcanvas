@@ -103,4 +103,5 @@ export const ELEMENT_TYPES = {
   EXCALIDRAW_STROKE: 'excalidraw_stroke',
   DROPZONE: 'dropzone',
   DROPZONE_WIDGET: 'dropzone_widget',
+  HTML_WIDGET: 'html_widget',
 } as const;

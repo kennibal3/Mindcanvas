@@ -57,6 +57,9 @@ const (
 	MsgDropzoneUpdate = "dropzone_update"
 	MsgDropzoneError  = "dropzone_error"
 
+	// REQ-041 HTML 展示组件：教师替换源码后广播，通知各端重新拉取 HTML
+	MsgHtmlWidgetUpdate = "html_widget_update"
+
 	// 分组
 	MsgGroupUpdate = "group_update"
 	MsgGroupAssign = "group_assign"
