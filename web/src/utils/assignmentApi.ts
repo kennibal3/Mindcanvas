@@ -137,3 +137,41 @@ export async function checkParserHealth(): Promise<{
 }> {
   return req(`${BASE}/parser/health`);
 }
+
+// ===== 讲评分析（REQ-039 第二期）=====
+
+export interface LectureReportBlock {
+  id: string;
+  block_type: 'overview' | 'dimension_analysis' | 'evidence' | 'recommendation' | 'student_summary' | 'custom';
+  sort_order: number;
+  title: string;
+  content: any;
+  ai_generated: boolean;
+  teacher_confirmed: boolean;
+}
+
+export interface LectureReport {
+  id: string;
+  assignment_id: string;
+  status: string;
+  title: string;
+  summary: string;
+  generation_status: 'pending' | 'analyzing' | 'done' | 'failed';
+  last_error: string;
+  source_snapshot: any;
+  blocks: LectureReportBlock[];
+  created_at: string;
+  updated_at: string;
+}
+
+// 发起讲评分析（异步）
+export async function startLectureAnalyze(aid: string): Promise<{
+  report_id: string; status: string; message?: string;
+}> {
+  return req(`${BASE}/${aid}/lecture/analyze`, { method: 'POST' });
+}
+
+// 获取讲评报告 + 内容块（供轮询/展示）；未生成时 report 为 null
+export async function getLectureReport(aid: string): Promise<{ report: LectureReport | null }> {
+  return req(`${BASE}/${aid}/lecture/report`);
+}

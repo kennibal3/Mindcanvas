@@ -8,7 +8,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Upload, FileText, Trash2, RefreshCw,
   CheckCircle, AlertCircle, Loader2, Plus, Users,
-  Star, Eye, Download, Key, Copy, ClipboardList,
+  Star, Eye, Download, Key, Copy, ClipboardList, Sparkles,
 } from 'lucide-react';
 import type {
   Assignment, AssignmentMaterial, AssignmentRubric,
@@ -24,7 +24,9 @@ import {
   getAssignment, listMaterials, addTextMaterial, deleteMaterial,
   reparseMaterial, uploadMaterialFile, generateRubric, getRubric,
   confirmRubric, listSubmissions, updateAssignmentStatus,
+  startLectureAnalyze, getLectureReport,
 } from '@/utils/assignmentApi';
+import type { LectureReport } from '@/utils/assignmentApi';
 import {
   generateTokens, listTokens, exportTokensCSV,
   getRoster, addRosterEntry, importRosterCSVFile,
@@ -115,6 +117,29 @@ const TokenBadge = ({ token }: { token: AssignmentToken }) => {
   return <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">待使用</span>;
 };
 
+// ===== 讲评报告：要点小列表（REQ-039 第二期，防空不白屏）=====
+const LectureList: React.FC<{ title: string; items?: string[]; color: 'green' | 'red' | 'amber' }> = ({ title, items, color }) => {
+  const list = Array.isArray(items) ? items : [];
+  const dot = color === 'green' ? 'bg-green-400' : color === 'red' ? 'bg-red-400' : 'bg-amber-400';
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-500 mb-1">{title}</p>
+      {list.length === 0 ? (
+        <p className="text-xs text-gray-300">—</p>
+      ) : (
+        <ul className="space-y-1">
+          {list.map((t, i) => (
+            <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
+              <span className={`mt-1.5 w-1 h-1 rounded-full flex-shrink-0 ${dot}`} />
+              <span>{t}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 // ===== 主页面 =====
 const AssignmentDetailPage: React.FC = () => {
   const { id: aid } = useParams<{ id: string }>();
@@ -130,6 +155,10 @@ const AssignmentDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'materials' | 'rubric' | 'submissions' | 'tokens' | 'lecture'>('materials');
   // ===== 讲评报告二级页签（REQ-039 第一期）=====
   const [lectureSubTab, setLectureSubTab] = useState<'analysis' | 'report' | 'recommend' | 'remediation'>('analysis');
+  // ===== 讲评分析生成（REQ-039 第二期）=====
+  const [lectureReport, setLectureReport] = useState<LectureReport | null>(null);
+  const [lectureBusy, setLectureBusy] = useState(false);
+  const lecturePollRef = useRef<number | null>(null);
 
   // ===== 材料状态 =====
   const [uploading, setUploading] = useState(false);
@@ -230,6 +259,64 @@ const AssignmentDetailPage: React.FC = () => {
       loadTokensAndRoster();
     }
   }, [activeTab, loadTokensAndRoster]);
+
+  // ===== 讲评分析：加载已有报告 + 生成 + 轮询（REQ-039 第二期）=====
+  const loadLectureReport = useCallback(async (): Promise<LectureReport | null> => {
+    if (!aid) return null;
+    try {
+      const { report } = await getLectureReport(aid);
+      setLectureReport(report);
+      return report;
+    } catch {
+      return null;
+    }
+  }, [aid]);
+
+  const stopLecturePoll = () => {
+    if (lecturePollRef.current) {
+      window.clearInterval(lecturePollRef.current);
+      lecturePollRef.current = null;
+    }
+  };
+
+  // 进入讲评报告 Tab 时拉一次已有报告
+  useEffect(() => {
+    if (activeTab === 'lecture') loadLectureReport();
+  }, [activeTab, loadLectureReport]);
+
+  // 报告处于 analyzing 时自动轮询（覆盖首次生成 + 刷新页面续接）
+  useEffect(() => {
+    if (lectureReport?.generation_status === 'analyzing' && !lecturePollRef.current) {
+      setLectureBusy(true);
+      lecturePollRef.current = window.setInterval(async () => {
+        const report = await loadLectureReport();
+        const gs = report?.generation_status;
+        if (gs === 'done' || gs === 'failed') {
+          stopLecturePoll();
+          setLectureBusy(false);
+          showToast(gs === 'done' ? '讲评分析已生成' : '生成失败：' + (report?.last_error || '请重试'));
+        }
+      }, 2500);
+    }
+  }, [lectureReport, loadLectureReport]);
+
+  // 卸载时清理轮询
+  useEffect(() => () => { stopLecturePoll(); }, []);
+
+  const handleGenerateLecture = useCallback(async () => {
+    if (!aid || lectureBusy) return;
+    setLectureBusy(true);
+    try {
+      await startLectureAnalyze(aid);
+      // 立即置 analyzing，交给上面的 useEffect 接管轮询
+      setLectureReport(prev => prev
+        ? { ...prev, generation_status: 'analyzing', last_error: '' }
+        : ({ generation_status: 'analyzing', blocks: [] } as unknown as LectureReport));
+    } catch (e: any) {
+      setLectureBusy(false);
+      showToast('发起分析失败：' + e.message);
+    }
+  }, [aid, lectureBusy]);
 
   // ===== 轮询解析状态 =====
   useEffect(() => {
@@ -1300,19 +1387,95 @@ const AssignmentDetailPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* 现况说明 + 生成入口占位（第二期填实）*/}
+                  {/* 讲评分析生成入口（REQ-039 第二期）*/}
                   <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                    <p className="text-xs text-amber-800 leading-relaxed">
-                      以上为本次作业的现有数据汇总。下一步「一键生成讲评分析」将基于 Rubric 维度与学生提交原文，由 AI 生成班级共性问题、维度研判与讲评重点（开发中）。
-                    </p>
-                    <button
-                      disabled
-                      className="mt-3 px-4 py-2 text-sm rounded-lg bg-gray-200 text-gray-400 cursor-not-allowed"
-                      title="讲评分析生成功能开发中（第二期）"
-                    >
-                      一键生成讲评分析（开发中）
-                    </button>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-xs text-amber-800 leading-relaxed flex-1">
+                        基于上方 Rubric 维度与学生提交原文，由 AI 生成班级共性问题、维度研判与讲评重点。
+                      </p>
+                      <button
+                        onClick={handleGenerateLecture}
+                        disabled={lectureBusy || submissions.length === 0}
+                        className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg text-white bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+                        title={submissions.length === 0 ? '暂无学生提交，无法生成' : '基于 Rubric + 提交原文生成讲评分析'}
+                      >
+                        {lectureBusy
+                          ? <><Loader2 size={14} className="animate-spin" />生成中…</>
+                          : <><Sparkles size={14} />{lectureReport?.generation_status === 'done' ? '重新生成讲评分析' : '一键生成讲评分析'}</>}
+                      </button>
+                    </div>
+                    {submissions.length === 0 && (
+                      <p className="text-xs text-amber-600 mt-2">提示：需至少有一份学生文字提交才能生成。</p>
+                    )}
                   </div>
+
+                  {/* 生成中 */}
+                  {lectureReport?.generation_status === 'analyzing' && (
+                    <div className="bg-white rounded-xl border border-gray-100 p-8 text-center">
+                      <Loader2 size={22} className="animate-spin mx-auto mb-2 text-amber-500" />
+                      <p className="text-sm text-gray-500">正在生成讲评分析…约 1-3 分钟，可留在本页等待</p>
+                    </div>
+                  )}
+
+                  {/* 生成失败 */}
+                  {lectureReport?.generation_status === 'failed' && (
+                    <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start gap-2">
+                      <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+                      <div className="text-xs text-red-600">
+                        生成失败：{lectureReport.last_error || '未知错误'}。可点击上方「重新生成」重试。
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 生成结果 */}
+                  {lectureReport?.generation_status === 'done' && (
+                    <div className="space-y-3">
+                      {(lectureReport.blocks ?? []).map(block => {
+                        const c = block.content || {};
+                        if (block.block_type === 'overview') {
+                          return (
+                            <div key={block.id} className="bg-white rounded-xl border border-gray-100 p-4">
+                              <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                                <ClipboardList size={14} className="text-amber-600" />班级总体概览
+                              </h3>
+                              {c.class_summary && <p className="text-sm text-gray-600 leading-relaxed mb-3">{c.class_summary}</p>}
+                              <div className="grid sm:grid-cols-3 gap-3">
+                                <LectureList title="亮点" items={c.strengths} color="green" />
+                                <LectureList title="共性问题" items={c.common_issues} color="red" />
+                                <LectureList title="讲评重点" items={c.priority_topics} color="amber" />
+                              </div>
+                            </div>
+                          );
+                        }
+                        const ss = c.score_summary || {};
+                        return (
+                          <div key={block.id} className="bg-white rounded-xl border border-gray-100 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <h3 className="text-sm font-semibold text-gray-700">{block.title || c.dimension_name || '维度分析'}</h3>
+                              <span className="text-xs text-gray-400">
+                                均分 {typeof ss.average === 'number' ? ss.average : '—'} · 低分 {ss.low_score_count ?? 0} 人
+                              </span>
+                            </div>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <LectureList title="典型问题" items={c.common_problems} color="red" />
+                              <LectureList title="讲评要点" items={c.teacher_talking_points} color="amber" />
+                            </div>
+                            {(c.example_quotes ?? []).length > 0 && (
+                              <div className="mt-3">
+                                <p className="text-xs font-semibold text-gray-500 mb-1">学生原话样例</p>
+                                <div className="space-y-1">
+                                  {(c.example_quotes ?? []).map((q: string, i: number) => (
+                                    <p key={i} className="text-xs text-gray-500 bg-gray-50 rounded px-2 py-1 italic">“{q}”</p>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <p className="text-[11px] text-gray-400 text-center">AI 生成的讲评草稿，仅供参考；报告编辑/推荐题/学生补救见后续期。</p>
+                    </div>
+                  )}
                 </div>
               );
             })()}

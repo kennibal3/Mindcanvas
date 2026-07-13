@@ -413,6 +413,8 @@ func main() {
 		assignments.POST("/:aid/roster/import", tokenHandler.ImportRosterCSV)
 		assignments.POST("/:aid/roster/sync", tokenHandler.SyncRosterFromClassroom)
 		assignments.DELETE("/:aid/roster/:rid", tokenHandler.DeleteRosterEntry)
+		assignments.POST("/:aid/lecture/analyze", assignmentHandler.LectureAnalyze)
+		assignments.GET("/:aid/lecture/report", assignmentHandler.GetLectureReport)
 	}
 
 	// ===== Chat养成对话路由（仅chat_enabled用户可访问）=====
