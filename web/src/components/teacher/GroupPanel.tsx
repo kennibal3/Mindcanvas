@@ -36,7 +36,7 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
   const loadGroups = useCallback(async () => {
     setLoading(true)
     try {
-      setGroups(await listGroups(roomId))
+      setGroups((await listGroups(roomId)) ?? [])
     } catch (e) {
       console.error('[GroupPanel]', e)
     } finally {
@@ -62,7 +62,7 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
     try {
       const result = await autoGroup(roomId, autoMode, autoN)
       window.clearTimeout(timeoutId)
-      setGroups(result.groups.map(g => ({
+      setGroups((result.groups ?? []).map(g => ({
         ...g, room_id: roomId, leader_uuid: '', created_at: '', updated_at: '',
       })))
       setShowAutoModal(false)
@@ -160,7 +160,7 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
               <div className="flex items-center gap-2 px-3 py-2">
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
                 <span className="text-sm font-medium text-gray-800 flex-1 truncate">{group.name}</span>
-                <span className="text-xs text-gray-400">{group.members.length}人</span>
+                <span className="text-xs text-gray-400">{(group.members ?? []).length}人</span>
                 <button onClick={() => setExpandedId(expandedId === group.id ? null : group.id)}
                   className="p-0.5 text-gray-400 hover:text-gray-600">
                   {expandedId === group.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -172,9 +172,9 @@ export const GroupPanel: React.FC<GroupPanelProps> = ({ roomId }) => {
               </div>
               {expandedId === group.id && (
                 <div className="border-t border-gray-100 px-3 pt-2 pb-3 space-y-1">
-                  {group.members.length === 0 ? (
+                  {(group.members ?? []).length === 0 ? (
                     <p className="text-xs text-gray-400">暂无成员</p>
-                  ) : group.members.map(uuid => {
+                  ) : (group.members ?? []).map(uuid => {
                     const isLeader = group.leader_uuid === uuid
                     return (
                       <div key={uuid} className="flex items-center gap-1.5 text-xs text-gray-700">

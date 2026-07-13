@@ -71,8 +71,8 @@ const FlowController = ({
       const res = await activateFlow(roomId, flow.id);
       setFlow(res.flow);
       // 应用第一个节点的画布模式
-      if (res.flow.nodes[0]) {
-        onEntryModeChange?.(res.flow.nodes[0].entryMode);
+      if ((res.flow.nodes ?? [])[0]) {
+        onEntryModeChange?.((res.flow.nodes ?? [])[0].entryMode);
       }
     } catch (err: any) {
       setError(err.message);
@@ -93,7 +93,7 @@ const FlowController = ({
       setFlow(res.flow);
 
       // 应用新节点的画布模式
-      const newNode = res.flow.nodes[res.flow.current_node_index];
+      const newNode = (res.flow.nodes ?? [])[res.flow.current_node_index];
       if (newNode) {
         onEntryModeChange?.(newNode.entryMode);
 
@@ -160,10 +160,10 @@ const FlowController = ({
     );
   }
 
-  const currentNode: FlowNode | undefined = flow.nodes[flow.current_node_index];
+  const currentNode: FlowNode | undefined = (flow.nodes ?? [])[flow.current_node_index];
   const isActive = flow.status === 'active';
   const isFinished = flow.status === 'finished';
-  const totalDuration = flow.nodes.reduce((s, n) => s + n.duration, 0);
+  const totalDuration = (flow.nodes ?? []).reduce((s, n) => s + n.duration, 0);
 
   return (
     <div className="space-y-3">
@@ -173,7 +173,7 @@ const FlowController = ({
           <p className="text-xs font-medium text-gray-700 truncate max-w-[160px]">{flow.title}</p>
           <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
             <Clock size={10} />
-            {flow.nodes.length}节点 · {totalDuration}分钟
+            {(flow.nodes ?? []).length}节点 · {totalDuration}分钟
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -213,7 +213,7 @@ const FlowController = ({
         </span>
         {isActive && (
           <span className="text-xs text-gray-400">
-            {flow.current_node_index + 1} / {flow.nodes.length}
+            {flow.current_node_index + 1} / {(flow.nodes ?? []).length}
           </span>
         )}
       </div>
@@ -232,9 +232,9 @@ const FlowController = ({
       )}
 
       {/* 节点列表（可视化进度） */}
-      {flow.nodes.length > 0 && (
+      {(flow.nodes ?? []).length > 0 && (
         <div className="space-y-1 max-h-48 overflow-y-auto">
-          {flow.nodes.map((node, idx) => {
+          {(flow.nodes ?? []).map((node, idx) => {
             const isCurrent = isActive && idx === flow.current_node_index;
             const isDone = isActive && idx < flow.current_node_index;
             const meta = FLOW_NODE_TYPES[node.type];
@@ -278,7 +278,7 @@ const FlowController = ({
         {flow.status === 'draft' && (
           <button
             onClick={handleActivate}
-            disabled={!!actionLoading || flow.nodes.length === 0}
+            disabled={!!actionLoading || (flow.nodes ?? []).length === 0}
             className="w-full btn-primary text-xs py-2 flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {actionLoading === 'activate'
@@ -301,7 +301,7 @@ const FlowController = ({
               上一节
             </button>
 
-            {flow.current_node_index < flow.nodes.length - 1 ? (
+            {flow.current_node_index < (flow.nodes ?? []).length - 1 ? (
               <button
                 onClick={() => handleAdvance('next')}
                 disabled={!!actionLoading}
