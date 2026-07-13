@@ -210,7 +210,7 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
 
           {/* 空状态 */}
           {!loading && !error && data &&
-            data.components.length === 0 && data.top_students.length === 0 && (
+            (data.components?.length ?? 0) === 0 && (data.top_students?.length ?? 0) === 0 && (
             <div className="text-center py-4 space-y-2">
               <Activity size={28} className="mx-auto text-gray-200" />
               <p className="text-xs text-gray-400">暂无互动数据，开启组件后即可查看</p>
@@ -228,7 +228,7 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
           )}
 
           {/* 有数据展示 */}
-          {data && (data.components.length > 0 || data.top_students.length > 0) && (
+          {data && ((data.components?.length ?? 0) > 0 || (data.top_students?.length ?? 0) > 0) && (
             <>
               {/* 在线人数 */}
               <div className="grid grid-cols-2 gap-2">
@@ -248,13 +248,13 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
               </div>
 
               {/* 组件参与率 */}
-              {data.components.length > 0 && (
+              {(data.components?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1">
                     <TrendingUp size={12} className="text-amber-600" />组件参与率
                   </div>
                   <div className="space-y-2">
-                    {data.components.map(comp => (
+                    {(data.components ?? []).map(comp => (
                       <div key={comp?.element_id ?? Math.random()}>
                         <div className="flex justify-between text-xs text-gray-600 mb-0.5">
                           <span className="flex items-center gap-1">
@@ -283,7 +283,7 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
               )}
 
               {/* 未提交名单 */}
-              {data.unsubmitted.length > 0 && (
+              {(data.unsubmitted?.length ?? 0) > 0 && (
                 <div>
                   <button
                     onClick={() => setShowUnsubmitted(!showUnsubmitted)}
@@ -291,13 +291,13 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
                   >
                     <span className="flex items-center gap-1">
                       <XCircle size={12} className="text-red-400" />
-                      未提交（{data.unsubmitted.length}人）
+                      未提交（{(data.unsubmitted?.length ?? 0)}人）
                     </span>
                     {showUnsubmitted ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   </button>
                   {showUnsubmitted && (
                     <div className="flex flex-wrap gap-1">
-                      {data.unsubmitted.map(s => (
+                      {(data.unsubmitted ?? []).map(s => (
                         <span key={s?.uuid ?? Math.random()}
                           className="text-xs bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded-full">
                           {s?.nickname || '匿名'}
@@ -309,13 +309,13 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
               )}
 
               {/* 问答正确率 */}
-              {data.qa_stats.length > 0 && (
+              {(data.qa_stats?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1">
                     <CheckCircle size={12} className="text-green-400" />问答正确率
                   </div>
                   <div className="space-y-1.5">
-                    {data.qa_stats.map(qa => (
+                    {(data.qa_stats ?? []).map(qa => (
                       <div key={qa?.element_id ?? Math.random()} className="flex items-center justify-between text-xs">
                         <span className="text-gray-600 truncate max-w-[130px]">{qa?.title || ''}</span>
                         <span className={`font-medium flex-shrink-0 ${
@@ -333,11 +333,11 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
               )}
 
               {/* 高频词 */}
-              {data.top_words.length > 0 && (
+              {(data.top_words?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-1.5">🔤 高频词 Top10</div>
                   <div className="flex flex-wrap gap-1">
-                    {data.top_words.map((w, i) => (
+                    {(data.top_words ?? []).map((w, i) => (
                       <span key={w?.word ?? i}
                         className="text-xs px-1.5 py-0.5 rounded-full border"
                         style={{
@@ -356,11 +356,11 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
               )}
 
               {/* 小组活跃度 */}
-              {data.group_activity.length > 0 && (
+              {(data.group_activity?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-1.5">👥 小组活跃度</div>
                   <div className="space-y-1.5">
-                    {data.group_activity.map(g => {
+                    {(data.group_activity ?? []).map(g => {
                       const maxCount = data.group_activity[0]?.action_count || 1;
                       const rate     = (g?.action_count ?? 0) / maxCount;
                       return (
@@ -381,13 +381,13 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
               )}
 
               {/* 活跃学生 Top5 */}
-              {data.top_students.length > 0 && (
+              {(data.top_students?.length ?? 0) > 0 && (
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1">
                     <Star size={12} className="text-amber-400" />活跃学生 Top5
                   </div>
                   <div className="space-y-1">
-                    {data.top_students.map((s, i) => (
+                    {(data.top_students ?? []).map((s, i) => (
                       <div key={s?.uuid ?? i} className="flex items-center gap-2 text-xs">
                         <span className={`w-4 text-center font-bold flex-shrink-0 ${
                           i === 0 ? 'text-amber-500' : i === 1 ? 'text-gray-400'

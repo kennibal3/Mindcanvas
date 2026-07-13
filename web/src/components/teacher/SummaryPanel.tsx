@@ -165,7 +165,7 @@ const SummaryPanel: React.FC<Props> = ({ roomId }) => {
 
   // ===== 词云 Top5 =====
   const getTopWords = (wc: WordCloudSummary) =>
-    Object.entries(wc.words)
+    Object.entries(wc.words || {})
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([w]) => w);
@@ -347,7 +347,7 @@ const SummaryPanel: React.FC<Props> = ({ roomId }) => {
                     {summary.polls.map((poll, idx) => (
                       <div key={poll.element_id || idx} className="bg-gray-50 rounded-lg p-3">
                         <p className="text-xs font-medium text-gray-700 mb-2">{poll.question}</p>
-                        {poll.options.map(opt => {
+                        {(poll.options || []).map(opt => {
                           const cnt = poll.votes?.[opt] || 0;
                           const pct = poll.total_voters > 0
                             ? Math.round(cnt * 100 / poll.total_voters)
@@ -401,7 +401,7 @@ const SummaryPanel: React.FC<Props> = ({ roomId }) => {
                               </span>
                             )}
                           </div>
-                          {qa.options.map((opt, j) => {
+                          {(qa.options || []).map((opt, j) => {
                             const cnt = qa.answer_counts?.[opt] || 0;
                             const pct = qa.total_answers > 0
                               ? Math.round(cnt * 100 / qa.total_answers)
@@ -489,7 +489,7 @@ const SummaryPanel: React.FC<Props> = ({ roomId }) => {
                           </span>
                         </div>
                         <div className="space-y-1">
-                          {dz.submissions.slice(0, 3).map((sub, si) => (
+                          {(dz.submissions || []).slice(0, 3).map((sub, si) => (
                             <div
                               key={si}
                               className="flex items-start gap-2 text-xs text-gray-600 bg-white rounded-lg px-2 py-1.5"
@@ -501,9 +501,9 @@ const SummaryPanel: React.FC<Props> = ({ roomId }) => {
                                   ? '[图片]'
                                   : sub.content_type === 'file'
                                   ? '[文件]'
-                                  : sub.content.length > 30
-                                  ? sub.content.slice(0, 30) + '...'
-                                  : sub.content}
+                                  : (sub.content ?? '').length > 30
+                                  ? (sub.content ?? '').slice(0, 30) + '...'
+                                  : (sub.content ?? '')}
                               </span>
                               {sub.likes > 0 && (
                                 <span className="text-red-400 flex-shrink-0">❤️{sub.likes}</span>
