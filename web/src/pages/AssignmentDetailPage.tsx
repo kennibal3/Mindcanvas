@@ -9,6 +9,7 @@ import {
   ArrowLeft, Upload, FileText, Trash2, RefreshCw,
   CheckCircle, AlertCircle, Loader2, Plus, Users,
   Star, Eye, Download, Key, Copy, ClipboardList, Sparkles,
+  ChevronUp, ChevronDown, Pencil, Check, X,
 } from 'lucide-react';
 import type {
   Assignment, AssignmentMaterial, AssignmentRubric,
@@ -25,8 +26,10 @@ import {
   reparseMaterial, uploadMaterialFile, generateRubric, getRubric,
   confirmRubric, listSubmissions, updateAssignmentStatus,
   startLectureAnalyze, getLectureReport,
+  updateLectureBlock, deleteLectureBlock, regenerateLectureBlock,
+  getLectureJob, confirmLectureReport,
 } from '@/utils/assignmentApi';
-import type { LectureReport } from '@/utils/assignmentApi';
+import type { LectureReport, LectureReportBlock } from '@/utils/assignmentApi';
 import {
   generateTokens, listTokens, exportTokensCSV,
   getRoster, addRosterEntry, importRosterCSVFile,
@@ -136,6 +139,325 @@ const LectureList: React.FC<{ title: string; items?: string[]; color: 'green' | 
           ))}
         </ul>
       )}
+    </div>
+  );
+};
+
+// ===== 讲评报告编辑器（REQ-039 第三期 3a）=====
+// 块编辑（标题+每行一条要点）/ 上下移动 / 删除 / 单块重新生成（轮询 job）/ 逐块确认 / 整报告确认
+const LectureReportEditor: React.FC<{
+  aid: string;
+  report: LectureReport | null;
+  reload: () => Promise<LectureReport | null>;
+  toast: (msg: string) => void;
+}> = ({ aid, report, reload, toast }) => {
+  const [busyId, setBusyId] = useState<string | null>(null);     // 正在重新生成的块
+  const [actionBusy, setActionBusy] = useState(false);           // 其他操作互斥
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const regenPollRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (regenPollRef.current) window.clearInterval(regenPollRef.current);
+  }, []);
+
+  if (!report || report.generation_status !== 'done') {
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+        {report?.generation_status === 'analyzing'
+          ? <span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin text-amber-500" />讲评分析生成中…完成后即可在此编辑</span>
+          : report?.generation_status === 'failed'
+            ? `上次生成失败：${report.last_error || '未知错误'}。请到「班级分析」页签重新生成。`
+            : '请先到「班级分析」页签点击「一键生成讲评分析」，生成后即可在此编辑报告'}
+      </div>
+    );
+  }
+
+  const blocks = report.blocks ?? [];
+  const confirmed = report.status === 'confirmed';
+  const toList = (s: string) => (s || '').split('\n').map(x => x.trim()).filter(Boolean);
+
+  const startEdit = (block: LectureReportBlock) => {
+    const c = block.content ?? {};
+    setEditingId(block.id);
+    setDraftTitle(block.title || '');
+    if (block.block_type === 'overview') {
+      setDrafts({
+        class_summary: c.class_summary ?? '',
+        strengths: (c.strengths ?? []).join('\n'),
+        common_issues: (c.common_issues ?? []).join('\n'),
+        priority_topics: (c.priority_topics ?? []).join('\n'),
+      });
+    } else {
+      setDrafts({
+        common_problems: (c.common_problems ?? []).join('\n'),
+        teacher_talking_points: (c.teacher_talking_points ?? []).join('\n'),
+        example_quotes: (c.example_quotes ?? []).join('\n'),
+      });
+    }
+  };
+
+  const saveEdit = async (block: LectureReportBlock) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      const c = block.content ?? {};
+      let content: any;
+      if (block.block_type === 'overview') {
+        content = {
+          ...c,
+          class_summary: (drafts.class_summary ?? '').trim(),
+          strengths: toList(drafts.strengths),
+          common_issues: toList(drafts.common_issues),
+          priority_topics: toList(drafts.priority_topics),
+        };
+      } else {
+        content = {
+          ...c,
+          dimension_name: draftTitle.trim() || c.dimension_name,
+          common_problems: toList(drafts.common_problems),
+          teacher_talking_points: toList(drafts.teacher_talking_points),
+          example_quotes: toList(drafts.example_quotes),
+        };
+      }
+      await updateLectureBlock(aid, block.id, { title: draftTitle.trim(), content });
+      setEditingId(null);
+      await reload();
+      toast('已保存');
+    } catch (e: any) {
+      toast(e?.message || '保存失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const doMove = async (block: LectureReportBlock, dir: 'up' | 'down') => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await updateLectureBlock(aid, block.id, { move: dir });
+      await reload();
+    } catch (e: any) {
+      toast(e?.message || '移动失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const doConfirmBlock = async (block: LectureReportBlock) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await updateLectureBlock(aid, block.id, { confirm: !block.teacher_confirmed });
+      await reload();
+    } catch (e: any) {
+      toast(e?.message || '操作失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const doDelete = async (block: LectureReportBlock) => {
+    if (actionBusy) return;
+    if (!window.confirm(`确定删除「${block.title || '该内容块'}」？删除后可通过「重新生成讲评分析」整体找回。`)) return;
+    setActionBusy(true);
+    try {
+      await deleteLectureBlock(aid, block.id);
+      await reload();
+      toast('已删除');
+    } catch (e: any) {
+      toast(e?.message || '删除失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const doRegen = async (block: LectureReportBlock) => {
+    if (busyId || actionBusy) return;
+    setBusyId(block.id);
+    try {
+      const { job_id } = await regenerateLectureBlock(aid, block.id);
+      regenPollRef.current = window.setInterval(async () => {
+        try {
+          const { status, last_error } = await getLectureJob(aid, job_id);
+          if (status === 'done' || status === 'failed') {
+            if (regenPollRef.current) window.clearInterval(regenPollRef.current);
+            regenPollRef.current = null;
+            setBusyId(null);
+            await reload();
+            toast(status === 'done' ? '该内容块已重新生成' : `重新生成失败：${last_error || '请重试'}`);
+          }
+        } catch { /* 网络抖动时继续轮询 */ }
+      }, 2500);
+    } catch (e: any) {
+      setBusyId(null);
+      toast(e?.message || '发起重新生成失败');
+    }
+  };
+
+  const doConfirmReport = async () => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await confirmLectureReport(aid);
+      await reload();
+      toast('整份报告已确认');
+    } catch (e: any) {
+      toast(e?.message || '确认失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const iconBtn = 'p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors';
+
+  return (
+    <div className="space-y-3">
+      {/* 报告状态条 */}
+      <div className={`rounded-xl border p-3 flex items-center justify-between gap-3 ${
+        confirmed ? 'bg-green-50 border-green-100' : 'bg-amber-50 border-amber-100'}`}>
+        <p className={`text-xs leading-relaxed ${confirmed ? 'text-green-700' : 'text-amber-800'}`}>
+          {confirmed
+            ? '整份报告已确认，可进入后续导出环节。修改任何内容块后需重新确认。'
+            : '逐块检查并编辑下方内容；全部满意后点「确认整份报告」。已确认的报告才能导出。'}
+        </p>
+        {!confirmed && (
+          <button
+            onClick={doConfirmReport}
+            disabled={actionBusy || !!busyId || blocks.length === 0}
+            className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+          >
+            <CheckCircle size={13} />确认整份报告
+          </button>
+        )}
+      </div>
+
+      {blocks.length === 0 && (
+        <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+          报告暂无内容块，请到「班级分析」页签重新生成讲评分析
+        </div>
+      )}
+
+      {blocks.map((block, bi) => {
+        const c = block.content ?? {};
+        const isEditing = editingId === block.id;
+        const isRegen = busyId === block.id;
+        const isOverview = block.block_type === 'overview';
+        return (
+          <div key={block.id} className={`bg-white rounded-xl border p-4 ${
+            block.teacher_confirmed ? 'border-green-200' : 'border-gray-100'}`}>
+            {/* 块头：标题 + 操作按钮 */}
+            <div className="flex items-center gap-2 mb-2">
+              {isEditing ? (
+                <input
+                  value={draftTitle}
+                  onChange={e => setDraftTitle(e.target.value)}
+                  className="flex-1 text-sm font-semibold text-gray-700 border border-amber-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                />
+              ) : (
+                <h3 className="flex-1 text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                  {isOverview && <ClipboardList size={14} className="text-amber-600" />}
+                  {block.title || (isOverview ? '班级总体概览' : '维度分析')}
+                  {block.teacher_confirmed && (
+                    <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-normal">已确认</span>
+                  )}
+                </h3>
+              )}
+              {isEditing ? (
+                <>
+                  <button onClick={() => saveEdit(block)} disabled={actionBusy}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg text-white bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 transition-colors">
+                    <Check size={12} />保存
+                  </button>
+                  <button onClick={() => setEditingId(null)} disabled={actionBusy}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">
+                    <X size={12} />取消
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center gap-0.5">
+                  <button onClick={() => doMove(block, 'up')} disabled={actionBusy || !!busyId || bi === 0}
+                    className={iconBtn} title="上移"><ChevronUp size={15} /></button>
+                  <button onClick={() => doMove(block, 'down')} disabled={actionBusy || !!busyId || bi === blocks.length - 1}
+                    className={iconBtn} title="下移"><ChevronDown size={15} /></button>
+                  <button onClick={() => startEdit(block)} disabled={actionBusy || !!busyId}
+                    className={iconBtn} title="编辑"><Pencil size={14} /></button>
+                  <button onClick={() => doRegen(block)} disabled={actionBusy || !!busyId}
+                    className={iconBtn} title="用 AI 重新生成该块">
+                    {isRegen ? <Loader2 size={14} className="animate-spin text-amber-500" /> : <RefreshCw size={14} />}
+                  </button>
+                  <button onClick={() => doConfirmBlock(block)} disabled={actionBusy || !!busyId}
+                    className={`${iconBtn} ${block.teacher_confirmed ? 'text-green-500 hover:text-green-600' : ''}`}
+                    title={block.teacher_confirmed ? '取消确认' : '确认该块'}>
+                    <CheckCircle size={14} />
+                  </button>
+                  <button onClick={() => doDelete(block)} disabled={actionBusy || !!busyId}
+                    className={`${iconBtn} hover:text-red-500`} title="删除该块"><Trash2 size={14} /></button>
+                </div>
+              )}
+            </div>
+
+            {/* 重新生成中 */}
+            {isRegen && (
+              <p className="text-xs text-amber-600 mb-2 flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" />AI 正在重新生成该块，其余内容不受影响…
+              </p>
+            )}
+
+            {/* 块体：编辑态 / 只读态 */}
+            {isEditing ? (
+              <div className="space-y-2">
+                {isOverview && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1">班级小结</p>
+                    <textarea value={drafts.class_summary ?? ''} rows={3}
+                      onChange={e => setDrafts(d => ({ ...d, class_summary: e.target.value }))}
+                      className="w-full text-xs text-gray-600 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                  </div>
+                )}
+                {(isOverview
+                  ? [['strengths', '亮点'], ['common_issues', '共性问题'], ['priority_topics', '讲评重点']]
+                  : [['common_problems', '典型问题'], ['teacher_talking_points', '讲评要点'], ['example_quotes', '学生原话样例']]
+                ).map(([field, label]) => (
+                  <div key={field}>
+                    <p className="text-xs font-semibold text-gray-500 mb-1">{label}（每行一条）</p>
+                    <textarea value={drafts[field] ?? ''} rows={3}
+                      onChange={e => setDrafts(d => ({ ...d, [field]: e.target.value }))}
+                      className="w-full text-xs text-gray-600 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+                  </div>
+                ))}
+              </div>
+            ) : isOverview ? (
+              <>
+                {c.class_summary && <p className="text-sm text-gray-600 leading-relaxed mb-3">{c.class_summary}</p>}
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <LectureList title="亮点" items={c.strengths} color="green" />
+                  <LectureList title="共性问题" items={c.common_issues} color="red" />
+                  <LectureList title="讲评重点" items={c.priority_topics} color="amber" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <LectureList title="典型问题" items={c.common_problems} color="red" />
+                  <LectureList title="讲评要点" items={c.teacher_talking_points} color="amber" />
+                </div>
+                {(c.example_quotes ?? []).length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold text-gray-500 mb-1">学生原话样例</p>
+                    <div className="space-y-1">
+                      {(c.example_quotes ?? []).map((q: string, i: number) => (
+                        <p key={i} className="text-xs text-gray-500 bg-gray-50 rounded px-2 py-1 italic">“{q}”</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -1473,19 +1795,24 @@ const AssignmentDetailPage: React.FC = () => {
                           </div>
                         );
                       })}
-                      <p className="text-[11px] text-gray-400 text-center">AI 生成的讲评草稿，仅供参考；报告编辑/推荐题/学生补救见后续期。</p>
+                      <p className="text-[11px] text-gray-400 text-center">AI 生成的讲评草稿，仅供参考；可切到「报告编辑」页签逐块修改、重新生成与确认。</p>
                     </div>
                   )}
                 </div>
               );
             })()}
 
-            {/* --- 其余三页签占位 --- */}
+            {/* --- 报告编辑（REQ-039 第三期 3a）--- */}
             {lectureSubTab === 'report' && (
-              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
-                生成讲评分析后，可在此编辑报告内容块（第三期）
-              </div>
+              <LectureReportEditor
+                aid={aid || ''}
+                report={lectureReport}
+                reload={loadLectureReport}
+                toast={showToast}
+              />
             )}
+
+            {/* --- 其余两页签占位 --- */}
             {lectureSubTab === 'recommend' && (
               <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
                 基于讲评重点生成推荐练习题，支持采用/修改/发布为新作业（第四期）

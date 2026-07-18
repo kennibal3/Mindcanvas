@@ -415,6 +415,11 @@ func main() {
 		assignments.DELETE("/:aid/roster/:rid", tokenHandler.DeleteRosterEntry)
 		assignments.POST("/:aid/lecture/analyze", assignmentHandler.LectureAnalyze)
 		assignments.GET("/:aid/lecture/report", assignmentHandler.GetLectureReport)
+		assignments.PATCH("/:aid/lecture/blocks/:bid", assignmentHandler.UpdateLectureBlock)
+		assignments.DELETE("/:aid/lecture/blocks/:bid", assignmentHandler.DeleteLectureBlock)
+		assignments.POST("/:aid/lecture/blocks/:bid/regenerate", assignmentHandler.RegenerateLectureBlock)
+		assignments.GET("/:aid/lecture/jobs/:jid", assignmentHandler.GetLectureJob)
+		assignments.POST("/:aid/lecture/confirm", assignmentHandler.ConfirmLectureReport)
 	}
 
 	// ===== Chat养成对话路由（仅chat_enabled用户可访问）=====
