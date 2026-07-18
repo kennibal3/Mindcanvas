@@ -175,3 +175,42 @@ export async function startLectureAnalyze(aid: string): Promise<{
 export async function getLectureReport(aid: string): Promise<{ report: LectureReport | null }> {
   return req(`${BASE}/${aid}/lecture/report`);
 }
+
+// ===== 报告编辑（REQ-039 第三期 3a）=====
+
+// 更新内容块：字段均可选（title/content/move:'up'|'down'/confirm）
+export async function updateLectureBlock(aid: string, bid: string, data: {
+  title?: string;
+  content?: any;
+  move?: 'up' | 'down';
+  confirm?: boolean;
+}): Promise<{ message: string }> {
+  return req(`${BASE}/${aid}/lecture/blocks/${bid}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// 删除内容块
+export async function deleteLectureBlock(aid: string, bid: string): Promise<{ message: string }> {
+  return req(`${BASE}/${aid}/lecture/blocks/${bid}`, { method: 'DELETE' });
+}
+
+// 单块重新生成（异步，返回 job_id 供轮询）
+export async function regenerateLectureBlock(aid: string, bid: string): Promise<{
+  job_id: string; status: string; message?: string;
+}> {
+  return req(`${BASE}/${aid}/lecture/blocks/${bid}/regenerate`, { method: 'POST' });
+}
+
+// 查询单块重生成任务状态
+export async function getLectureJob(aid: string, jid: string): Promise<{
+  status: 'queued' | 'running' | 'done' | 'failed'; last_error: string;
+}> {
+  return req(`${BASE}/${aid}/lecture/jobs/${jid}`);
+}
+
+// 确认整份报告（全部块置已确认，报告 status→confirmed）
+export async function confirmLectureReport(aid: string): Promise<{ message: string }> {
+  return req(`${BASE}/${aid}/lecture/confirm`, { method: 'POST' });
+}

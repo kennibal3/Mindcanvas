@@ -63,7 +63,8 @@ func (s *AssignmentService) EnqueueLectureAnalyze(ctx context.Context, assignmen
 	} else {
 		if _, err := s.db.ExecContext(ctx,
 			`UPDATE assignment_lecture_reports
-			   SET generation_status='analyzing', last_error='', updated_at=NOW()
+			   SET generation_status='analyzing', last_error='',
+			       status='draft', confirmed_at=NULL, updated_at=NOW()
 			 WHERE id=$1`, reportID); err != nil {
 			return "", fmt.Errorf("reset report: %w", err)
 		}
