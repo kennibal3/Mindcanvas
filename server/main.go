@@ -420,6 +420,11 @@ func main() {
 		assignments.POST("/:aid/lecture/blocks/:bid/regenerate", assignmentHandler.RegenerateLectureBlock)
 		assignments.GET("/:aid/lecture/jobs/:jid", assignmentHandler.GetLectureJob)
 		assignments.POST("/:aid/lecture/confirm", assignmentHandler.ConfirmLectureReport)
+		assignments.POST("/:aid/recommendations/generate", assignmentHandler.GenerateRecommendations)
+		assignments.GET("/:aid/recommendations/jobs/:jid", assignmentHandler.GetRecommendationJob)
+		assignments.GET("/:aid/recommendations", assignmentHandler.ListRecommendations)
+		assignments.PATCH("/:aid/recommendations/:rid", assignmentHandler.UpdateRecommendation)
+		assignments.POST("/:aid/recommendations/publish", assignmentHandler.PublishRecommendations)
 	}
 
 	// ===== Chat养成对话路由（仅chat_enabled用户可访问）=====

@@ -214,3 +214,78 @@ export async function getLectureJob(aid: string, jid: string): Promise<{
 export async function confirmLectureReport(aid: string): Promise<{ message: string }> {
   return req(`${BASE}/${aid}/lecture/confirm`, { method: 'POST' });
 }
+
+// ===== 推荐练习（REQ-039 第三期 3b）=====
+
+export interface RecommendedQuestion {
+  id: string;
+  assignment_id: string;
+  report_id: string;
+  source_type: string;
+  target_type: string;
+  knowledge_points: string[] | null;
+  difficulty: string;
+  question_type: string;
+  content: { stem?: string; options?: string[] } | null;
+  answer: { answer?: string } | null;
+  explanation: string;
+  recommendation_reason: string;
+  teacher_action: 'pending' | 'accepted' | 'edited' | 'rejected' | 'saved' | 'published';
+  final_content: { stem?: string; options?: string[] } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PublishRecommendationsResult {
+  assignment_id: string;
+  title: string;
+  question_count: number;
+  roster_count: number;
+  token_count: number;
+}
+
+// 生成推荐题（异步，返回 job_id 供轮询；要求报告已确认）
+export async function generateRecommendations(aid: string): Promise<{
+  job_id: string; status: string; message?: string;
+}> {
+  return req(`${BASE}/${aid}/recommendations/generate`, { method: 'POST' });
+}
+
+// 查询推荐题生成任务状态
+export async function getRecommendationJob(aid: string, jid: string): Promise<{
+  status: 'queued' | 'running' | 'done' | 'failed'; last_error: string;
+}> {
+  return req(`${BASE}/${aid}/recommendations/jobs/${jid}`);
+}
+
+// 列出推荐题
+export async function listRecommendations(aid: string): Promise<{
+  questions: RecommendedQuestion[]; total: number;
+}> {
+  return req(`${BASE}/${aid}/recommendations`);
+}
+
+// 审核推荐题：action=accept|reject|pending，或带 content/answer/explanation 表示修改
+export async function updateRecommendation(aid: string, rid: string, data: {
+  action?: 'accept' | 'reject' | 'pending';
+  content?: any;
+  answer?: any;
+  explanation?: string;
+}): Promise<{ message: string }> {
+  return req(`${BASE}/${aid}/recommendations/${rid}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// 发布为新作业（question_ids 为空则发布全部已采用题）
+export async function publishRecommendations(aid: string, data?: {
+  question_ids?: string[];
+  title?: string;
+  expire_days?: number;
+}): Promise<{ result: PublishRecommendationsResult; message: string }> {
+  return req(`${BASE}/${aid}/recommendations/publish`, {
+    method: 'POST',
+    body: JSON.stringify(data || {}),
+  });
+}

@@ -28,8 +28,10 @@ import {
   startLectureAnalyze, getLectureReport,
   updateLectureBlock, deleteLectureBlock, regenerateLectureBlock,
   getLectureJob, confirmLectureReport,
+  generateRecommendations, getRecommendationJob, listRecommendations,
+  updateRecommendation, publishRecommendations,
 } from '@/utils/assignmentApi';
-import type { LectureReport, LectureReportBlock } from '@/utils/assignmentApi';
+import type { LectureReport, LectureReportBlock, RecommendedQuestion } from '@/utils/assignmentApi';
 import {
   generateTokens, listTokens, exportTokensCSV,
   getRoster, addRosterEntry, importRosterCSVFile,
@@ -458,6 +460,320 @@ const LectureReportEditor: React.FC<{
           </div>
         );
       })}
+    </div>
+  );
+};
+
+// ===== 推荐练习面板（REQ-039 第三期 3b）=====
+// 生成（轮询 job）/ 题卡展示 / 采用·拒绝·修改 / 发布为新作业（复用花名册+每人专属码）
+const RecommendationPanel: React.FC<{
+  aid: string;
+  reportConfirmed: boolean;
+  toast: (msg: string) => void;
+}> = ({ aid, reportConfirmed, toast }) => {
+  const navigate = useNavigate();
+  const [questions, setQuestions] = useState<RecommendedQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ stem: '', options: '', answer: '', explanation: '' });
+  const [publishing, setPublishing] = useState(false);
+  const pollRef = useRef<number | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await listRecommendations(aid);
+      setQuestions(res.questions ?? []);
+    } catch {
+      setQuestions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [aid]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => () => {
+    if (pollRef.current) window.clearInterval(pollRef.current);
+  }, []);
+
+  const doGenerate = async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const res = await generateRecommendations(aid);
+      toast('正在生成推荐练习题…');
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      pollRef.current = window.setInterval(async () => {
+        try {
+          const job = await getRecommendationJob(aid, res.job_id);
+          if (job.status === 'done' || job.status === 'failed') {
+            if (pollRef.current) window.clearInterval(pollRef.current);
+            pollRef.current = null;
+            setGenerating(false);
+            if (job.status === 'failed') toast(`生成失败：${job.last_error || '未知错误'}`);
+            else toast('推荐练习题已生成');
+            await load();
+          }
+        } catch {
+          if (pollRef.current) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+          setGenerating(false);
+        }
+      }, 2500);
+    } catch (e: any) {
+      setGenerating(false);
+      toast(e?.message || '生成失败');
+    }
+  };
+
+  const stemOf = (q: RecommendedQuestion) =>
+    (q.final_content?.stem ?? q.content?.stem ?? '').toString();
+  const optionsOf = (q: RecommendedQuestion) =>
+    (q.final_content?.options ?? q.content?.options ?? []) as string[];
+
+  const startEdit = (q: RecommendedQuestion) => {
+    setEditingId(q.id);
+    setDraft({
+      stem: stemOf(q),
+      options: (optionsOf(q) ?? []).join('\n'),
+      answer: q.answer?.answer ?? '',
+      explanation: q.explanation ?? '',
+    });
+  };
+
+  const saveEdit = async (q: RecommendedQuestion) => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await updateRecommendation(aid, q.id, {
+        content: {
+          stem: draft.stem.trim(),
+          options: draft.options.split('\n').map(x => x.trim()).filter(Boolean),
+        },
+        answer: { answer: draft.answer.trim() },
+        explanation: draft.explanation.trim(),
+      });
+      setEditingId(null);
+      await load();
+      toast('已保存（该题已标记为采用）');
+    } catch (e: any) {
+      toast(e?.message || '保存失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const doAction = async (q: RecommendedQuestion, action: 'accept' | 'reject' | 'pending') => {
+    if (actionBusy) return;
+    setActionBusy(true);
+    try {
+      await updateRecommendation(aid, q.id, { action });
+      await load();
+    } catch (e: any) {
+      toast(e?.message || '操作失败');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const acceptedCount = questions.filter(
+    q => q.teacher_action === 'accepted' || q.teacher_action === 'edited',
+  ).length;
+
+  const doPublish = async () => {
+    if (publishing || acceptedCount === 0) return;
+    if (!window.confirm(
+      `将 ${acceptedCount} 道已采用的题目发布为一份新作业？\n\n新作业为草稿状态，会自动复制本次花名册并给每位学生生成专属作业码，你确认后再开放提交。`,
+    )) return;
+    setPublishing(true);
+    try {
+      const res = await publishRecommendations(aid);
+      const r = res.result;
+      toast(`已创建新作业「${r.title}」：${r.question_count} 题 / ${r.roster_count} 人 / ${r.token_count} 个作业码`);
+      setTimeout(() => navigate(`/assignments/${r.assignment_id}`), 1200);
+    } catch (e: any) {
+      toast(e?.message || '发布失败');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  if (!reportConfirmed) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+        推荐练习基于已确认的讲评报告生成。<br />
+        请先到「报告编辑」页签点击「确认整份报告」。
+      </div>
+    );
+  }
+
+  const actionBadge = (a: string) => {
+    const map: Record<string, { text: string; cls: string }> = {
+      pending:   { text: '待审核', cls: 'bg-gray-100 text-gray-500' },
+      accepted:  { text: '已采用', cls: 'bg-green-100 text-green-700' },
+      edited:    { text: '已修改', cls: 'bg-green-100 text-green-700' },
+      rejected:  { text: '已拒绝', cls: 'bg-red-50 text-red-500' },
+      published: { text: '已发布', cls: 'bg-blue-100 text-blue-700' },
+      saved:     { text: '已保存', cls: 'bg-gray-100 text-gray-500' },
+    };
+    return map[a] || map.pending;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 顶部操作条 */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm text-gray-600">
+          共 <span className="font-semibold text-gray-800">{questions.length}</span> 道推荐题
+          {acceptedCount > 0 && <>，已采用 <span className="font-semibold text-green-600">{acceptedCount}</span> 道</>}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={doGenerate}
+            disabled={generating || actionBusy}
+            className="px-4 py-2 text-sm rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {generating
+              ? <><Loader2 size={14} className="animate-spin" />生成中…</>
+              : <><Sparkles size={14} />{questions.length > 0 ? '重新生成' : '一键生成推荐题'}</>}
+          </button>
+          <button
+            onClick={doPublish}
+            disabled={publishing || acceptedCount === 0}
+            className="px-4 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-40 inline-flex items-center gap-2"
+          >
+            {publishing
+              ? <><Loader2 size={14} className="animate-spin" />发布中…</>
+              : <><ClipboardList size={14} />发布为新作业</>}
+          </button>
+        </div>
+      </div>
+
+      {generating && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 inline-flex items-center gap-2 w-full">
+          <Loader2 size={16} className="animate-spin" />
+          AI 正在基于讲评报告出题，通常需要 20-60 秒，可以先做别的事。
+        </div>
+      )}
+
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">加载中…</div>
+      ) : questions.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+          还没有推荐题，点上面的「一键生成推荐题」开始。
+        </div>
+      ) : (
+        questions.map((q, idx) => {
+          const badge = actionBadge(q.teacher_action);
+          const editing = editingId === q.id;
+          const locked = q.teacher_action === 'published';
+          const options = optionsOf(q) ?? [];
+          return (
+            <div key={q.id} className="bg-white rounded-xl border border-gray-100 p-4">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-gray-800">第 {idx + 1} 题</span>
+                  {q.question_type && <span className="text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-500">{q.question_type}</span>}
+                  {q.difficulty && <span className="text-[11px] px-2 py-0.5 rounded bg-amber-50 text-amber-600">{q.difficulty}</span>}
+                  <span className={`text-[11px] px-2 py-0.5 rounded ${badge.cls}`}>{badge.text}</span>
+                </div>
+                {!locked && (
+                  <div className="flex gap-1 shrink-0">
+                    {!editing && (
+                      <>
+                        <button onClick={() => startEdit(q)} disabled={actionBusy}
+                          className="p-1.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-40" title="修改">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => doAction(q, q.teacher_action === 'rejected' ? 'pending' : 'reject')} disabled={actionBusy}
+                          className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 disabled:opacity-40" title="拒绝">
+                          <X size={14} />
+                        </button>
+                        <button onClick={() => doAction(q, 'accept')} disabled={actionBusy}
+                          className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600 disabled:opacity-40" title="采用">
+                          <Check size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {editing ? (
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-xs text-gray-500">题面</label>
+                    <textarea value={draft.stem} onChange={e => setDraft({ ...draft, stem: e.target.value })}
+                      rows={4} className="w-full text-sm border border-gray-200 rounded-lg p-2 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">选项（每行一个，非选择题留空）</label>
+                    <textarea value={draft.options} onChange={e => setDraft({ ...draft, options: e.target.value })}
+                      rows={3} className="w-full text-sm border border-gray-200 rounded-lg p-2 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">参考答案</label>
+                    <textarea value={draft.answer} onChange={e => setDraft({ ...draft, answer: e.target.value })}
+                      rows={2} className="w-full text-sm border border-gray-200 rounded-lg p-2 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">解析</label>
+                    <textarea value={draft.explanation} onChange={e => setDraft({ ...draft, explanation: e.target.value })}
+                      rows={3} className="w-full text-sm border border-gray-200 rounded-lg p-2 mt-1" />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setEditingId(null)} disabled={actionBusy}
+                      className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-500">取消</button>
+                    <button onClick={() => saveEdit(q)} disabled={actionBusy}
+                      className="px-3 py-1.5 text-sm rounded-lg bg-amber-500 text-white disabled:opacity-50">保存</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{stemOf(q) || '（题面为空）'}</p>
+                  {options.length > 0 && (
+                    <div className="space-y-0.5">
+                      {options.map((opt, i) => (
+                        <p key={i} className="text-sm text-gray-600">{String.fromCharCode(65 + i)}. {opt}</p>
+                      ))}
+                    </div>
+                  )}
+                  {(q.knowledge_points ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {(q.knowledge_points ?? []).map((kp, i) => (
+                        <span key={i} className="text-[11px] px-2 py-0.5 rounded bg-gray-50 text-gray-500">{kp}</span>
+                      ))}
+                    </div>
+                  )}
+                  {q.answer?.answer && (
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-xs font-semibold text-gray-500 mb-1">参考答案</p>
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{q.answer.answer}</p>
+                    </div>
+                  )}
+                  {q.explanation && (
+                    <div className="bg-gray-50 rounded-lg p-2">
+                      <p className="text-xs font-semibold text-gray-500 mb-1">解析</p>
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{q.explanation}</p>
+                    </div>
+                  )}
+                  {q.recommendation_reason && (
+                    <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
+                      推荐理由：{q.recommendation_reason}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+      {questions.length > 0 && (
+        <p className="text-[11px] text-gray-400 text-center">
+          AI 出题仅供参考，请逐题核对后再采用；发布后会生成一份新的草稿作业，需你手动开放提交。
+        </p>
+      )}
     </div>
   );
 };
@@ -1812,11 +2128,13 @@ const AssignmentDetailPage: React.FC = () => {
               />
             )}
 
-            {/* --- 其余两页签占位 --- */}
+            {/* --- 推荐练习（REQ-039 第三期 3b）--- */}
             {lectureSubTab === 'recommend' && (
-              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
-                基于讲评重点生成推荐练习题，支持采用/修改/发布为新作业（第四期）
-              </div>
+              <RecommendationPanel
+                aid={aid || ''}
+                reportConfirmed={lectureReport?.status === 'confirmed'}
+                toast={showToast}
+              />
             )}
             {lectureSubTab === 'remediation' && (
               <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
