@@ -999,6 +999,15 @@ func (s *WidgetService) UpdateElementPayload(elementID string, newPayload json.R
 	return err
 }
 
+// GetElementType 按元素 ID 查类型（BUG-012：element_update 缺 type 时的兜底反查）
+func (s *WidgetService) GetElementType(elementID string) string {
+	var t string
+	_ = s.db.QueryRow(
+		`SELECT type FROM room_elements WHERE id = $1`, elementID,
+	).Scan(&t)
+	return t
+}
+
 // GetElementsByRoom 获取房间内所有未删除元素
 func (s *WidgetService) GetElementsByRoom(roomID string) ([]models.Element, error) {
 	rows, err := s.db.Query(
@@ -1133,6 +1142,7 @@ func FlattenWidgetPayload(elemType string, rawPayload []byte) []byte {
 		"qa_widget":        true,
 		"dropzone_widget":  true,
 		"html_widget":      true,
+		"shelf_widget":     true,
 	}
 	if !widgetTypes[elemType] {
 		return rawPayload
