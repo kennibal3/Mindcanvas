@@ -10,6 +10,7 @@ import type {
   TokenVerifyResult,
   SubmitByTokenRequest,
   StudentAssessmentResult,
+  StudentRemediationPublic,
 } from '@/types/token';
 
 // 通用请求封装
@@ -160,5 +161,23 @@ export async function getStudentResult(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || '暂无评价结果');
+  return data;
+}
+
+/**
+ * 学生查看老师的反馈（REQ-039 3c）
+ * 凭「作业码 + 自己的 uuid」双证；老师未发送时返回 404，由调用方按"暂无"处理。
+ */
+export async function getStudentRemediation(
+  aid: string,
+  token: string,
+  studentUUID: string
+): Promise<{ remediation: StudentRemediationPublic }> {
+  const res = await fetch(
+    `/api/submit/${aid}/remediation?token=${encodeURIComponent(token)}&uuid=${encodeURIComponent(studentUUID)}`,
+    { headers: { 'X-Student-UUID': studentUUID } },
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '老师还没有发布你的反馈');
   return data;
 }

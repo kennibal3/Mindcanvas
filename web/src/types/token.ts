@@ -115,13 +115,30 @@ export interface StudentAssessmentResult {
   published_at?: string;
 }
 
+// ===== 学生补救：学生侧可见内容（REQ-039 3c）=====
+// 只含温和版反馈与题面，教师版诊断与参考答案不下发
+export interface StudentPracticeQuestion {
+  question_type: string;
+  difficulty: string;
+  stem: string;
+  options: string[] | null;
+}
+
+export interface StudentRemediationPublic {
+  student_name: string;
+  gentle_feedback: string;
+  sent_at: string;
+  questions: StudentPracticeQuestion[] | null;
+}
+
 // ===== 提交页面状态机 =====
 export type SubmitPageStep =
   | 'input_token'      // 输入作业码
   | 'verifying'        // 验证中
   | 'fill_name'        // 通用码填写姓名
+  | 'my_work'          // 已提交过：我的作业 + 老师的反馈（REQ-039 3c）
   | 'write_content'    // 填写作业内容
   | 'submitting'       // 提交中
   | 'success'          // 提交成功
-  | 'view_result'      // 查看评价结果
+  | 'view_result'      // 查看老师的反馈
   | 'error';           // 错误状态
