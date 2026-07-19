@@ -219,7 +219,8 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
           payload: extractBusinessFields(currentEl.payload ?? {}),
         };
         updateElement(elementId, newPayload);
-        sendMessage('element_update', { id: elementId, payload: newPayload });
+        // BUG-012：必须带 type，服务端按 type 展平嵌套后新坐标才会写进外层（外层才是渲染读取层）
+        sendMessage('element_update', { id: elementId, type: currentEl.type ?? '', payload: newPayload });
       }
       setDragging(null);
       dragStartRef.current = null;
@@ -278,7 +279,8 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
           payload: extractBusinessFields(currentEl.payload ?? {}),
         };
         updateElement(elementId, newPayload);
-        sendMessage('element_update', { id: elementId, payload: newPayload });
+        // BUG-012：必须带 type，服务端按 type 展平嵌套后新坐标才会写进外层（外层才是渲染读取层）
+        sendMessage('element_update', { id: elementId, type: currentEl.type ?? '', payload: newPayload });
       }
       setResizing(null);
       resizeStartRef.current = null;

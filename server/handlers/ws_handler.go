@@ -782,6 +782,11 @@ func (h *WSHandler) persistElementOperation(msgType string, payload json.RawMess
 		payloadJSON, _ := json.Marshal(elemData)
 		// 写库前展平三层嵌套，防止前端旧数据覆盖聚合结果
 		elemType2, _ := elemData["type"].(string)
+		if elemType2 == "" {
+			// BUG-012：旧版前端拖拽/缩放消息不带 type，按元素 ID 反查，
+			// 保证 FlattenWidgetPayload 一定能整形（否则新坐标会陷进内层丢失）
+			elemType2 = h.widgetService.GetElementType(elemID)
+		}
 		payloadJSON = services.FlattenWidgetPayload(elemType2, payloadJSON)
 		h.widgetService.UpdateElementPayload(elemID, payloadJSON)
 	case ws.MsgElementDelete:
