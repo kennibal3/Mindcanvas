@@ -10,8 +10,8 @@
 //   payload 仅存 { title, htmlVersion }。编辑源码后 bump htmlVersion，
 //   经既有 element_update 广播链路触发全端重新拉取，无需新增 WS 桥接。
 // =============================================================
-import React, { useState, useEffect } from 'react';
-import { Code2, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Code2, Trash2, Loader2, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import { useRoomStore } from '@/store/roomStore';
 import HtmlCreateModal from './HtmlCreateModal';
 
@@ -47,6 +47,38 @@ export const HtmlWidget: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showEdit, setShowEdit] = useState(false);
+
+  // ===== REQ-042 一期：全屏播放（浏览器原生 Fullscreen API，师生均可用）=====
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const d = document as Document & { webkitFullscreenElement?: Element };
+      setIsFullscreen(!!(document.fullscreenElement ?? d.webkitFullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    const el = containerRef.current as (HTMLDivElement & {
+      webkitRequestFullscreen?: () => void;
+    }) | null;
+    const d = document as Document & {
+      webkitFullscreenElement?: Element;
+      webkitExitFullscreen?: () => void;
+    };
+    if (document.fullscreenElement ?? d.webkitFullscreenElement) {
+      (document.exitFullscreen?.bind(document) ?? d.webkitExitFullscreen?.bind(d))?.();
+    } else if (el) {
+      (el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el))?.();
+    }
+  };
 
   // 拉取源码：id/房间/版本变化时重取（htmlVersion 变化 = 老师改了代码）
   useEffect(() => {
@@ -91,6 +123,7 @@ export const HtmlWidget: React.FC<Props> = ({
 
   return (
     <div
+      ref={containerRef}
       className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col h-full overflow-hidden"
       style={{ color: '#1f2937' }}
     >
@@ -100,24 +133,34 @@ export const HtmlWidget: React.FC<Props> = ({
           <span className="text-sm">🖥️</span>
           <span className="font-semibold text-gray-800 text-sm truncate">{title}</span>
         </div>
-        {isTeacher && !isLocked && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <button
-              onClick={() => setShowEdit(true)}
-              title="编辑代码"
-              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
-            >
-              <Code2 size={13} />
-            </button>
-            <button
-              onClick={handleDelete}
-              title="删除组件"
-              className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* REQ-042：全屏播放，师生均可用 */}
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? '退出全屏' : '全屏播放'}
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+          {isTeacher && !isLocked && !isFullscreen && (
+            <>
+              <button
+                onClick={() => setShowEdit(true)}
+                title="编辑代码"
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
+              >
+                <Code2 size={13} />
+              </button>
+              <button
+                onClick={handleDelete}
+                title="删除组件"
+                className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* 内容区：沙箱 iframe 渲染 */}
