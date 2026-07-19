@@ -253,6 +253,8 @@ func main() {
 		submit.POST("", middleware.APIRateLimit(), tokenHandler.SubmitByToken)
 		submit.POST("/upload", middleware.UploadRateLimit(), tokenHandler.UploadSubmitFile)
 		submit.GET("/:aid/result", tokenHandler.GetStudentResult)
+		// REQ-039 3c 学生查看老师的反馈（token+uuid 双证，挂 AssignmentHandler 用 AssignmentService）
+		submit.GET("/:aid/remediation", assignmentHandler.GetStudentRemediationPublic)
 	}
 
 	// ========== V4.3 健康检查（只读内存缓存，零DB查询，高并发安全）==========
@@ -425,6 +427,13 @@ func main() {
 		assignments.GET("/:aid/recommendations", assignmentHandler.ListRecommendations)
 		assignments.PATCH("/:aid/recommendations/:rid", assignmentHandler.UpdateRecommendation)
 		assignments.POST("/:aid/recommendations/publish", assignmentHandler.PublishRecommendations)
+		// REQ-039 3c 学生补救
+		assignments.GET("/:aid/remediations", assignmentHandler.ListRemediations)
+		assignments.GET("/:aid/remediation/jobs/:jid", assignmentHandler.GetRemediationJob)
+		assignments.POST("/:aid/students/:sid/remediation/generate", assignmentHandler.GenerateStudentRemediation)
+		assignments.GET("/:aid/students/:sid/remediation", assignmentHandler.GetStudentRemediation)
+		assignments.PATCH("/:aid/students/:sid/remediation", assignmentHandler.UpdateStudentRemediation)
+		assignments.POST("/:aid/students/:sid/remediation/send", assignmentHandler.SendStudentRemediation)
 	}
 
 	// ===== Chat养成对话路由（仅chat_enabled用户可访问）=====

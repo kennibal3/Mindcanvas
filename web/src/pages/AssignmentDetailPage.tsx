@@ -30,8 +30,13 @@ import {
   getLectureJob, confirmLectureReport,
   generateRecommendations, getRecommendationJob, listRecommendations,
   updateRecommendation, publishRecommendations,
+  listRemediations, generateStudentRemediation, getRemediationJob,
+  getStudentRemediation, updateStudentRemediation, sendStudentRemediation,
 } from '@/utils/assignmentApi';
-import type { LectureReport, LectureReportBlock, RecommendedQuestion } from '@/utils/assignmentApi';
+import type {
+  LectureReport, LectureReportBlock, RecommendedQuestion,
+  RemediationListItem, StudentRemediation,
+} from '@/utils/assignmentApi';
 import {
   generateTokens, listTokens, exportTokensCSV,
   getRoster, addRosterEntry, importRosterCSVFile,
@@ -774,6 +779,450 @@ const RecommendationPanel: React.FC<{
           AI 出题仅供参考，请逐题核对后再采用；发布后会生成一份新的草稿作业，需你手动开放提交。
         </p>
       )}
+    </div>
+  );
+};
+
+// =============================================================
+// 学生补救面板（REQ-039 第三期 3c）
+// 左列表（谁交了/谁生成了/谁已发送）→ 右详情（教师版诊断 + 温和版可编辑 + 补救题）
+// 逐个生成，不做全班批量，控 AI 成本
+// =============================================================
+const RemediationPanel: React.FC<{
+  aid: string;
+  reportConfirmed: boolean;
+  toast: (msg: string) => void;
+}> = ({ aid, reportConfirmed, toast }) => {
+  const [students, setStudents] = useState<RemediationListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<string>('');
+  const [detail, setDetail] = useState<StudentRemediation | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [generatingUUID, setGeneratingUUID] = useState<string>('');
+  const [editing, setEditing] = useState(false);
+  const [draftFeedback, setDraftFeedback] = useState('');
+  const [draftNote, setDraftNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pollRef = useRef<number | null>(null);
+
+  const loadList = useCallback(async () => {
+    try {
+      const res = await listRemediations(aid);
+      setStudents(res.students ?? []);
+    } catch {
+      setStudents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [aid]);
+
+  const loadDetail = useCallback(async (uuid: string) => {
+    if (!uuid) return;
+    setDetailLoading(true);
+    try {
+      const res = await getStudentRemediation(aid, uuid);
+      setDetail(res.remediation);
+      setDraftFeedback(res.remediation?.gentle_feedback ?? '');
+      setDraftNote(res.remediation?.teacher_note ?? '');
+    } catch {
+      setDetail(null);      // 还没生成过：右侧显示引导，不报错弹窗
+    } finally {
+      setDetailLoading(false);
+      setEditing(false);
+    }
+  }, [aid]);
+
+  useEffect(() => { loadList(); }, [loadList]);
+  useEffect(() => () => {
+    if (pollRef.current) window.clearInterval(pollRef.current);
+  }, []);
+
+  const pickStudent = (uuid: string) => {
+    setSelected(uuid);
+    setDetail(null);
+    loadDetail(uuid);
+  };
+
+  const doGenerate = async (uuid: string) => {
+    if (generatingUUID) return;
+    setGeneratingUUID(uuid);
+    try {
+      const res = await generateStudentRemediation(aid, uuid);
+      toast('正在生成该学生的补救建议…');
+      if (pollRef.current) window.clearInterval(pollRef.current);
+      pollRef.current = window.setInterval(async () => {
+        try {
+          const job = await getRemediationJob(aid, res.job_id);
+          if (job.status === 'done' || job.status === 'failed') {
+            if (pollRef.current) window.clearInterval(pollRef.current);
+            pollRef.current = null;
+            setGeneratingUUID('');
+            if (job.status === 'failed') toast(`生成失败：${job.last_error || '未知错误'}`);
+            else toast('补救建议已生成');
+            await loadList();
+            if (uuid === selected || !selected) {
+              setSelected(uuid);
+              await loadDetail(uuid);
+            }
+          }
+        } catch {
+          if (pollRef.current) window.clearInterval(pollRef.current);
+          pollRef.current = null;
+          setGeneratingUUID('');
+        }
+      }, 2500);
+    } catch (e: any) {
+      setGeneratingUUID('');
+      toast(e?.message || '生成失败');
+    }
+  };
+
+  const saveFeedback = async () => {
+    if (busy || !detail) return;
+    if (!draftFeedback.trim()) { toast('温和版反馈不能为空'); return; }
+    setBusy(true);
+    try {
+      await updateStudentRemediation(aid, detail.student_uuid, {
+        gentle_feedback: draftFeedback.trim(),
+        teacher_note: draftNote.trim(),
+      });
+      setEditing(false);
+      await loadDetail(detail.student_uuid);
+      toast('已保存');
+    } catch (e: any) {
+      toast(e?.message || '保存失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doSend = async () => {
+    if (busy || !detail) return;
+    if (!window.confirm(
+      `把这段温和版反馈发送给「${detail.student_name || '该学生'}」？\n\n发送后，该生用作业码进入提交页即可看到。诊断内容与参考答案不会下发。`,
+    )) return;
+    setBusy(true);
+    try {
+      await sendStudentRemediation(aid, detail.student_uuid);
+      await Promise.all([loadList(), loadDetail(detail.student_uuid)]);
+      toast('已发送');
+    } catch (e: any) {
+      toast(e?.message || '发送失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusChip = (s: RemediationListItem) => {
+    if (!s.has_submitted) return <span className="text-[11px] text-gray-400">未提交</span>;
+    if (s.sent) return <span className="text-[11px] text-green-600">已发送</span>;
+    if (s.generation_status === 'done') return <span className="text-[11px] text-amber-700">待发送</span>;
+    if (s.generation_status === 'generating') return <span className="text-[11px] text-blue-500">生成中…</span>;
+    if (s.generation_status === 'failed') return <span className="text-[11px] text-red-500">生成失败</span>;
+    return <span className="text-[11px] text-gray-400">未生成</span>;
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400">
+        <Loader2 size={20} className="animate-spin mx-auto mb-2" />
+        <p className="text-sm">加载学生列表…</p>
+      </div>
+    );
+  }
+
+  const weakDims = detail?.diagnosis?.weak_dimensions ?? [];
+  const strengths = detail?.diagnosis?.strengths ?? [];
+  const questions = detail?.questions ?? [];
+
+  return (
+    <div className="space-y-3">
+      {!reportConfirmed && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+          请先在「报告编辑」页签确认整份讲评报告，再为学生生成补救建议（个人诊断要以已确认的班级分析为基准）。
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* 左：学生列表 */}
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">学生</span>
+            <span className="text-[11px] text-gray-400">
+              已发送 {students.filter(s => s.sent).length}/{students.filter(s => s.has_submitted).length}
+            </span>
+          </div>
+          <div className="max-h-[520px] overflow-y-auto divide-y divide-gray-50">
+            {students.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-10">还没有学生提交</p>
+            ) : (
+              students.map((s, i) => (
+                <button
+                  key={s.student_uuid || `name-${i}`}
+                  onClick={() => s.has_submitted && pickStudent(s.student_uuid)}
+                  disabled={!s.has_submitted}
+                  className={`w-full text-left px-4 py-2.5 transition-colors ${
+                    selected === s.student_uuid && s.has_submitted
+                      ? 'bg-amber-50'
+                      : s.has_submitted ? 'hover:bg-gray-50' : 'opacity-50 cursor-not-allowed'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-gray-800 truncate">
+                      {s.student_name || '（未填姓名）'}
+                    </span>
+                    {statusChip(s)}
+                  </div>
+                  {s.has_submitted && s.question_count > 0 && (
+                    <span className="text-[11px] text-gray-400">补救题 {s.question_count} 道</span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* 右：详情 */}
+        <div className="md:col-span-2 bg-white rounded-xl border border-gray-100 p-5">
+          {!selected ? (
+            <div className="text-center text-gray-400 py-16 text-sm">
+              从左侧选一位已提交的学生，为他生成补救建议
+            </div>
+          ) : detailLoading ? (
+            <div className="text-center text-gray-400 py-16">
+              <Loader2 size={20} className="animate-spin mx-auto mb-2" />
+              <p className="text-sm">加载中…</p>
+            </div>
+          ) : !detail ? (
+            <div className="text-center py-14 space-y-4">
+              <p className="text-sm text-gray-500">这位学生还没有补救建议</p>
+              <button
+                onClick={() => doGenerate(selected)}
+                disabled={!reportConfirmed || !!generatingUUID}
+                className="px-5 py-2.5 bg-amber-700 text-white text-sm rounded-xl
+                           hover:bg-amber-800 disabled:opacity-40 inline-flex items-center gap-2"
+              >
+                {generatingUUID === selected
+                  ? <><Loader2 size={15} className="animate-spin" /> 生成中…</>
+                  : <><Sparkles size={15} /> 生成补救建议</>}
+              </button>
+              {!reportConfirmed && (
+                <p className="text-xs text-gray-400">需先确认讲评报告</p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {/* 头部 */}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    {detail.student_name || '（未填姓名）'}
+                  </h3>
+                  {detail.teacher_summary && (
+                    <p className="text-xs text-gray-500 mt-1">{detail.teacher_summary}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => doGenerate(detail.student_uuid)}
+                    disabled={!!generatingUUID || !reportConfirmed}
+                    className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg
+                               text-gray-600 hover:bg-gray-50 disabled:opacity-40
+                               inline-flex items-center gap-1.5"
+                  >
+                    {generatingUUID === detail.student_uuid
+                      ? <><Loader2 size={13} className="animate-spin" /> 生成中</>
+                      : <><RefreshCw size={13} /> 重新生成</>}
+                  </button>
+                  <button
+                    onClick={doSend}
+                    disabled={busy || detail.generation_status !== 'done'}
+                    className="px-3 py-1.5 text-xs bg-amber-700 text-white rounded-lg
+                               hover:bg-amber-800 disabled:opacity-40 inline-flex items-center gap-1.5"
+                  >
+                    <Check size={13} /> {detail.sent ? '重新发送' : '发送给学生'}
+                  </button>
+                </div>
+              </div>
+
+              {detail.sent && (
+                <p className="text-[11px] text-green-600">
+                  已于 {detail.sent_at?.slice(0, 19).replace('T', ' ')} 发送
+                </p>
+              )}
+              {detail.generation_status === 'failed' && detail.last_error && (
+                <p className="text-xs text-red-500 bg-red-50 rounded px-3 py-2">
+                  上次生成失败：{detail.last_error}
+                </p>
+              )}
+
+              {/* 教师版诊断（不下发学生）*/}
+              <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <ClipboardList size={14} className="text-gray-400" />
+                  <span className="text-sm font-medium text-gray-700">教师版诊断</span>
+                  <span className="text-[11px] text-gray-400">（仅你可见，不发给学生）</span>
+                </div>
+                {weakDims.length === 0 ? (
+                  <p className="text-xs text-gray-400">本次未产出结构化诊断</p>
+                ) : (
+                  weakDims.map((d, i) => (
+                    <div key={i} className="text-xs space-y-1 bg-gray-50 rounded-lg px-3 py-2">
+                      <div className="font-medium text-gray-700">
+                        {d.dimension_name || `维度${i + 1}`}
+                        {d.error_cause && (
+                          <span className="ml-2 text-amber-700">错因：{d.error_cause}</span>
+                        )}
+                      </div>
+                      {d.issue && <p className="text-gray-600">{d.issue}</p>}
+                      {d.evidence && (
+                        <p className="text-gray-400">原文佐证：「{d.evidence}」</p>
+                      )}
+                    </div>
+                  ))
+                )}
+                {strengths.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    亮点：{strengths.join('；')}
+                  </p>
+                )}
+              </div>
+
+              {/* 温和版反馈（学生可见）*/}
+              <div className="border border-amber-200 bg-amber-50/40 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Star size={14} className="text-amber-600" />
+                    <span className="text-sm font-medium text-gray-700">温和版反馈</span>
+                    <span className="text-[11px] text-gray-400">（发送后学生可见）</span>
+                  </div>
+                  {!editing ? (
+                    <button
+                      onClick={() => setEditing(true)}
+                      className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+                    >
+                      <Pencil size={12} /> 编辑
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={saveFeedback}
+                        disabled={busy}
+                        className="text-xs text-amber-700 hover:text-amber-900 inline-flex items-center gap-1"
+                      >
+                        <Check size={12} /> 保存
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditing(false);
+                          setDraftFeedback(detail.gentle_feedback ?? '');
+                          setDraftNote(detail.teacher_note ?? '');
+                        }}
+                        className="text-xs text-gray-400 hover:text-gray-600 inline-flex items-center gap-1"
+                      >
+                        <X size={12} /> 取消
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {editing ? (
+                  <>
+                    <textarea
+                      value={draftFeedback}
+                      onChange={e => setDraftFeedback(e.target.value)}
+                      rows={7}
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2
+                                 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                      placeholder="写给这位学生本人看的话"
+                    />
+                    <textarea
+                      value={draftNote}
+                      onChange={e => setDraftNote(e.target.value)}
+                      rows={2}
+                      className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2
+                                 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                      placeholder="教师备注（仅你可见，不发给学生）"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                      {detail.gentle_feedback || '（暂无）'}
+                    </p>
+                    {detail.teacher_note && (
+                      <p className="text-xs text-gray-400 border-t border-amber-100 pt-2">
+                        备注：{detail.teacher_note}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* 补救题 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <FileText size={14} className="text-gray-400" />
+                  <span className="text-sm font-medium text-gray-700">
+                    补救练习（{questions.length} 道）
+                  </span>
+                  <span className="text-[11px] text-gray-400">学生端只看到题面，不含答案</span>
+                </div>
+                {questions.length === 0 ? (
+                  <p className="text-xs text-gray-400">本次未产出补救题</p>
+                ) : (
+                  questions.map((q, i) => {
+                    const stem = (q.final_content?.stem ?? q.content?.stem ?? '').toString();
+                    const options = (q.final_content?.options ?? q.content?.options ?? []) as string[];
+                    return (
+                      <div key={q.id} className="border border-gray-100 rounded-lg p-3 space-y-1.5">
+                        <div className="text-xs text-gray-400">
+                          第 {i + 1} 题 · {q.question_type || '未标注题型'} · {q.difficulty || '未标注难度'}
+                        </div>
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap">{stem}</p>
+                        {(options ?? []).length > 0 && (
+                          <ul className="text-xs text-gray-600 space-y-0.5">
+                            {(options ?? []).map((opt, j) => (
+                              <li key={j}>{String.fromCharCode(65 + j)}. {opt}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {q.answer?.answer && (
+                          <p className="text-xs text-gray-500">参考答案：{q.answer.answer}</p>
+                        )}
+                        {q.explanation && (
+                          <p className="text-xs text-gray-400">解析：{q.explanation}</p>
+                        )}
+                        {q.recommendation_reason && (
+                          <p className="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1">
+                            推荐理由：{q.recommendation_reason}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* 学生提交原文（对照用）*/}
+              {detail.submission_text && (
+                <details className="border border-gray-100 rounded-xl p-3">
+                  <summary className="text-xs text-gray-500 cursor-pointer">
+                    查看该生提交原文
+                  </summary>
+                  <p className="text-xs text-gray-600 whitespace-pre-wrap mt-2 leading-relaxed">
+                    {detail.submission_text}
+                  </p>
+                </details>
+              )}
+
+              <p className="text-[11px] text-gray-400 text-center">
+                AI 生成的诊断与反馈仅供参考，发送前请通读一遍温和版措辞。
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -2136,10 +2585,13 @@ const AssignmentDetailPage: React.FC = () => {
                 toast={showToast}
               />
             )}
+            {/* --- 学生补救（REQ-039 第三期 3c）--- */}
             {lectureSubTab === 'remediation' && (
-              <div className="bg-white rounded-xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
-                针对单个学生生成补救建议与温和版反馈（第五期）
-              </div>
+              <RemediationPanel
+                aid={aid || ''}
+                reportConfirmed={lectureReport?.status === 'confirmed'}
+                toast={showToast}
+              />
             )}
           </div>
         )}

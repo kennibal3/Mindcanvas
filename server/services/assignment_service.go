@@ -328,6 +328,18 @@ func (s *AssignmentService) executeJob(jobID, taskType string, payload []byte) {
 			return
 		}
 		s.markJobDone(jobID)
+	case "assignment_student_remediation":
+		var entityID string
+		if err := s.db.QueryRow(`SELECT entity_id FROM job_queue WHERE id=$1`, jobID).Scan(&entityID); err != nil {
+			s.markJobFailed(jobID, "查询 entity_id 失败: "+err.Error())
+			return
+		}
+		jobRec := jobRecord{ID: jobID, TaskType: taskType, EntityID: entityID, Payload: json.RawMessage(payload)}
+		if err := s.executeStudentRemediation(context.Background(), jobRec); err != nil {
+			s.markJobFailed(jobID, err.Error())
+			return
+		}
+		s.markJobDone(jobID)
 	default:
 		// 未知任务类型，直接标记失败（不重试）
 		s.db.Exec(`

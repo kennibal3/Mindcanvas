@@ -1,19 +1,25 @@
 // =============================================================
 // MindCanvas Phase8-v2 - 学生作业提交页
 // 路由：/submit（完全公开，无需登录）
-// 功能：输入作业码 → 验证 → 填写内容 → 提交 → 查看结果
+// 功能：输入作业码 → 验证 → 填写内容 → 提交 →（老师发送后）查看老师的反馈
 // 特点：手机端友好，零登录门槛，支持身份续接
+//
+// REQ-039 3c（2026-07-19）：
+//   - 新增 my_work 步骤：已提交过的学生再次凭码进来，先看到「我的作业 + 老师的反馈」
+//     而不是直接跳到重新填写（原实现导致隔天回来根本没有入口看反馈）
+//   - 「查看评价结果」原先查的是 assignment_assessments（历史死表、零行、必然报错），
+//     改为查 3c 的补救反馈接口（token + uuid 双证，只返回温和版与题面）
 // =============================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BookOpen, CheckCircle, AlertCircle, Loader2,
   Send, ChevronRight, User, FileText, RefreshCw,
-  Star, Award, Clock, ArrowLeft, Upload, Link, X, Paperclip,
+  Star, Clock, ArrowLeft, Upload, Link, X, Paperclip,
 } from 'lucide-react';
-import { verifyToken, submitByToken, getStudentResult } from '@/utils/tokenApi';
+import { verifyToken, submitByToken, getStudentRemediation } from '@/utils/tokenApi';
 import type {
-  TokenVerifyResult, SubmitPageStep, StudentAssessmentResult,
+  TokenVerifyResult, SubmitPageStep, StudentRemediationPublic,
 } from '@/types/token';
 
 // =============================================================
@@ -46,83 +52,65 @@ const StepDot = ({ active, done }: { active: boolean; done: boolean }) => (
 );
 
 // =============================================================
-// 子组件：评价结果展示
+// 子组件：老师的反馈展示（REQ-039 3c 温和版 + 补救练习题面）
 // =============================================================
-const AssessmentCard = ({
-  assessment,
+const FeedbackCard = ({
+  remediation,
   assignmentTitle,
 }: {
-  assessment: StudentAssessmentResult;
+  remediation: StudentRemediationPublic;
   assignmentTitle: string;
 }) => {
-  const score = assessment.final_score ?? assessment.ai_score;
-  const feedback = assessment.final_feedback || assessment.ai_feedback;
-  const dimScores = assessment.final_dimension_scores || assessment.ai_dimension_scores;
+  const questions = remediation.questions ?? [];
 
   return (
     <div className="space-y-4">
-      {/* 总分卡片 */}
-      <div className="bg-gradient-to-br from-amber-600 to-amber-800 rounded-2xl p-6 text-white text-center">
-        <Award size={32} className="mx-auto mb-2 opacity-80" />
-        <div className="text-5xl font-bold mb-1">{score?.toFixed(1) ?? '--'}</div>
-        <div className="text-amber-200 text-sm">综合得分</div>
-        <div className="text-white/70 text-xs mt-2">{assignmentTitle}</div>
+      {/* 老师的话 */}
+      <div className="bg-gradient-to-br from-amber-600 to-amber-800 rounded-2xl p-6 text-white">
+        <div className="flex items-center gap-2 mb-3 text-amber-100 text-sm">
+          <Star size={16} />
+          老师的反馈
+        </div>
+        <p className="text-[15px] leading-relaxed whitespace-pre-wrap">
+          {remediation.gentle_feedback}
+        </p>
+        <div className="text-white/60 text-xs mt-4">{assignmentTitle}</div>
       </div>
 
-      {/* 分项得分 */}
-      {dimScores && Object.keys(dimScores).length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <Star size={14} className="text-yellow-400" />
-            分项评分
+      {/* 补救练习（只给题面，答案不下发）*/}
+      {questions.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <FileText size={14} className="text-amber-600" />
+            给你的练习（{questions.length} 道）
           </h3>
-          <div className="space-y-2">
-            {Object.entries(dimScores).map(([dim, s]) => (
-              <div key={dim} className="flex items-center gap-3">
-                <span className="text-xs text-gray-500 w-20 flex-shrink-0 truncate">{dim}</span>
-                <div className="flex-1 bg-gray-100 rounded-full h-2">
-                  <div
-                    className="bg-amber-500 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.min(100, (s / 5) * 100)}%` }}
-                  />
-                </div>
-                <span className="text-xs font-medium text-gray-700 w-6 text-right">{s}</span>
+          {questions.map((q, i) => (
+            <div key={i} className="border border-gray-100 rounded-xl p-3 space-y-1.5">
+              <div className="text-xs text-gray-400">
+                第 {i + 1} 题
+                {q.question_type ? ` · ${q.question_type}` : ''}
+                {q.difficulty ? ` · ${q.difficulty}` : ''}
               </div>
-            ))}
-          </div>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{q.stem}</p>
+              {(q.options ?? []).length > 0 && (
+                <ul className="text-sm text-gray-600 space-y-1 pt-1">
+                  {(q.options ?? []).map((opt, j) => (
+                    <li key={j}>{String.fromCharCode(65 + j)}. {opt}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+          <p className="text-xs text-gray-400 text-center pt-1">
+            先自己试着做一遍，做完可以拿去问老师
+          </p>
         </div>
       )}
 
-      {/* 综合评语 */}
-      {feedback && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">📝 综合评语</h3>
-          <p className="text-sm text-gray-600 leading-relaxed">{feedback}</p>
-        </div>
-      )}
-
-      {/* 亮点 */}
-      {assessment.ai_highlights && (
-        <div className="bg-green-50 rounded-2xl border border-green-100 p-4">
-          <h3 className="text-sm font-semibold text-green-700 mb-2">✨ 作业亮点</h3>
-          <p className="text-sm text-green-700 leading-relaxed">{assessment.ai_highlights}</p>
-        </div>
-      )}
-
-      {/* 待改进 */}
-      {assessment.ai_issues && (
-        <div className="bg-orange-50 rounded-2xl border border-orange-100 p-4">
-          <h3 className="text-sm font-semibold text-orange-700 mb-2">💡 待改进</h3>
-          <p className="text-sm text-orange-700 leading-relaxed">{assessment.ai_issues}</p>
-        </div>
-      )}
-
-      {/* 修改建议 */}
-      {assessment.ai_suggestions && (
-        <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
-          <h3 className="text-sm font-semibold text-amber-800 mb-2">🎯 改进建议</h3>
-          <p className="text-sm text-amber-800 leading-relaxed">{assessment.ai_suggestions}</p>
-        </div>
+      {remediation.sent_at && (
+        <p className="text-xs text-gray-400 text-center">
+          老师于 {remediation.sent_at.slice(0, 19).replace('T', ' ')} 发送
+        </p>
       )}
     </div>
   );
@@ -161,9 +149,10 @@ const SubmitPage: React.FC = () => {
   // 提交成功
   const [submissionId, setSubmissionId] = useState('');
 
-  // 评价结果
-  const [assessment, setAssessment] = useState<StudentAssessmentResult | null>(null);
+  // 老师的反馈（REQ-039 3c）
+  const [remediation, setRemediation] = useState<StudentRemediationPublic | null>(null);
   const [loadingResult, setLoadingResult] = useState(false);
+  const [feedbackChecked, setFeedbackChecked] = useState(false);
 
   const tokenInputRef = useRef<HTMLInputElement>(null);
 
@@ -180,6 +169,32 @@ const SubmitPage: React.FC = () => {
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
+  };
+
+  // =============================================================
+  // 拉取老师的反馈（REQ-039 3c，token + uuid 双证；老师未发送时静默置空）
+  // =============================================================
+  const fetchFeedback = async (
+    assignmentId: string,
+    uuid: string,
+    token: string,
+  ): Promise<StudentRemediationPublic | null> => {
+    if (!assignmentId || !uuid || !token) {
+      setFeedbackChecked(true);
+      return null;
+    }
+    setLoadingResult(true);
+    try {
+      const res = await getStudentRemediation(assignmentId, token, uuid);
+      setRemediation(res.remediation ?? null);
+      return res.remediation ?? null;
+    } catch {
+      setRemediation(null);       // 未发送/无反馈：不当错误弹窗，页面自己展示"暂无"
+      return null;
+    } finally {
+      setLoadingResult(false);
+      setFeedbackChecked(true);
+    }
   };
 
   // =============================================================
@@ -208,26 +223,31 @@ const SubmitPage: React.FC = () => {
       }
 
       setVerifyResult(result);
+      setRemediation(null);
+      setFeedbackChecked(false);
 
-      // 专属码：已有身份信息，直接跳到填写内容
+      // 专属码：已有身份信息
       if (result.token_type === 'dedicated' && result.student_uuid) {
         setStudentUUID(result.student_uuid);
         setStudentName(result.student_name || '');
 
-        // 如果已提交过，预填内容
+        // 已提交过：先进「我的作业」，那里能看到老师的反馈（3c）
         if (result.existing_submission) {
           setContentText(result.existing_submission.content_text || '');
+          setStep('my_work');
+          fetchFeedback(result.assignment_id, result.student_uuid, token);
+          return;
         }
         setStep('write_content');
         return;
       }
 
-      // 通用码：需要填写姓名
-      // 先检查LocalStorage是否有保存的UUID
+      // 通用码：先检查 LocalStorage 是否有保存的 UUID（有＝这台设备提交过）
       const savedUUID = getSavedUUID(result.assignment_id);
       if (savedUUID) {
         setStudentUUID(savedUUID);
-        setStep('write_content');
+        setStep('my_work');
+        fetchFeedback(result.assignment_id, savedUUID, token);
         return;
       }
 
@@ -335,20 +355,16 @@ const SubmitPage: React.FC = () => {
   };
 
   // =============================================================
-  // 查看评价结果
+  // 查看老师的反馈（3c：原先查的是历史死表 assignment_assessments，已改接补救反馈）
   // =============================================================
   const handleViewResult = async () => {
     if (!verifyResult?.assignment_id || !studentUUID) return;
-
-    setLoadingResult(true);
-    try {
-      const res = await getStudentResult(verifyResult.assignment_id, studentUUID);
-      setAssessment(res.assessment);
+    const token = (verifyResult.token || tokenInput).trim().toUpperCase();
+    const res = await fetchFeedback(verifyResult.assignment_id, studentUUID, token);
+    if (res) {
       setStep('view_result');
-    } catch (e: any) {
-      showToast(e.message || '暂无评价结果，请等待老师批改');
-    } finally {
-      setLoadingResult(false);
+    } else {
+      showToast('老师还没有发布你的反馈，请稍后再来看');
     }
   };
 
@@ -506,6 +522,97 @@ const SubmitPage: React.FC = () => {
                   继续 <ChevronRight size={16} className="inline" />
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== 我的作业（已提交过的学生再次进来，REQ-039 3c）===== */}
+        {step === 'my_work' && verifyResult && (
+          <div className="space-y-5">
+            <div className="text-center pt-4">
+              <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center
+                              justify-center mx-auto mb-3">
+                <CheckCircle size={30} className="text-green-500" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900">你已提交过这份作业</h2>
+              <p className="text-sm text-gray-500 mt-1">{verifyResult.assignment_title}</p>
+            </div>
+
+            {/* 已提交内容 */}
+            {verifyResult.existing_submission && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2">
+                <div className="flex items-center justify-between text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <Clock size={12} />
+                    {new Date(verifyResult.existing_submission.submitted_at).toLocaleString('zh-CN')}
+                  </span>
+                  <span>第 {verifyResult.existing_submission.version} 版</span>
+                </div>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed
+                              max-h-40 overflow-y-auto">
+                  {verifyResult.existing_submission.content_text || '（无文字内容）'}
+                </p>
+              </div>
+            )}
+
+            {/* 老师的反馈 */}
+            {loadingResult ? (
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center text-gray-400">
+                <Loader2 size={18} className="animate-spin mx-auto mb-2" />
+                <p className="text-sm">正在查看老师有没有留言…</p>
+              </div>
+            ) : remediation ? (
+              <FeedbackCard
+                remediation={remediation}
+                assignmentTitle={verifyResult.assignment_title}
+              />
+            ) : feedbackChecked ? (
+              <div className="bg-white rounded-2xl border border-gray-100 p-6 text-center">
+                <Star size={28} className="mx-auto mb-2 text-gray-300" />
+                <p className="text-sm text-gray-500">老师还没有发布反馈</p>
+                <p className="text-xs text-gray-400 mt-1">批改后再回来看看</p>
+                <button
+                  onClick={() => {
+                    const token = (verifyResult.token || tokenInput).trim().toUpperCase();
+                    fetchFeedback(verifyResult.assignment_id, studentUUID, token);
+                  }}
+                  className="mt-3 text-xs text-amber-700 inline-flex items-center gap-1"
+                >
+                  <RefreshCw size={12} /> 刷新看看
+                </button>
+              </div>
+            ) : null}
+
+            {/* 操作 */}
+            <div className="space-y-3">
+              {verifyResult.allow_resubmit ? (
+                <button
+                  onClick={() => setStep('write_content')}
+                  className="w-full border-2 border-amber-200 text-amber-700 font-medium
+                             py-4 rounded-xl hover:bg-amber-50 transition-colors
+                             flex items-center justify-center gap-2"
+                >
+                  <RefreshCw size={16} /> 修改并重新提交
+                </button>
+              ) : (
+                <p className="text-xs text-gray-400 text-center">
+                  这份作业不允许重新提交
+                </p>
+              )}
+              <button
+                onClick={() => {
+                  setStep('input_token');
+                  setTokenInput('');
+                  setVerifyResult(null);
+                  setContentText('');
+                  setRemediation(null);
+                  setFeedbackChecked(false);
+                  setError('');
+                }}
+                className="w-full text-gray-400 text-sm py-2 hover:text-gray-600"
+              >
+                用另一个作业码进入
+              </button>
             </div>
           </div>
         )}
@@ -776,7 +883,7 @@ const SubmitPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 查看评价结果 */}
+            {/* 查看老师的反馈（3c）*/}
             <button
               onClick={handleViewResult}
               disabled={loadingResult}
@@ -787,7 +894,7 @@ const SubmitPage: React.FC = () => {
               {loadingResult ? (
                 <><Loader2 size={16} className="animate-spin" /> 查询中...</>
               ) : (
-                <><Star size={16} /> 查看评价结果</>
+                <><Star size={16} /> 查看老师的反馈</>
               )}
             </button>
 
@@ -806,28 +913,28 @@ const SubmitPage: React.FC = () => {
           </div>
         )}
 
-        {/* ===== 查看评价结果 ===== */}
+        {/* ===== 查看老师的反馈 ===== */}
         {step === 'view_result' && verifyResult && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 mb-2">
               <button
-                onClick={() => setStep('success')}
+                onClick={() => setStep(submissionId ? 'success' : 'my_work')}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <ArrowLeft size={20} />
               </button>
-              <h2 className="text-lg font-bold text-gray-900">我的评价结果</h2>
+              <h2 className="text-lg font-bold text-gray-900">老师的反馈</h2>
             </div>
 
-            {assessment ? (
-              <AssessmentCard
-                assessment={assessment}
+            {remediation ? (
+              <FeedbackCard
+                remediation={remediation}
                 assignmentTitle={verifyResult.assignment_title}
               />
             ) : (
               <div className="text-center py-16 text-gray-400">
                 <Star size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="text-sm">老师还未发布评价结果</p>
+                <p className="text-sm">老师还没有发布你的反馈</p>
                 <p className="text-xs mt-1">请稍后再来查看</p>
               </div>
             )}

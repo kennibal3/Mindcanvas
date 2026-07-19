@@ -289,3 +289,100 @@ export async function publishRecommendations(aid: string, data?: {
     body: JSON.stringify(data || {}),
   });
 }
+
+// ===== 学生补救（REQ-039 第三期 3c）=====
+
+export interface RemediationListItem {
+  student_name: string;
+  student_uuid: string;
+  has_submitted: boolean;
+  submission_id: string;
+  submitted_at: string;
+  content_type: string;
+  generation_status: '' | 'pending' | 'generating' | 'done' | 'failed';
+  has_remediation: boolean;
+  sent: boolean;
+  sent_at: string;
+  question_count: number;
+  last_error: string;
+}
+
+export interface RemediationWeakDimension {
+  dimension_name?: string;
+  issue?: string;
+  error_cause?: string;
+  evidence?: string;
+}
+
+export interface StudentRemediation {
+  id: string;
+  assignment_id: string;
+  student_uuid: string;
+  student_name: string;
+  submission_id: string;
+  submission_text: string;
+  generation_status: 'pending' | 'generating' | 'done' | 'failed';
+  diagnosis: {
+    weak_dimensions?: RemediationWeakDimension[] | null;
+    strengths?: string[] | null;
+  } | null;
+  teacher_summary: string;
+  teacher_note: string;
+  gentle_feedback: string;
+  sent: boolean;
+  sent_at: string;
+  last_error: string;
+  questions: RecommendedQuestion[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// 学生列表（花名册 ∪ 提交记录，含补救状态）
+export async function listRemediations(aid: string): Promise<{
+  students: RemediationListItem[]; total: number;
+}> {
+  return req(`${BASE}/${aid}/remediations`);
+}
+
+// 为单个学生生成补救建议（异步，返回 job_id；要求报告已确认且该生已提交）
+export async function generateStudentRemediation(aid: string, studentUUID: string): Promise<{
+  job_id: string; status: string; message?: string;
+}> {
+  return req(`${BASE}/${aid}/students/${encodeURIComponent(studentUUID)}/remediation/generate`, {
+    method: 'POST',
+  });
+}
+
+// 查询补救生成任务状态
+export async function getRemediationJob(aid: string, jid: string): Promise<{
+  status: 'queued' | 'running' | 'done' | 'failed'; last_error: string;
+}> {
+  return req(`${BASE}/${aid}/remediation/jobs/${jid}`);
+}
+
+// 单个学生的补救详情（含教师版诊断）
+export async function getStudentRemediation(aid: string, studentUUID: string): Promise<{
+  remediation: StudentRemediation;
+}> {
+  return req(`${BASE}/${aid}/students/${encodeURIComponent(studentUUID)}/remediation`);
+}
+
+// 编辑温和版反馈 / 教师备注
+export async function updateStudentRemediation(aid: string, studentUUID: string, data: {
+  gentle_feedback?: string;
+  teacher_note?: string;
+}): Promise<{ message: string }> {
+  return req(`${BASE}/${aid}/students/${encodeURIComponent(studentUUID)}/remediation`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+// 发送给学生（打已发送标记，学生凭作业码在提交页可见）
+export async function sendStudentRemediation(aid: string, studentUUID: string): Promise<{
+  sent_at: string; message: string;
+}> {
+  return req(`${BASE}/${aid}/students/${encodeURIComponent(studentUUID)}/remediation/send`, {
+    method: 'POST',
+  });
+}
