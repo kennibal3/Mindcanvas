@@ -5,6 +5,7 @@
 //   GET    /api/assignments                    列出作业（可?room_id=过滤）
 //   GET    /api/assignments/:aid               作业详情
 //   PATCH  /api/assignments/:aid/status        更新状态
+//   PATCH  /api/assignments/:aid/room          关联/解绑课堂房间（REQ-048）
 //   DELETE /api/assignments/:aid               删除作业
 //   POST   /api/assignments/:aid/materials     上传材料（文件）
 //   POST   /api/assignments/:aid/materials/text 添加文字材料
@@ -40,11 +41,31 @@ import (
 // AssignmentHandler 作业评价处理器
 type AssignmentHandler struct {
 	svc *services.AssignmentService
+	// REQ-048：校验作业关联的房间确实归当前教师所有
+	roomSvc *services.RoomService
 }
 
 // NewAssignmentHandler 构造函数
-func NewAssignmentHandler(svc *services.AssignmentService) *AssignmentHandler {
-	return &AssignmentHandler{svc: svc}
+func NewAssignmentHandler(svc *services.AssignmentService, roomSvc *services.RoomService) *AssignmentHandler {
+	return &AssignmentHandler{svc: svc, roomSvc: roomSvc}
+}
+
+// checkRoomOwned REQ-048：把 room_id 归一化并校验归属
+// 返回归一化后的指针（空串 -> nil，即解绑）
+func (h *AssignmentHandler) checkRoomOwned(c *gin.Context, roomID *string) (*string, error) {
+	if roomID == nil || *roomID == "" {
+		return nil, nil
+	}
+	err := h.roomSvc.CheckRoomOwnership(
+		*roomID,
+		middleware.GetUserID(c),
+		middleware.GetRole(c),
+		middleware.GetTenantID(c),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return roomID, nil
 }
 
 // =============================================================
@@ -59,6 +80,14 @@ func (h *AssignmentHandler) CreateAssignment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
 		return
 	}
+	// REQ-048：只能绑到自己名下的房间（此前无任何校验）
+	roomID, err := h.checkRoomOwned(c, req.RoomID)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	req.RoomID = roomID
+
 	a, err := h.svc.CreateAssignment(userID, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -116,6 +145,37 @@ func (h *AssignmentHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "状态已更新", "status": req.Status})
+}
+
+// UpdateRoom PATCH /api/assignments/:aid/room
+// REQ-048：把作业关联到某个课堂房间；room_id 传 null 或空串表示解绑。
+// 与 UpdateStatus 分开，避免状态机语义和归属语义混在一个接口里。
+func (h *AssignmentHandler) UpdateRoom(c *gin.Context) {
+	aid := c.Param("aid")
+	userID := middleware.GetUserID(c)
+
+	var req models.UpdateAssignmentRoomRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	roomID, err := h.checkRoomOwned(c, req.RoomID)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.svc.UpdateAssignmentRoom(aid, userID, roomID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if roomID == nil {
+		c.JSON(http.StatusOK, gin.H{"message": "已解除课堂关联", "room_id": nil})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已关联课堂", "room_id": *roomID})
 }
 
 // DeleteAssignment DELETE /api/assignments/:aid

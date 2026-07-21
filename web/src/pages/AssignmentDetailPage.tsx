@@ -9,7 +9,7 @@ import {
   ArrowLeft, Upload, FileText, Trash2, RefreshCw,
   CheckCircle, AlertCircle, Loader2, Plus, Users,
   Star, Eye, Download, Key, Copy, ClipboardList, Sparkles,
-  ChevronUp, ChevronDown, Pencil, Check, X,
+  ChevronUp, ChevronDown, Pencil, Check, X, Link2,
 } from 'lucide-react';
 import type {
   Assignment, AssignmentMaterial, AssignmentRubric,
@@ -21,10 +21,14 @@ import {
 import type {
   AssignmentToken, RosterSummary,
 } from '@/types/token';
+// REQ-048：作业关联课堂
+import type { Room } from '@/types/room';
+import { listRooms } from '@/utils/roomApi';
 import {
   getAssignment, listMaterials, addTextMaterial, deleteMaterial,
   reparseMaterial, uploadMaterialFile, generateRubric, getRubric,
   confirmRubric, listSubmissions, updateAssignmentStatus,
+  updateAssignmentRoom,
   startLectureAnalyze, getLectureReport,
   updateLectureBlock, deleteLectureBlock, regenerateLectureBlock,
   getLectureJob, confirmLectureReport,
@@ -1300,6 +1304,9 @@ const AssignmentDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
   const [activeTab, setActiveTab] = useState<'materials' | 'rubric' | 'submissions' | 'tokens' | 'lecture'>('materials');
+  // ===== REQ-048：关联课堂 =====
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [roomSaving, setRoomSaving] = useState(false);
   // ===== 讲评报告二级页签（REQ-039 第一期）=====
   const [lectureSubTab, setLectureSubTab] = useState<'analysis' | 'report' | 'recommend' | 'remediation'>('analysis');
   // ===== 讲评分析生成（REQ-039 第二期）=====
@@ -1482,6 +1489,27 @@ const AssignmentDetailPage: React.FC = () => {
   }, [materials, aid]);
 
   // ===== 状态切换 =====
+  // ===== REQ-048：关联/解绑课堂 =====
+  useEffect(() => {
+    listRooms()
+      .then(setRooms)
+      .catch(() => setRooms([]));   // 拉不到只是下拉为空，不影响页面其他功能
+  }, []);
+
+  const handleRoomChange = async (rid: string) => {
+    if (!aid) return;
+    setRoomSaving(true);
+    try {
+      await updateAssignmentRoom(aid, rid || null);
+      setAssignment(prev => (prev ? { ...prev, room_id: rid || undefined } : prev));
+      showToast(rid ? '已关联课堂' : '已解除课堂关联');
+    } catch (e: any) {
+      showToast('操作失败：' + e.message);
+    } finally {
+      setRoomSaving(false);
+    }
+  };
+
   const handleStatusChange = async (newStatus: string) => {
     if (!aid) return;
     try {
@@ -1813,6 +1841,32 @@ const AssignmentDetailPage: React.FC = () => {
             {rubric && <span>Rubric v{rubric.version}</span>}
             {tokens.length > 0 && <span>{tokens.length} 个作业码</span>}
             <span>创建于 {new Date(assignment.created_at).toLocaleDateString('zh-CN')}</span>
+          </div>
+
+          {/* REQ-048：关联课堂 —— 关联后才能「从课堂同步花名册」和把讲评要点插入课堂画布 */}
+          <div className="flex items-center gap-2 mt-3">
+            <Link2 size={14} className="text-gray-400 flex-shrink-0" />
+            <span className="text-xs text-gray-500 flex-shrink-0">关联课堂</span>
+            <select
+              value={assignment.room_id || ''}
+              onChange={e => handleRoomChange(e.target.value)}
+              disabled={roomSaving}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1 max-w-[16rem]
+                         focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:opacity-50"
+            >
+              <option value="">未关联</option>
+              {rooms.map(r => (
+                <option key={r.id} value={r.id}>
+                  {r.title}（{r.invite_code}）
+                </option>
+              ))}
+            </select>
+            {roomSaving && <Loader2 size={12} className="animate-spin text-amber-500" />}
+            {!assignment.room_id && !roomSaving && (
+              <span className="text-xs text-gray-400">
+                关联后可同步花名册、把讲评要点插入课堂画布
+              </span>
+            )}
           </div>
         </div>
       </header>

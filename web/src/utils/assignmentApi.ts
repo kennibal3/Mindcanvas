@@ -48,6 +48,16 @@ export async function updateAssignmentStatus(aid: string, status: string): Promi
   });
 }
 
+// REQ-048：关联/解绑课堂房间。roomId 传 null 表示解绑。
+export async function updateAssignmentRoom(aid: string, roomId: string | null): Promise<{
+  message: string; room_id: string | null;
+}> {
+  return req(`${BASE}/${aid}/room`, {
+    method: 'PATCH',
+    body: JSON.stringify({ room_id: roomId }),
+  });
+}
+
 export async function deleteAssignment(aid: string): Promise<{ message: string }> {
   return req(`${BASE}/${aid}`, { method: 'DELETE' });
 }

@@ -163,7 +163,7 @@ func main() {
 	insightHandler    := handlers.NewInsightHandler(insightService)
 	reviewHandler     := handlers.NewReviewHandler(reviewService)
 	shareHandler      := handlers.NewShareHandler(shareService)
-	assignmentHandler := handlers.NewAssignmentHandler(assignmentService)
+	assignmentHandler := handlers.NewAssignmentHandler(assignmentService, roomService)
 	tokenHandler      := handlers.NewTokenHandler(tokenService)
 	shelfHandler      := handlers.NewShelfHandler(roomService, hub)
 
@@ -397,6 +397,7 @@ func main() {
 		assignments.POST("", assignmentHandler.CreateAssignment)
 		assignments.GET("/:aid", assignmentHandler.GetAssignment)
 		assignments.PATCH("/:aid/status", assignmentHandler.UpdateStatus)
+		assignments.PATCH("/:aid/room", assignmentHandler.UpdateRoom) // REQ-048：关联/解绑课堂
 		assignments.DELETE("/:aid", assignmentHandler.DeleteAssignment)
 		assignments.POST("/:aid/materials", assignmentHandler.UploadMaterialFile)
 		assignments.POST("/:aid/materials/text", assignmentHandler.AddTextMaterial)

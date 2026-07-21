@@ -157,6 +157,12 @@ type CreateAssignmentRequest struct {
 	DueAt         *string `json:"due_at"` // ISO8601 字符串
 }
 
+// UpdateAssignmentRoomRequest 关联/解绑课堂房间（REQ-048）
+// RoomID 为 null 或空串表示解绑
+type UpdateAssignmentRoomRequest struct {
+	RoomID *string `json:"room_id"`
+}
+
 // UploadMaterialRequest 上传材料请求（文字类型）
 type UploadMaterialRequest struct {
 	MaterialRole string `json:"material_role" binding:"required"`
