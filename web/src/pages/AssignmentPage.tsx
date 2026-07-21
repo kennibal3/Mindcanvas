@@ -10,6 +10,8 @@ import {
   Trash2, AlertCircle, CheckCircle, Loader2,
 } from 'lucide-react';
 import type { Assignment } from '@/types/assignment';
+import type { Room } from '@/types/room';
+import { listRooms } from '@/utils/roomApi';
 import { ASSIGNMENT_STATUS_LABELS } from '@/types/assignment';
 import {
   listAssignments, createAssignment, deleteAssignment,
@@ -31,6 +33,9 @@ const AssignmentPage: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newAllowResubmit, setNewAllowResubmit] = useState(true);
   const [creating, setCreating] = useState(false);
+  // REQ-048：创建时可选关联课堂
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [newRoomId, setNewRoomId] = useState('');
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -52,6 +57,15 @@ const AssignmentPage: React.FC = () => {
 
   useEffect(() => { fetchAssignments(); }, [fetchAssignments]);
 
+  // REQ-048：打开创建弹窗时才拉房间列表（避免进页面就多打一个请求）
+  useEffect(() => {
+    if (!showCreate) return;
+    listRooms()
+      .then(list => setRooms(list))
+      .catch(() => setRooms([]));   // 拉不到就退化成「不关联」，不阻断创建
+    setNewRoomId(roomId || '');
+  }, [showCreate, roomId]);
+
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
     setCreating(true);
@@ -60,11 +74,12 @@ const AssignmentPage: React.FC = () => {
         title: newTitle.trim(),
         description: newDesc.trim(),
         allow_resubmit: newAllowResubmit,
-        room_id: roomId,
+        room_id: newRoomId || undefined,
       });
       setShowCreate(false);
       setNewTitle('');
       setNewDesc('');
+      setNewRoomId('');
       showToast(`作业「${data.assignment.title}」已创建`);
       fetchAssignments();
     } catch (e: any) {
@@ -257,6 +272,28 @@ const AssignmentPage: React.FC = () => {
                   rows={3}
                 />
               </div>
+              {/* REQ-048：关联课堂（可选） */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  关联课堂 <span className="text-gray-400 font-normal">（可选）</span>
+                </label>
+                <select
+                  value={newRoomId}
+                  onChange={e => setNewRoomId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">不关联</option>
+                  {rooms.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.title}（{r.invite_code}）
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  关联后可从课堂同步花名册，讲评报告也能一键插入课堂画布。之后在详情页随时可改。
+                </p>
+              </div>
+
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"

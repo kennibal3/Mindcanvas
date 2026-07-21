@@ -515,6 +515,29 @@ func (s *AssignmentService) CreateAssignment(createdBy string, req models.Create
 	return a, nil
 }
 
+// UpdateAssignmentRoom 关联/解绑作业所属课堂房间（REQ-048）
+// roomID 为 nil 表示解绑。WHERE 带 created_by，避免改到别人名下的作业。
+func (s *AssignmentService) UpdateAssignmentRoom(assignmentID, createdBy string, roomID *string) error {
+	res, err := s.db.Exec(
+		`UPDATE assignments SET room_id = $1, updated_at = NOW()
+		 WHERE id = $2 AND created_by = $3`,
+		roomID, assignmentID, createdBy,
+	)
+	if err != nil {
+		return fmt.Errorf("更新作业关联课堂失败: %w", err)
+	}
+	affected, _ := res.RowsAffected()
+	if affected == 0 {
+		return fmt.Errorf("作业不存在或无权操作")
+	}
+	if roomID == nil {
+		log.Printf("[作业][REQ-048] 解除课堂关联 作业:%s", assignmentID)
+	} else {
+		log.Printf("[作业][REQ-048] 关联课堂 作业:%s 房间:%s", assignmentID, *roomID)
+	}
+	return nil
+}
+
 // GetAssignment 获取作业详情（含统计）
 func (s *AssignmentService) GetAssignment(assignmentID string) (*models.AssignmentDetail, error) {
 	a := &models.AssignmentDetail{}
