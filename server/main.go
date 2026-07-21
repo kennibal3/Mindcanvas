@@ -390,7 +390,8 @@ func main() {
 
 	// Phase8 作业评价中心（教师端，需认证）
 	assignments := r.Group("/api/assignments")
-	assignments.Use(middleware.AuthRequired(), middleware.RequireRole("superadmin", "admin", "teacher"))
+	// BUG-015：补作业归属校验，防止任意登录教师凭 UUID 操作他人作业
+	assignments.Use(middleware.AuthRequired(), middleware.RequireRole("superadmin", "admin", "teacher"), middleware.AssignmentOwnership(db))
 	{
 		assignments.GET("/parser/health", assignmentHandler.ParserHealth)
 		assignments.GET("", assignmentHandler.ListAssignments)
