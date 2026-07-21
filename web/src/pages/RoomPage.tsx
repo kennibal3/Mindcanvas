@@ -25,6 +25,9 @@ import MemberList from '@/components/teacher/MemberList';
 import FloatingWidgets from '@/components/canvas/FloatingWidgets';
 import AIWorkbench from '@/components/canvas/AIWorkbench';
 import { API_BASE, AVATARS } from '@/utils/constants';
+// REQ-039 3d：消费作业详情页交接过来的「插入画布」内容
+import { takeCanvasInsert } from '@/utils/canvasHandoff';
+import { buildLectureCards } from '@/utils/diagramBuilder';
 
 // ===== 剪贴板工具函数 =====
 const copyToClipboard = (text: string): Promise<void> => {
@@ -410,6 +413,44 @@ const RoomPage = () => {
     window.addEventListener('ctrl_panel_collapsed', handler);
     return () => window.removeEventListener('ctrl_panel_collapsed', handler);
   }, []);
+
+  // REQ-039 3d：消费「从讲评报告插入画布」的待插内容
+  // 作业详情页已把要点暂存到 sessionStorage 并跳转过来，这里等画布 API 就绪后插入。
+  // 只消费一次（takeCanvasInsert 取出即删），刷新页面不会重复插入。
+  useEffect(() => {
+    if (!roomId || !isTeacher) return;   // 仅教师端插入
+    let cancelled = false;
+    let tries = 0;
+    const timer = window.setInterval(async () => {
+      if (cancelled) return;
+      tries++;
+      const api = useCanvasStore.getState().excalidrawAPI;
+      if (!api) {
+        if (tries > 40) window.clearInterval(timer);  // 最多等 ~10 秒
+        return;
+      }
+      window.clearInterval(timer);
+      const pending = takeCanvasInsert(roomId);
+      if (!pending) return;
+      try {
+        const appState = api.getAppState();
+        const originX = -appState.scrollX + 80 / appState.zoom.value;
+        const originY = -appState.scrollY + 60 / appState.zoom.value;
+        const newElements = buildLectureCards(
+          { title: pending.title, items: pending.items, quotes: pending.quotes },
+          originX, originY,
+        );
+        if (!newElements.length) return;
+        api.updateScene({ elements: [...api.getSceneElements(), ...newElements] });
+        setTimeout(() => {
+          api.scrollToContent(newElements, { fitToContent: true, animate: true });
+        }, 100);
+      } catch (err) {
+        console.error('[REQ-039 3d] 插入讲评要点失败', err);
+      }
+    }, 250);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [roomId, isTeacher]);
 
   // REQ-021：光标发送节流 ref（50ms节流，避免频繁广播）
   const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);

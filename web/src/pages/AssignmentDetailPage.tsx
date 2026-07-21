@@ -42,6 +42,9 @@ import {
   getRoster, addRosterEntry, importRosterCSVFile,
   syncRosterFromClassroom, deleteRosterEntry,
 } from '@/utils/tokenApi';
+// REQ-039 第三期 3d：导出（Markdown/打印 PDF）与「插入画布」跨页交接
+import { reportToMarkdown, downloadMarkdown, printReport } from '@/utils/lectureExport';
+import { stashCanvasInsert } from '@/utils/canvasHandoff';
 
 // ===== 错误边界：捕获渲染错误并显示详情而非白屏 =====
 class ErrorBoundary extends React.Component<
@@ -157,7 +160,10 @@ const LectureReportEditor: React.FC<{
   report: LectureReport | null;
   reload: () => Promise<LectureReport | null>;
   toast: (msg: string) => void;
-}> = ({ aid, report, reload, toast }) => {
+  assignmentTitle: string;          // 3d：导出文件名与页眉
+  roomId?: string | null;           // 3d：插入画布的目标房间（作业未关联房间时为空）
+  onInsertToCanvas: (block: LectureReportBlock) => void; // 3d
+}> = ({ aid, report, reload, toast, assignmentTitle, roomId, onInsertToCanvas }) => {
   const [busyId, setBusyId] = useState<string | null>(null);     // 正在重新生成的块
   const [actionBusy, setActionBusy] = useState(false);           // 其他操作互斥
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -317,6 +323,26 @@ const LectureReportEditor: React.FC<{
     }
   };
 
+  // ===== 导出（REQ-039 3d）=====
+  const doExportMarkdown = () => {
+    if (!report) return;
+    try {
+      const md = reportToMarkdown(report, assignmentTitle);
+      const safeName = (assignmentTitle || '讲评报告').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
+      const day = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      downloadMarkdown(`${safeName}_讲评报告_${day}.md`, md);
+      toast('Markdown 已下载');
+    } catch (e: any) {
+      toast(e?.message || '导出失败');
+    }
+  };
+
+  const doPrintReport = () => {
+    if (!report) return;
+    const ok = printReport(report, assignmentTitle);
+    if (!ok) toast('打印窗口被浏览器拦截，请允许本站弹出窗口后重试');
+  };
+
   const iconBtn = 'p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors';
 
   return (
@@ -326,7 +352,7 @@ const LectureReportEditor: React.FC<{
         confirmed ? 'bg-green-50 border-green-100' : 'bg-amber-50 border-amber-100'}`}>
         <p className={`text-xs leading-relaxed ${confirmed ? 'text-green-700' : 'text-amber-800'}`}>
           {confirmed
-            ? '整份报告已确认，可进入后续导出环节。修改任何内容块后需重新确认。'
+            ? '整份报告已确认，可导出 Markdown 或打印为 PDF。修改任何内容块后需重新确认。'
             : '逐块检查并编辑下方内容；全部满意后点「确认整份报告」。已确认的报告才能导出。'}
         </p>
         {!confirmed && (
@@ -338,6 +364,33 @@ const LectureReportEditor: React.FC<{
             <CheckCircle size={13} />确认整份报告
           </button>
         )}
+      </div>
+
+      {/* 导出工具条（REQ-039 3d）：仅在整份报告已确认后可用 */}
+      <div className="rounded-xl border border-gray-100 bg-white p-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-gray-500 leading-relaxed">
+          {confirmed
+            ? '导出整份报告（含全部内容块）。PDF 请在打印对话框中选择「存储为 PDF」。'
+            : '确认整份报告后即可导出 Markdown / PDF。'}
+        </p>
+        <div className="flex-shrink-0 flex items-center gap-2">
+          <button
+            onClick={doExportMarkdown}
+            disabled={!confirmed || blocks.length === 0}
+            title={confirmed ? '下载 Markdown 文件' : '请先确认整份报告'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:text-amber-700 hover:border-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <Download size={13} />导出 Markdown
+          </button>
+          <button
+            onClick={doPrintReport}
+            disabled={!confirmed || blocks.length === 0}
+            title={confirmed ? '打开打印视图，可存为 PDF' : '请先确认整份报告'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-200 text-gray-600 hover:text-amber-700 hover:border-amber-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <FileText size={13} />打印 / 存为 PDF
+          </button>
+        </div>
       </div>
 
       {blocks.length === 0 && (
@@ -393,6 +446,13 @@ const LectureReportEditor: React.FC<{
                   <button onClick={() => doRegen(block)} disabled={actionBusy || !!busyId}
                     className={iconBtn} title="用 AI 重新生成该块">
                     {isRegen ? <Loader2 size={14} className="animate-spin text-amber-500" /> : <RefreshCw size={14} />}
+                  </button>
+                  {/* 插入画布（REQ-039 3d）：跳转关联房间并当场插入要点卡片 */}
+                  <button onClick={() => onInsertToCanvas(block)}
+                    disabled={actionBusy || !!busyId || !roomId}
+                    className={iconBtn}
+                    title={roomId ? '把该块要点插入课堂画布' : '该作业未关联课堂房间，无法插入画布'}>
+                    <Sparkles size={14} />
                   </button>
                   <button onClick={() => doConfirmBlock(block)} disabled={actionBusy || !!busyId}
                     className={`${iconBtn} ${block.teacher_confirmed ? 'text-green-500 hover:text-green-600' : ''}`}
@@ -1598,6 +1658,35 @@ const AssignmentDetailPage: React.FC = () => {
     }
   };
 
+  // ===== 典型错误插入画布（REQ-039 第三期 3d）=====
+  // 把内容块的要点暂存后跳转到关联房间，由房间页在画布就绪时插入卡片。
+  // 走前端插入链路（同 REQ-027 AI 图形），插入结果经既有场景同步自然落库，
+  // 不直接改写服务端 room_scenes。
+  const handleInsertBlockToCanvas = useCallback((block: LectureReportBlock) => {
+    const roomId = (assignment as any)?.room_id as string | undefined;
+    if (!roomId) {
+      showToast('该作业未关联课堂房间，无法插入画布');
+      return;
+    }
+    const c: any = block.content ?? {};
+    const isOverview = block.block_type === 'overview';
+    // 取「问题类」要点：概览取共性问题，维度块取典型问题
+    const items: string[] = isOverview
+      ? (Array.isArray(c.common_issues) ? c.common_issues : [])
+      : (Array.isArray(c.common_problems) ? c.common_problems : []);
+    const quotes: string[] = Array.isArray(c.example_quotes) ? c.example_quotes : [];
+    if (items.length === 0 && quotes.length === 0) {
+      showToast('该内容块没有可插入的典型问题要点');
+      return;
+    }
+    const title = block.title || (isOverview ? '班级共性问题' : '典型问题');
+    if (!stashCanvasInsert({ roomId, title, items, quotes })) {
+      showToast('浏览器不支持暂存，无法插入画布');
+      return;
+    }
+    navigate(`/room/${roomId}`);
+  }, [assignment, navigate]);
+
   // ===== 从课堂同步花名册 =====
   const handleSyncFromClassroom = async () => {
     if (!aid || !(assignment as any)?.room_id) {
@@ -2574,6 +2663,9 @@ const AssignmentDetailPage: React.FC = () => {
                 report={lectureReport}
                 reload={loadLectureReport}
                 toast={showToast}
+                assignmentTitle={assignment?.title || '作业'}
+                roomId={(assignment as any)?.room_id || null}
+                onInsertToCanvas={handleInsertBlockToCanvas}
               />
             )}
 
