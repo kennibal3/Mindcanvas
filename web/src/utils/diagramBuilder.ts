@@ -881,3 +881,109 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
   wrapInFrame(skeletons, "fb", effectNode.label ? `AI 鱼骨图 · ${effectNode.label}` : "AI 鱼骨图");
   return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
 }
+
+// ────────────────────────────────────────────────────────────────
+// 6. 讲评要点卡片（REQ-039 第三期 3d：典型错误插入画布）
+// 把讲评报告内容块的要点列表转成画布上的一列卡片：
+//   顶部标题条 + 逐条要点卡（可选「学生原话」浅色引用卡）
+// 纯垂直堆叠、显式坐标、无任何连线 —— 天然不触碰 REQ-027 的
+// 「严禁 skeleton 绑定式箭头」铁律（这里根本不产生 arrow 元素）。
+// 卡片高度按文字长度估算，避免长句子溢出容器。
+// ────────────────────────────────────────────────────────────────
+export interface LectureCardsInput {
+  title: string;                 // 标题条文字，如「典型问题 · 浮力概念」
+  items: string[];               // 要点列表，每条一张卡
+  quotes?: string[];             // 可选：学生原话样例，浅色卡追加在后面
+}
+
+const LC_W = 340;               // 卡片宽度
+const LC_GAP = 14;              // 卡片间距
+const LC_FONT = 14;
+const LC_CHARS_PER_LINE = 20;   // 中文按 14px 字号在 340px 宽内的保守估计
+
+const LC_COLOR = {
+  title: { bg: "#BA7517", stroke: "#8a5511", text: "#ffffff" },
+  item:  { bg: "#FBE8C3", stroke: "#BA7517", text: "#5a3a00" },
+  quote: { bg: "#F5F5F4", stroke: "#bdbdbd", text: "#555555" },
+};
+
+// 按字数估算卡片高度（中文/英文混排取保守值）
+function lcHeight(text: string): number {
+  const len = [...String(text ?? "")].length;
+  const lines = Math.max(1, Math.ceil(len / LC_CHARS_PER_LINE));
+  return Math.max(52, lines * 22 + 26);
+}
+
+export function buildLectureCards(
+  input: LectureCardsInput,
+  originX = 0,
+  originY = 0
+): ExcalidrawElement[] {
+  const items = (input.items ?? []).filter(t => String(t ?? "").trim());
+  const quotes = (input.quotes ?? []).filter(t => String(t ?? "").trim());
+  const skeletons: NonNullable<Parameters<typeof convertToExcalidrawElements>[0]> = [];
+  const seq = Date.now().toString(36);
+  let y = originY;
+
+  // 标题条
+  const titleText = String(input.title ?? "讲评要点").trim() || "讲评要点";
+  const titleH = Math.max(48, lcHeight(titleText) - 8);
+  skeletons.push({
+    type: "rectangle",
+    id: `lc_title_${seq}`,
+    x: originX,
+    y,
+    width: LC_W,
+    height: titleH,
+    backgroundColor: LC_COLOR.title.bg,
+    strokeColor: LC_COLOR.title.stroke,
+    strokeWidth: 2,
+    roundness: { type: 3 },
+    label: { text: titleText, fontSize: 16, fontFamily: 2, color: LC_COLOR.title.text },
+  } as any);
+  y += titleH + LC_GAP;
+
+  // 要点卡（前面加序号，方便课堂上口头指认「第 2 条」）
+  items.forEach((text, i) => {
+    const label = `${i + 1}. ${String(text).trim()}`;
+    const h = lcHeight(label);
+    skeletons.push({
+      type: "rectangle",
+      id: `lc_item_${seq}_${i}`,
+      x: originX,
+      y,
+      width: LC_W,
+      height: h,
+      backgroundColor: LC_COLOR.item.bg,
+      strokeColor: LC_COLOR.item.stroke,
+      strokeWidth: 1.5,
+      roundness: { type: 3 },
+      label: { text: label, fontSize: LC_FONT, fontFamily: 2, color: LC_COLOR.item.text },
+    } as any);
+    y += h + LC_GAP;
+  });
+
+  // 学生原话样例（浅灰卡，与要点区分）
+  quotes.forEach((text, i) => {
+    const label = `“${String(text).trim()}”`;
+    const h = lcHeight(label);
+    skeletons.push({
+      type: "rectangle",
+      id: `lc_quote_${seq}_${i}`,
+      x: originX,
+      y,
+      width: LC_W,
+      height: h,
+      backgroundColor: LC_COLOR.quote.bg,
+      strokeColor: LC_COLOR.quote.stroke,
+      strokeWidth: 1,
+      roundness: { type: 3 },
+      label: { text: label, fontSize: 13, fontFamily: 2, color: LC_COLOR.quote.text },
+    } as any);
+    y += h + LC_GAP;
+  });
+
+  if (skeletons.length === 0) return [];
+  wrapInFrame(skeletons, "lc", `讲评 · ${titleText}`);
+  return convertToExcalidrawElements(skeletons) as ExcalidrawElement[];
+}

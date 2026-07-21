@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"strings"
 	"time"
@@ -256,7 +257,49 @@ func (s *TokenService) VerifyToken(tokenStr string) (*models.TokenVerifyResult, 
 		}
 	}
 
+	// BUG-013 自愈：submission_id 未绑定（BindTokenToSubmission 是 best-effort，
+	// 曾失败或历史数据缺失）时，按 assignment_id + student_uuid 反查一次提交记录。
+	// 不修则该生此后每次凭码进来都被当成"没交过"，永远看不到教师发的反馈。
+	// 仅对专属码生效——通用码 student_uuid 为空，本就不标识具体学生。
+	if result.ExistingSubmission == nil && t.StudentUUID != "" {
+		if sub := s.findLatestSubmission(t.AssignmentID, t.StudentUUID); sub != nil {
+			result.ExistingSubmission = sub
+			// 顺手回填 token（幂等，只在仍为空时写），下次不必再反查
+			if _, err := s.db.Exec(`
+				UPDATE assignment_tokens
+				   SET submission_id = $1,
+				       used_at = COALESCE(used_at, NOW())
+				 WHERE id = $2 AND submission_id IS NULL
+			`, sub.ID, t.ID); err != nil {
+				log.Printf("[BUG-013] 回填 token=%s submission=%s 失败: %v", t.Token, sub.ID, err)
+			}
+		}
+	}
+
 	return &result, nil
+}
+
+// findLatestSubmission 按作业+学生UUID反查最新一份提交（BUG-013 自愈用）
+// 查不到返回 nil，调用方按"未提交"处理，不影响原有流程。
+func (s *TokenService) findLatestSubmission(assignmentID, studentUUID string) *models.AssignmentSubmission {
+	var subID string
+	err := s.db.QueryRow(`
+		SELECT id FROM assignment_submissions
+		 WHERE assignment_id = $1 AND student_uuid = $2
+		 ORDER BY version DESC, submitted_at DESC
+		 LIMIT 1
+	`, assignmentID, studentUUID).Scan(&subID)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			log.Printf("[BUG-013] 反查提交失败 assignment=%s student=%s: %v", assignmentID, studentUUID, err)
+		}
+		return nil
+	}
+	sub, err := s.getSubmissionByID(subID)
+	if err != nil {
+		return nil
+	}
+	return sub
 }
 
 // getSubmissionByID 查询单个提交
@@ -698,9 +741,14 @@ func (s *TokenService) SubmitByToken(req models.SubmitByTokenRequest) (string, s
 	}
 
 	// 4. 绑定token与提交
+	// BUG-013：绑定失败会导致该生此后进不了「我的作业」，这里重试一次并记 WARN；
+	// 即使仍失败也不阻断提交——VerifyToken 已有反查自愈兜底。
 	if err := s.BindTokenToSubmission(req.Token, subID); err != nil {
-		// 不影响主流程，只记录日志
-		fmt.Printf("[TokenService] 绑定token失败: %v\n", err)
+		log.Printf("[BUG-013][WARN] 绑定token失败(第1次) token=%s submission=%s: %v", req.Token, subID, err)
+		if err2 := s.BindTokenToSubmission(req.Token, subID); err2 != nil {
+			log.Printf("[BUG-013][WARN] 绑定token重试仍失败 token=%s submission=%s: %v（将由 VerifyToken 反查自愈）",
+				req.Token, subID, err2)
+		}
 	}
 
 	// 5. 将提交信息序列化到花名册（通用码：更新姓名匹配的花名册条目）
