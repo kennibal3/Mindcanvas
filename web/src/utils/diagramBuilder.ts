@@ -688,6 +688,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     height: 0,
     strokeColor: tlMain.stroke,
     strokeWidth: 2.5,
+    roughness: 0,          // BUG-016 二轮：关手绘抖动，长轴线不再"波浪"，与圆点精确对齐
     endArrowhead: "arrow",
     startArrowhead: null,
   } as any);
@@ -731,6 +732,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       height: stemBot - stemTop,
       strokeColor: tlMain.stroke,
       strokeWidth: 1.5,
+      roughness: 0,
     } as any);
 
     // 圆点在主轴上
@@ -744,6 +746,8 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       backgroundColor: tlMain.stroke,
       strokeColor: tlMain.stroke,
       strokeWidth: 1,
+      roughness: 0,
+      fillStyle: "solid",
     } as any);
 
     // 子节点：从主节点「远离轴」的一边逐个向外堆叠，箭头链式接力（上一框 → 下一框，不穿卡片）
@@ -983,6 +987,7 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
 
     // 子原因（小鱼刺）：BUG-016 改为在原因卡「外侧」竖直堆叠 + 链式短线连接，
     // 与原因卡同列（宽度更窄），杜绝子刺之间/与邻近原因卡重叠（旧代码沿斜骨摆放会撞）。
+    // BUG-016 二轮：子卡片同色紧挨竖排即可表达从属，卡片间的连接线是冗余噪声（"多余线段"）→ 去掉。
     const subs = subOf.get(cause.id) ?? [];
     const subW = 130;
     const subH = 36;
@@ -995,19 +1000,6 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
         ? causeBoxTop - (si + 1) * (subH + subGap)
         : causeBoxBot + si * (subH + subGap) + subGap;
       const subX = boneEndX - subW / 2;
-      // 链式短线：上一层（原因卡或上一子卡）外沿 → 当前子卡近端
-      const prevY = isTop ? causeBoxTop - si * (subH + subGap) : causeBoxBot + si * (subH + subGap);
-      const curNearY = isTop ? subY + subH : subY;
-      skeletons.push({
-        type: "line",
-        id: `fb_sub_line_${sub.id}`,
-        x: boneEndX,
-        y: prevY,
-        width: 0,
-        height: curNearY - prevY,
-        strokeColor: causeColor.stroke,
-        strokeWidth: 1.5,
-      } as any);
       skeletons.push({
         type: "rectangle",
         id: `fb_sub_${sub.id}`,
