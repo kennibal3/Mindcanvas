@@ -19,16 +19,24 @@ type Room struct {
 	MaxCapacity int        `json:"max_capacity"`
 	Status      string     `json:"status"`
 	RoomMode    string     `json:"room_mode"`
+	CollabMode  string     `json:"collab_mode"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
-// 房间模式常量
+// 房间模式常量（画布形态维度）
 const (
 	RoomModeWhiteboard  = "whiteboard"
 	RoomModeCards       = "cards"
 	RoomModeInteractive = "interactive"
+)
+
+// 房间协作形态常量（身份/权限维度，与 RoomMode 正交）
+const (
+	CollabModeRoster    = "roster"    // 实名上课
+	CollabModeAnonymous = "anonymous" // 匿名培训（默认）
+	CollabModeTeam      = "team"      // 团队协作（人人可删）
 )
 
 // CreateRoomRequest 创建房间请求
@@ -36,6 +44,7 @@ type CreateRoomRequest struct {
 	Title       string `json:"title" binding:"required"`
 	MaxCapacity int    `json:"max_capacity"`
 	RoomMode    string `json:"room_mode"`
+	CollabMode  string `json:"collab_mode"` // roster/anonymous/team，空则默认 anonymous
 }
 
 // UpdateRoomRequest 更新房间请求（字段可选）
