@@ -22,6 +22,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"mindcanvas-server/config"
+	"mindcanvas-server/models"
 	"mindcanvas-server/services"
 	"mindcanvas-server/utils"
 	"mindcanvas-server/ws"
@@ -405,7 +406,11 @@ func (h *WSHandler) SetupMessageHandler() {
 				return
 			}
 			if illegalIDs := validateDeletePermissions(senderUUID, payload); len(illegalIDs) > 0 {
-				payload = filterIllegalDeletes(payload, illegalIDs)
+				// REQ-046 团队协作形态：人人可删他人元素，跳过恢复。
+				// 仅在确有越权删除时才查库（罕见），避免每次 scene_update 都查房间形态。
+				if !h.isTeamRoom(roomID) {
+					payload = filterIllegalDeletes(payload, illegalIDs)
+				}
 			}
 			broadcastBytes, _ := json.Marshal(map[string]interface{}{
 				"type": ws.MsgSceneUpdate,
@@ -802,6 +807,18 @@ func (h *WSHandler) persistStroke(roomID string, client *ws.Client, payload json
 	}
 	payloadJSON, _ := json.Marshal(strokeData)
 	h.widgetService.CreateElement(roomID, client.UUID, client.Nickname, "excalidraw_stroke", payloadJSON)
+}
+
+// isTeamRoom 查询房间是否为团队协作形态（REQ-046）。
+// 仅在检测到学生越权删除时调用，频率低；查询失败时保守返回 false（＝保持删除保护）。
+func (h *WSHandler) isTeamRoom(roomID string) bool {
+	var collabMode string
+	if err := h.db.QueryRow(
+		"SELECT collab_mode FROM rooms WHERE id=$1", roomID,
+	).Scan(&collabMode); err != nil {
+		return false
+	}
+	return collabMode == models.CollabModeTeam
 }
 
 // validateDeletePermissions 检查学生是否尝试删除他人元素

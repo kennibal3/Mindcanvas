@@ -332,6 +332,7 @@ const RoomPage = () => {
             max_capacity: 200,
             status:       'active',
             room_mode:    'whiteboard' as const,
+            collab_mode:  'anonymous' as const,
             created_at:   '',
             updated_at:   '',
           });

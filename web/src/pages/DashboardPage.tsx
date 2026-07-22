@@ -15,8 +15,8 @@ import {
   Check, Pencil, Calendar, UserCircle, Eye, EyeOff,
   LayoutTemplate, BookOpen, Globe, Star, MessageSquare,
 } from 'lucide-react';
-import type { Room } from '@/types/room';
-import { ROOM_MODE_LABELS } from '@/types/room';
+import type { Room, CollabMode } from '@/types/room';
+import { ROOM_MODE_LABELS, COLLAB_MODE_OPTIONS } from '@/types/room';
 
 const API_BASE = '/api';
 
@@ -46,6 +46,7 @@ const DashboardPage = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCapacity, setNewCapacity] = useState(50);
+  const [newCollabMode, setNewCollabMode] = useState<CollabMode>('anonymous');
   const [createLoading, setCreateLoading] = useState(false);
   const [copied, setCopied] = useState('');
   const [toast, setToast] = useState('');
@@ -154,6 +155,7 @@ const DashboardPage = () => {
         body: JSON.stringify({
           title: newTitle.trim(),
           max_capacity: newCapacity,
+          collab_mode: newCollabMode,
         }),
       });
       if (res.ok) {
@@ -161,6 +163,7 @@ const DashboardPage = () => {
         setShowCreate(false);
         setNewTitle('');
         setNewCapacity(50);
+        setNewCollabMode('anonymous');
         scrollToRoomId.current = data.room.id;
         fetchRooms();
         showToast(`房间「${data.room.title}」创建成功，邀请码：${data.invite_code}`);
@@ -791,6 +794,32 @@ const DashboardPage = () => {
                   <span>10人</span>
                   <span className="text-amber-700 font-medium">{capLabel(newCapacity)}</span>
                   <span>150人</span>
+                </div>
+              </div>
+              {/* REQ-046 房间协作形态（身份/权限维度） */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  房间形态
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {COLLAB_MODE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setNewCollabMode(opt.value)}
+                      className={`text-left rounded-xl border-2 px-4 py-3 transition-all ${
+                        newCollabMode === opt.value
+                          ? 'border-amber-500 bg-amber-50 ring-2 ring-amber-100'
+                          : 'border-gray-200 hover:border-amber-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 font-medium text-gray-800">
+                        <span className="text-lg">{opt.icon}</span>
+                        {opt.label}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5 pl-7">{opt.desc}</p>
+                    </button>
+                  ))}
                 </div>
               </div>
               {/* 提示文案：模式可在进入房间后切换 */}

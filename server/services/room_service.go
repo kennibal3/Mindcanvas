@@ -31,7 +31,7 @@ func (s *RoomService) DB() *sql.DB {
 
 // roomSelectFields 统一的 SELECT 字段列表（含 room_mode）
 const roomSelectFields = `id, teacher_id, tenant_id, title, invite_code, is_locked, is_readonly,
-	max_capacity, status, room_mode, created_at, updated_at, finished_at`
+	max_capacity, status, room_mode, collab_mode, created_at, updated_at, finished_at`
 
 // scanRoom 统一的行扫描方法
 func scanRoom(scanner interface{ Scan(...interface{}) error }) (*models.Room, error) {
@@ -39,7 +39,7 @@ func scanRoom(scanner interface{ Scan(...interface{}) error }) (*models.Room, er
 	err := scanner.Scan(
 		&room.ID, &room.TeacherID, &room.TenantID, &room.Title,
 		&room.InviteCode, &room.IsLocked, &room.IsReadOnly,
-		&room.MaxCapacity, &room.Status, &room.RoomMode,
+		&room.MaxCapacity, &room.Status, &room.RoomMode, &room.CollabMode,
 		&room.CreatedAt, &room.UpdatedAt, &room.FinishedAt,
 	)
 	return room, err
@@ -67,6 +67,15 @@ func (s *RoomService) CreateRoom(teacherID, tenantID string, req models.CreateRo
 	default:
 		// 非法值时默认 interactive
 		roomMode = models.RoomModeInteractive
+	}
+
+	// 协作形态（身份/权限维度）：空或非法值默认 anonymous（＝保持现状）
+	collabMode := req.CollabMode
+	switch collabMode {
+	case models.CollabModeRoster, models.CollabModeAnonymous, models.CollabModeTeam:
+		// 合法值，保持不变
+	default:
+		collabMode = models.CollabModeAnonymous
 	}
 
 	// 查询租户的最大房间数限制
@@ -114,10 +123,10 @@ func (s *RoomService) CreateRoom(teacherID, tenantID string, req models.CreateRo
 
 	// 插入房间记录
 	room, err := scanRoom(s.db.QueryRow(
-		`INSERT INTO rooms (teacher_id, tenant_id, title, invite_code, max_capacity, room_mode)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO rooms (teacher_id, tenant_id, title, invite_code, max_capacity, room_mode, collab_mode)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING `+roomSelectFields,
-		teacherID, tenantID, req.Title, inviteCode, maxCapacity, roomMode,
+		teacherID, tenantID, req.Title, inviteCode, maxCapacity, roomMode, collabMode,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("创建房间失败: %w", err)
