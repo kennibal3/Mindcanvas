@@ -458,8 +458,8 @@ const FC_NODE_W = 180;
 const FC_NODE_H = 56;
 const FC_DIAM_W = 160; // 菱形宽
 const FC_DIAM_H = 72;  // 菱形高
-const FC_H_GAP = 60;
-const FC_V_GAP = 60;
+const FC_H_GAP = 70;
+const FC_V_GAP = 78;
 
 function buildFlowchart(
   nodes: DiagramNode[],
@@ -572,6 +572,9 @@ function buildFlowchart(
   // parent 关系连线（父底部中点 → 子顶部中点，几何式；getPos 的 x 是中心、y 是顶部）
   for (const n of nodes) {
     if (!n.parent) continue;
+    // BUG-016：若该 parent→子 关系已由显式 edge 表达（如 decision 分支），这里不再重复画箭头，
+    // 否则同一对节点会出现两条箭头 → "箭头乱标记" + 交叉。
+    if (edges.some(e => e.from === n.parent && e.to === n.id)) continue;
     const from = getPos(n.parent);
     const to = getPos(n.id);
     skeletons.push(geoArrow(
@@ -622,7 +625,6 @@ const TL_NODE_H = 52;
 const TL_SUB_W = 140;
 const TL_SUB_H = 42;
 const TL_H_STEP = 200; // 主轴节点水平间距
-const TL_OFFSET = 100; // 主轴到节点的垂直偏移
 
 function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
   const T = getActiveTheme();
@@ -642,34 +644,32 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
   }
 
   const skeletons: NonNullable<Parameters<typeof convertToExcalidrawElements>[0]> = [];
-  const axisY = oy + 150; // 主轴 Y 坐标
+
+  // BUG-016：先按「每个主节点的子说明数」做纵向预算，标题独占顶部一行、主轴位置动态下移，
+  // 保证「标题 / 主节点 / 子节点」三层互不重叠；子节点箭头改为逐个接力（不再全从主节点出发穿卡片）。
+  const TL_TITLE_H = 46;
+  const TL_TITLE_GAP = 34;   // 标题与最顶层内容的间隙
+  const TL_SUB_GAP = 10;     // 子节点之间/与主节点的间隙
+  const TL_STEM_GAP = 46;    // 主节点靠轴一边到主轴的竖线长度
+  const topNodes = mainNodes.filter((_, i) => i % 2 === 0);
+  const botNodes = mainNodes.filter((_, i) => i % 2 !== 0);
+  const maxSubsTop = topNodes.reduce((m, n) => Math.max(m, subOf.get(n.id)?.length ?? 0), 0);
+  const topBudget = TL_STEM_GAP + TL_NODE_H + maxSubsTop * (TL_SUB_H + TL_SUB_GAP) + TL_SUB_GAP;
+
+  const axisY = oy + TL_TITLE_H + TL_TITLE_GAP + topBudget; // 主轴 Y（随上方内容动态下移）
   const startX = ox + 80;
   const endX = startX + Math.max(1, mainNodes.length - 1) * TL_H_STEP + 80;
 
-  // 主轴线
-  skeletons.push({
-    type: "arrow",
-    id: "tl_axis",
-    x: startX - 20,
-    y: axisY + TL_NODE_H / 2,
-    width: endX - startX + 40,
-    height: 0,
-    strokeColor: tlMain.stroke,
-    strokeWidth: 2.5,
-    endArrowhead: "arrow",
-    startArrowhead: null,
-  } as any);
-
-  // 标题节点（在主轴左上方）
+  // 标题：顶部独占一行（居左），不与任何节点同列重叠
   if (titleNode) {
     const color = T.anchor;
     skeletons.push({
       type: "rectangle",
       id: `tl_node_${titleNode.id}`,
       x: ox,
-      y: oy + 50,
-      width: TL_NODE_W + 20,
-      height: TL_NODE_H,
+      y: oy,
+      width: TL_NODE_W + 40,
+      height: TL_TITLE_H,
       backgroundColor: color.bg,
       strokeColor: color.stroke,
       strokeWidth: 2,
@@ -678,11 +678,25 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     } as any);
   }
 
+  // 主轴线
+  skeletons.push({
+    type: "arrow",
+    id: "tl_axis",
+    x: startX - 20,
+    y: axisY,
+    width: endX - startX + 40,
+    height: 0,
+    strokeColor: tlMain.stroke,
+    strokeWidth: 2.5,
+    endArrowhead: "arrow",
+    startArrowhead: null,
+  } as any);
+
   // 主轴节点
   mainNodes.forEach((n, i) => {
     const x = startX + i * TL_H_STEP;
     const isTop = i % 2 === 0;
-    const nodeY = isTop ? axisY - TL_OFFSET - TL_NODE_H : axisY + TL_OFFSET;
+    const nodeY = isTop ? axisY - TL_STEM_GAP - TL_NODE_H : axisY + TL_STEM_GAP;
     const color = tlMain;
 
     // 节点框
@@ -705,14 +719,16 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       },
     } as any);
 
-    // 竖线连接主轴
+    // 竖线：主节点靠轴的一边 → 主轴（不穿卡片）
+    const stemTop = isTop ? nodeY + TL_NODE_H : axisY;
+    const stemBot = isTop ? axisY : nodeY;
     skeletons.push({
       type: "line",
       id: `tl_stem_${n.id}`,
       x,
-      y: isTop ? nodeY + TL_NODE_H : axisY + TL_NODE_H / 2,
+      y: stemTop,
       width: 0,
-      height: isTop ? axisY + TL_NODE_H / 2 - nodeY - TL_NODE_H : nodeY - axisY - TL_NODE_H / 2,
+      height: stemBot - stemTop,
       strokeColor: tlMain.stroke,
       strokeWidth: 1.5,
     } as any);
@@ -722,7 +738,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       type: "ellipse",
       id: `tl_dot_${n.id}`,
       x: x - 6,
-      y: axisY + TL_NODE_H / 2 - 6,
+      y: axisY - 6,
       width: 12,
       height: 12,
       backgroundColor: tlMain.stroke,
@@ -730,13 +746,15 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       strokeWidth: 1,
     } as any);
 
-    // 子节点
-    (subOf.get(n.id) ?? []).forEach((sub, si) => {
+    // 子节点：从主节点「远离轴」的一边逐个向外堆叠，箭头链式接力（上一框 → 下一框，不穿卡片）
+    const subs = subOf.get(n.id) ?? [];
+    let prevEdgeY = isTop ? nodeY : nodeY + TL_NODE_H; // 主节点远轴边
+    subs.forEach((sub, si) => {
       const subColor = tlSub;
-      const subX = isTop ? x - TL_SUB_W / 2 : x - TL_SUB_W / 2;
+      const subX = x - TL_SUB_W / 2;
       const subY = isTop
-        ? nodeY - (si + 1) * (TL_SUB_H + 10) - 10
-        : nodeY + TL_NODE_H + (si + 1) * (TL_SUB_H + 10) - TL_SUB_H;
+        ? nodeY - (si + 1) * (TL_SUB_H + TL_SUB_GAP)
+        : nodeY + TL_NODE_H + si * (TL_SUB_H + TL_SUB_GAP) + TL_SUB_GAP;
       skeletons.push({
         type: "rectangle",
         id: `tl_sub_${sub.id}`,
@@ -750,12 +768,14 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
         roundness: { type: 3 },
         label: { text: sub.label, fontSize: 12, fontFamily: 2, color: subColor.text },
       } as any);
+      const curNearY = isTop ? subY + TL_SUB_H : subY;   // 子框靠主节点的一边
       skeletons.push(geoArrow(
         `tl_sub_edge_${sub.id}`,
-        x, isTop ? nodeY : nodeY + TL_NODE_H,
-        x, isTop ? subY + TL_SUB_H : subY,
+        x, prevEdgeY,
+        x, curNearY,
         { strokeColor: tlMain.stroke, strokeWidth: 1 }
       ));
+      prevEdgeY = isTop ? subY : subY + TL_SUB_H;        // 下一段从本子框外沿接力
     });
   });
 
@@ -866,8 +886,6 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
   if (!effectNode) return [];
 
   const causeNodes = nodes.filter(n => n.parent === effectNode.id);
-  const topCauses = causeNodes.filter(n => n.side === "top" || causeNodes.indexOf(n) % 2 === 0);
-  const botCauses = causeNodes.filter(n => n.side === "bottom" || causeNodes.indexOf(n) % 2 !== 0);
 
   const subOf = new Map<string, DiagramNode[]>();
   for (const n of nodes) {
@@ -879,10 +897,22 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
   }
 
   const skeletons: NonNullable<Parameters<typeof convertToExcalidrawElements>[0]> = [];
-  const centerY = oy + 200;
+  const centerY = oy + 240;
   const spineStartX = ox + 60;
-  const spineEndX = spineStartX + FB_SPINE_LEN;
   const ang = (FB_BONE_ANGLE * Math.PI) / 180;
+
+  // BUG-016：先按原因数算主脊长度——保证同侧相邻原因卡片「槽距 ≥ 卡片宽+间距」，
+  // 原因多时把主脊拉长，而不是缩小间距把卡片挤成一坨（旧代码 spacing 会 < 卡片宽 → 重叠）。
+  const allCauses = causeNodes;
+  const topArr = allCauses.filter((_, i) => i % 2 === 0);
+  const botArr = allCauses.filter((_, i) => i % 2 !== 0);
+  const maxSide = Math.max(topArr.length, botArr.length);
+  const causeW = 150;
+  const causeH = 48;
+  const slot = causeW + 64;          // 同侧相邻大骨的水平槽距（> 卡片宽，杜绝重叠）
+  const firstBone = 120;             // 第一根大骨距鱼尾偏移
+  const spineLen = Math.max(FB_SPINE_LEN, firstBone + Math.max(0, maxSide - 1) * slot + 180);
+  const spineEndX = spineStartX + spineLen;
 
   // 主脊
   skeletons.push({
@@ -890,7 +920,7 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     id: "fb_spine",
     x: spineStartX,
     y: centerY,
-    width: FB_SPINE_LEN,
+    width: spineLen,
     height: 0,
     strokeColor: T.fishHead.stroke,
     strokeWidth: 3,
@@ -916,12 +946,6 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     label: { text: effectNode.label, fontSize: 14, fontFamily: 2, color: effColor.text },
   } as any);
 
-  const allCauses = causeNodes;
-  const topArr = allCauses.filter((_, i) => i % 2 === 0);
-  const botArr = allCauses.filter((_, i) => i % 2 !== 0);
-  const maxSide = Math.max(topArr.length, botArr.length);
-  const spacing = maxSide > 0 ? Math.min(140, (FB_SPINE_LEN - 100) / maxSide) : 140;
-
   function drawCause(cause: DiagramNode, boneX: number, isTop: boolean) {
     // REQ-049：各原因分支按其在原因列表中的序号循环取主题分支色（与思维导图同思路）
     const gi = causeNodes.indexOf(cause);
@@ -942,9 +966,7 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       strokeWidth: 2,
     } as any);
 
-    // 大骨标签
-    const causeW = 140;
-    const causeH = 46;
+    // 大骨标签（causeW/causeH 用外层定义，与主脊长度计算同源）
     skeletons.push({
       type: "rectangle",
       id: `fb_node_${cause.id}`,
@@ -959,33 +981,40 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       label: { text: cause.label, fontSize: 13, fontFamily: 2, color: causeColor.text },
     } as any);
 
-    // 子骨（小鱼刺）
-    (subOf.get(cause.id) ?? []).forEach((sub, si) => {
+    // 子原因（小鱼刺）：BUG-016 改为在原因卡「外侧」竖直堆叠 + 链式短线连接，
+    // 与原因卡同列（宽度更窄），杜绝子刺之间/与邻近原因卡重叠（旧代码沿斜骨摆放会撞）。
+    const subs = subOf.get(cause.id) ?? [];
+    const subW = 130;
+    const subH = 36;
+    const subGap = 8;
+    const causeBoxTop = boneEndY + (isTop ? -causeH - 8 : 8);
+    const causeBoxBot = causeBoxTop + causeH;
+    subs.forEach((sub, si) => {
       const subColor = themeLighten(causeColor, 0.5);
-      const t = (si + 1) / ((subOf.get(cause.id)?.length ?? 1) + 1);
-      const subAttachX = boneX + t * (boneEndX - boneX);
-      const subAttachY = centerY + t * (boneEndY - centerY);
-      const subEndX = subAttachX - FB_SUB_LEN * 0.7 * (isTop ? -1 : 1) * Math.sin(ang);
-      const subEndY = subAttachY + dy * FB_SUB_LEN * Math.cos(ang) * 0.6;
-
+      const subY = isTop
+        ? causeBoxTop - (si + 1) * (subH + subGap)
+        : causeBoxBot + si * (subH + subGap) + subGap;
+      const subX = boneEndX - subW / 2;
+      // 链式短线：上一层（原因卡或上一子卡）外沿 → 当前子卡近端
+      const prevY = isTop ? causeBoxTop - si * (subH + subGap) : causeBoxBot + si * (subH + subGap);
+      const curNearY = isTop ? subY + subH : subY;
       skeletons.push({
         type: "line",
         id: `fb_sub_line_${sub.id}`,
-        x: subAttachX,
-        y: subAttachY,
-        width: subEndX - subAttachX,
-        height: subEndY - subAttachY,
+        x: boneEndX,
+        y: prevY,
+        width: 0,
+        height: curNearY - prevY,
         strokeColor: causeColor.stroke,
         strokeWidth: 1.5,
       } as any);
-
       skeletons.push({
         type: "rectangle",
         id: `fb_sub_${sub.id}`,
-        x: subEndX - 60,
-        y: subEndY - 20,
-        width: 120,
-        height: 38,
+        x: subX,
+        y: subY,
+        width: subW,
+        height: subH,
         backgroundColor: subColor.bg,
         strokeColor: subColor.stroke,
         strokeWidth: 1,
@@ -996,11 +1025,11 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
   }
 
   topArr.forEach((cause, i) => {
-    const boneX = spineStartX + 80 + i * spacing;
+    const boneX = spineStartX + firstBone + i * slot;
     drawCause(cause, boneX, true);
   });
   botArr.forEach((cause, i) => {
-    const boneX = spineStartX + 80 + i * spacing;
+    const boneX = spineStartX + firstBone + i * slot;
     drawCause(cause, boneX, false);
   });
 

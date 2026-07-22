@@ -66,12 +66,18 @@ type GenStep = "idle" | "type" | "input" | "generating" | "done" | "error";
 // ─────────────────────────────────────────────────────────────
 // 图形类型配置
 // ─────────────────────────────────────────────────────────────
-const DIAGRAM_TYPES: { id: DiagramType; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: "mindmap",   label: "思维导图", icon: <Network  size={16} />, desc: "概念梳理·大纲" },
-  { id: "flowchart", label: "流程图",   icon: <GitBranch size={16} />, desc: "步骤·算法" },
-  { id: "timeline",  label: "时间轴",   icon: <Clock    size={16} />, desc: "历史·里程碑" },
-  { id: "orgchart",  label: "架构图",   icon: <Users    size={16} />, desc: "层级·结构" },
-  { id: "fishbone",  label: "鱼骨图",   icon: <Fish     size={16} />, desc: "原因·分析" },
+// REQ-050 一期：每种图给出「适合什么内容」的场景提示，帮老师选型，避免把内容硬套不合适的图型
+const DIAGRAM_TYPES: { id: DiagramType; label: string; icon: React.ReactNode; desc: string; scene: string }[] = [
+  { id: "mindmap",   label: "思维导图", icon: <Network  size={16} />, desc: "概念梳理·大纲",
+    scene: "把一个主题层层拆成要点｜知识点框架、章节大纲、读书笔记" },
+  { id: "flowchart", label: "流程图",   icon: <GitBranch size={16} />, desc: "步骤·判断·流程",
+    scene: "有先后顺序、含判断分支的过程｜解题步骤、实验流程、操作规程" },
+  { id: "timeline",  label: "时间轴",   icon: <Clock    size={16} />, desc: "时序·里程碑",
+    scene: "按时间先后排列的事件｜历史脉络、项目进度、发展历程" },
+  { id: "orgchart",  label: "架构图",   icon: <Users    size={16} />, desc: "上下隶属·层级",
+    scene: "谁管谁的上下级关系｜组织架构、分类体系、从属结构（非时序/非因果）" },
+  { id: "fishbone",  label: "鱼骨图",   icon: <Fish     size={16} />, desc: "原因·归因",
+    scene: "分析一个结果由哪些原因造成｜问题归因、影响因素、错因分析" },
 ];
 
 const TYPE_LABEL: Record<DiagramType, string> = {
@@ -567,14 +573,17 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                         setInputText(initial);
                         setTimeout(() => { if (textareaRef.current) textareaRef.current.value = initial; }, 50);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl
+                      className="w-full flex items-start gap-2.5 px-3 py-2.5 rounded-xl
                                  border border-gray-200 hover:border-amber-400 hover:bg-amber-50
                                  text-left transition-all"
                     >
-                      <span className="text-amber-600 shrink-0">{t.icon}</span>
+                      <span className="text-amber-600 shrink-0 mt-0.5">{t.icon}</span>
                       <div>
-                        <div className="text-xs font-medium text-gray-800">{t.label}</div>
-                        <div className="text-xs text-gray-400">{t.desc}</div>
+                        <div className="text-xs font-medium text-gray-800">
+                          {t.label}
+                          <span className="ml-1.5 text-[11px] font-normal text-gray-400">{t.desc}</span>
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 leading-snug">{t.scene}</div>
                       </div>
                     </button>
                   ))}
