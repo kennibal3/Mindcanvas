@@ -34,7 +34,13 @@ import {
 import { generateDiagram, type DiagramType } from "../../utils/diagramApi";
 import { refineText } from "../../utils/refineApi";
 import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
-import { buildDiagramElements, type DiagramData } from "../../utils/diagramBuilder";
+import {
+  buildDiagramElements,
+  type DiagramData,
+  DIAGRAM_THEMES,
+  getDiagramThemeKey,
+  setDiagramThemeKey,
+} from "../../utils/diagramBuilder";
 import {
   exportDiagramMarkdown,
   exportDiagramPng,
@@ -163,6 +169,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const [inputText, setInputText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [regenItem, setRegenItem] = useState<WorkbenchItem | null>(null); // 重新生成时复用
+  // REQ-049：AI 图形配色风格（全局，存 localStorage，插入画布时生效）
+  const [themeKey, setThemeKey] = useState<string>(() => getDiagramThemeKey());
 
   // REQ-028：文本→Markdown 智能提炼（生成图形前的可选预处理）
   const [refining, setRefining] = useState(false);
@@ -570,6 +578,27 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                       </div>
                     </button>
                   ))}
+                </div>
+
+                {/* ── 配色风格（REQ-049，全局设置，作用于新生成/插入的图形）── */}
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-600">配色风格</span>
+                    <select
+                      value={themeKey}
+                      onChange={e => { setThemeKey(e.target.value); setDiagramThemeKey(e.target.value); }}
+                      className="text-xs border border-gray-200 rounded-lg px-2 py-1
+                                 text-gray-700 bg-white hover:border-amber-400 focus:outline-none
+                                 focus:border-amber-400"
+                    >
+                      {DIAGRAM_THEMES.map(t => (
+                        <option key={t.key} value={t.key}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1 leading-snug">
+                    切换后对新生成/插入的图形生效，已在画布上的图形不变。
+                  </p>
                 </div>
               </div>
             )}

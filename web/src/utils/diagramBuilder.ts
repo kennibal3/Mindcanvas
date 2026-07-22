@@ -61,33 +61,153 @@ export function buildDiagramElements(
 }
 
 // ────────────────────────────────────────────────────────────────
-// 配色方案
+// 配色主题（REQ-049）
+// 六套可选风格：马卡龙(默认)/活泼卡通/暖木/牛油果森林绿/莫兰迪/黛蓝北欧风。
+// 颜色全在前端，切换存 localStorage(mc_diagram_theme)，后端不参与。
+// 每套：anchor(根/标题/负责人) + branch[5](按分支/类别循环取色)
+//       + flow4(开始/处理/判断/结束) + fishHead(鱼头) + 提亮参数(lightenStep/Cap)。
+// 派生规则（与预览 临时_配色风格预览_可切换.html 一致）：
+//   timeline 主节点取 branch[1]、说明取其提亮版；
+//   orgchart 部门取 branch[2]、成员取其提亮版；
+//   fishbone 原因按序号循环取 branch、子刺取其提亮版；鱼头用 fishHead。
 // ────────────────────────────────────────────────────────────────
-const PALETTE = {
-  // mindmap 配色已改为按分支上色（REQ-031），见下方 MM_BRANCH_PALETTE / MM_ROOT_COLOR，
-  // 不再使用固定深度调色板。
-  flowchart: {
-    start:    { bg: "#d5e8d4", stroke: "#82b366", text: "#1a3a1a" },
-    end:      { bg: "#f8cecc", stroke: "#b85450", text: "#3a1a1a" },
-    process:  { bg: "#dae8fc", stroke: "#6c8ebf", text: "#1a2a3a" },
-    decision: { bg: "#fff2cc", stroke: "#d6b656", text: "#3a2a00" },
-  },
-  timeline: {
-    title:  { bg: "#BA7517", stroke: "#8a5511", text: "#ffffff" },
-    main:   { bg: "#FBE8C3", stroke: "#BA7517", text: "#5a3a00" },
-    sub:    { bg: "#FFF4E0", stroke: "#d4a44c", text: "#5a3a00" },
-  },
-  orgchart: {
-    lead:   { bg: "#BA7517", stroke: "#8a5511", text: "#ffffff" },
-    dept:   { bg: "#FBE8C3", stroke: "#BA7517", text: "#5a3a00" },
-    member: { bg: "#FFF4E0", stroke: "#d4a44c", text: "#5a3a00" },
-  },
-  fishbone: {
-    effect: { bg: "#f8cecc", stroke: "#b85450", text: "#3a1a1a" },
-    cause:  { bg: "#FBE8C3", stroke: "#BA7517", text: "#5a3a00" },
-    sub:    { bg: "#FFF4E0", stroke: "#d4a44c", text: "#5a3a00" },
-  },
+type Triad = { bg: string; stroke: string; text: string };
+export interface DiagramTheme {
+  anchor: Triad;
+  branch: Triad[];
+  flow: { start: Triad; process: Triad; decision: Triad; end: Triad };
+  fishHead: Triad;
+  lightenStep: number;
+  lightenCap: number;
+}
+
+const DIAGRAM_THEME_TABLE: Record<string, { label: string; theme: DiagramTheme }> = {
+  macaron: { label: "马卡龙", theme: {
+    anchor: { bg: "#F7A98F", stroke: "#E06B4E", text: "#5E2416" },
+    branch: [
+      { bg: "#FBD3DE", stroke: "#E8788F", text: "#8A2E44" },
+      { bg: "#CDEFDD", stroke: "#4FC08A", text: "#1E6B47" },
+      { bg: "#CFE6FB", stroke: "#5AA6E8", text: "#1E4E7A" },
+      { bg: "#E2D6F7", stroke: "#9B7BE0", text: "#4A337A" },
+      { bg: "#FCEEC0", stroke: "#E8C24F", text: "#7A5E14" }],
+    flow: {
+      start:    { bg: "#CDEFDD", stroke: "#4FC08A", text: "#1E6B47" },
+      process:  { bg: "#CFE6FB", stroke: "#5AA6E8", text: "#1E4E7A" },
+      decision: { bg: "#FCEEC0", stroke: "#E8C24F", text: "#7A5E14" },
+      end:      { bg: "#FBD3DE", stroke: "#E8788F", text: "#8A2E44" } },
+    fishHead: { bg: "#FCC9BE", stroke: "#E8674A", text: "#6B241A" },
+    lightenStep: 0.10, lightenCap: 0.24 } },
+  cartoon: { label: "活泼卡通", theme: {
+    anchor: { bg: "#FF9A3D", stroke: "#E9741A", text: "#ffffff" },
+    branch: [
+      { bg: "#FFB3B3", stroke: "#F0554F", text: "#8A2020" },
+      { bg: "#B6E8A6", stroke: "#4CA82F", text: "#206016" },
+      { bg: "#A9D8F5", stroke: "#2E90D9", text: "#14507E" },
+      { bg: "#FFE39A", stroke: "#F0B41E", text: "#7A5400" },
+      { bg: "#D9BEF0", stroke: "#9B54D9", text: "#4E207E" }],
+    flow: {
+      start:    { bg: "#B6E8A6", stroke: "#4CA82F", text: "#206016" },
+      process:  { bg: "#A9D8F5", stroke: "#2E90D9", text: "#14507E" },
+      decision: { bg: "#FFE39A", stroke: "#F0B41E", text: "#7A5400" },
+      end:      { bg: "#FFB3B3", stroke: "#F0554F", text: "#8A2020" } },
+    fishHead: { bg: "#FFB8B0", stroke: "#F0554F", text: "#8A2020" },
+    lightenStep: 0.10, lightenCap: 0.24 } },
+  warm: { label: "暖木", theme: {
+    anchor: { bg: "#BA7517", stroke: "#7A4D0E", text: "#ffffff" },
+    branch: [
+      { bg: "#F6C9B8", stroke: "#C0502E", text: "#6B2213" },
+      { bg: "#B8DDD6", stroke: "#2E7D6B", text: "#1C4A40" },
+      { bg: "#BAD4E8", stroke: "#2C6B9E", text: "#17395C" },
+      { bg: "#DFC9DD", stroke: "#8A4F82", text: "#4A2A44" },
+      { bg: "#EAD69A", stroke: "#A67C1E", text: "#5A4310" }],
+    flow: {
+      start:    { bg: "#CDE9D6", stroke: "#2E8B57", text: "#1A3A2A" },
+      process:  { bg: "#D6E4F0", stroke: "#3A6EA5", text: "#1A2E4A" },
+      decision: { bg: "#FAE3B0", stroke: "#C08A1E", text: "#5A3E00" },
+      end:      { bg: "#F5CDCB", stroke: "#B0433E", text: "#4A1613" } },
+    fishHead: { bg: "#F1C9C6", stroke: "#A32D2D", text: "#4A1613" },
+    lightenStep: 0.12, lightenCap: 0.28 } },
+  forest: { label: "牛油果森林绿", theme: {
+    anchor: { bg: "#4E7A47", stroke: "#35592F", text: "#ffffff" },
+    branch: [
+      { bg: "#CFE0B4", stroke: "#6E9A47", text: "#38541F" },
+      { bg: "#C0D3BC", stroke: "#5E8062", text: "#2E4632" },
+      { bg: "#E3D3B8", stroke: "#A6844E", text: "#574126" },
+      { bg: "#B7D8D0", stroke: "#3E8577", text: "#1E4A40" },
+      { bg: "#E6D69A", stroke: "#A98A2E", text: "#574414" }],
+    flow: {
+      start:    { bg: "#CFE0B4", stroke: "#6E9A47", text: "#38541F" },
+      process:  { bg: "#B7D8D0", stroke: "#3E8577", text: "#1E4A40" },
+      decision: { bg: "#E6D69A", stroke: "#A98A2E", text: "#574414" },
+      end:      { bg: "#E1C2AE", stroke: "#A65E3E", text: "#5A2E1A" } },
+    fishHead: { bg: "#E0BDB0", stroke: "#A15238", text: "#4E2418" },
+    lightenStep: 0.11, lightenCap: 0.27 } },
+  morandi: { label: "莫兰迪", theme: {
+    anchor: { bg: "#9C8574", stroke: "#6B5B4C", text: "#ffffff" },
+    branch: [
+      { bg: "#D9C2BE", stroke: "#93685F", text: "#4A332E" },
+      { bg: "#C3CDBE", stroke: "#6E7B62", text: "#38402F" },
+      { bg: "#BFCBD1", stroke: "#647680", text: "#33414A" },
+      { bg: "#CDC3CB", stroke: "#7C6C79", text: "#423A41" },
+      { bg: "#D6CBB4", stroke: "#8A7A57", text: "#47402C" }],
+    flow: {
+      start:    { bg: "#C3CDBE", stroke: "#6E7B62", text: "#38402F" },
+      process:  { bg: "#BFCBD1", stroke: "#647680", text: "#33414A" },
+      decision: { bg: "#D6CBB4", stroke: "#8A7A57", text: "#47402C" },
+      end:      { bg: "#D9C2BE", stroke: "#93685F", text: "#4A332E" } },
+    fishHead: { bg: "#CDB4AE", stroke: "#8A5B52", text: "#4A332E" },
+    lightenStep: 0.12, lightenCap: 0.26 } },
+  nordic: { label: "黛蓝北欧风", theme: {
+    anchor: { bg: "#33506E", stroke: "#22384F", text: "#ffffff" },
+    branch: [
+      { bg: "#C3D3E2", stroke: "#4E729A", text: "#21384F" },
+      { bg: "#BFD4D2", stroke: "#4E7E7A", text: "#23403E" },
+      { bg: "#CBCEE0", stroke: "#6E729E", text: "#313452" },
+      { bg: "#CBD5C8", stroke: "#6C8168", text: "#2F3E2C" },
+      { bg: "#E4D8C3", stroke: "#A6875A", text: "#4E3D22" }],
+    flow: {
+      start:    { bg: "#BFD4D2", stroke: "#4E7E7A", text: "#23403E" },
+      process:  { bg: "#C3D3E2", stroke: "#4E729A", text: "#21384F" },
+      decision: { bg: "#E4D8C3", stroke: "#A6875A", text: "#4E3D22" },
+      end:      { bg: "#DCC6C6", stroke: "#9A5E5E", text: "#43242A" } },
+    fishHead: { bg: "#D9BEC0", stroke: "#96505A", text: "#43242A" },
+    lightenStep: 0.11, lightenCap: 0.26 } },
 };
+
+const DEFAULT_THEME_KEY = "macaron";
+const THEME_STORAGE_KEY = "mc_diagram_theme";
+
+// 给 UI 下拉用：[{key,label}, ...]
+export const DIAGRAM_THEMES = Object.entries(DIAGRAM_THEME_TABLE).map(
+  ([key, v]) => ({ key, label: v.label })
+);
+
+export function getDiagramThemeKey(): string {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const k = localStorage.getItem(THEME_STORAGE_KEY);
+      if (k && DIAGRAM_THEME_TABLE[k]) return k;
+    }
+  } catch { /* localStorage 不可用时回落默认 */ }
+  return DEFAULT_THEME_KEY;
+}
+
+export function setDiagramThemeKey(key: string): void {
+  try {
+    if (DIAGRAM_THEME_TABLE[key] && typeof localStorage !== "undefined") {
+      localStorage.setItem(THEME_STORAGE_KEY, key);
+    }
+  } catch { /* 忽略写入失败 */ }
+}
+
+function getActiveTheme(): DiagramTheme {
+  return DIAGRAM_THEME_TABLE[getDiagramThemeKey()].theme;
+}
+
+// 把某档颜色按深度提亮（bg 向白混合，stroke/text 不变），用于同分支/同类的浅色层级
+function themeLighten(c: Triad, amt: number): Triad {
+  return { bg: lightenHex(c.bg, amt), stroke: c.stroke, text: c.text };
+}
 
 // ────────────────────────────────────────────────────────────────
 // 几何箭头工具（REQ-027 崩溃修复）
@@ -166,14 +286,8 @@ const MM_NODE_H = 52;
 const MM_H_GAP = 80;   // 水平间距
 const MM_V_GAP = 22;   // 垂直间距
 
-const MM_BRANCH_PALETTE: { bg: string; stroke: string; text: string }[] = [
-  { bg: "#f7ded7", stroke: "#c95138", text: "#6b2213" }, // 橙红
-  { bg: "#dfe6e1", stroke: "#536b59", text: "#28362d" }, // 灰绿
-  { bg: "#ede2d0", stroke: "#8b6b45", text: "#4a3823" }, // 土黄
-  { bg: "#d8e8ec", stroke: "#2d7185", text: "#173c46" }, // 靛蓝
-  { bg: "#ece0ea", stroke: "#87637f", text: "#453040" }, // 藕紫
-];
-const MM_ROOT_COLOR = { bg: "#BA7517", stroke: "#8a5511", text: "#ffffff" };
+// REQ-049：分支/根配色改由当前主题提供（见 DIAGRAM_THEME_TABLE）。
+// 原固定的 MM_BRANCH_PALETTE / MM_ROOT_COLOR 已并入主题表，按 branch / anchor 取。
 
 // 把颜色往白色方向混合 amt（0~1），用于同一分支内按深度做浅色过渡
 function lightenHex(hex: string, amt: number): string {
@@ -217,6 +331,7 @@ function mindmapEdge(
 }
 
 function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
+  const T = getActiveTheme();
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
   // 构建子节点列表
@@ -263,10 +378,10 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
 
   // REQ-031：按一级分支分配颜色，向下传给该分支全部后代（不再按深度统一配色）
   const branchColorOf = new Map<string, { bg: string; stroke: string; text: string }>();
-  branchColorOf.set(root.id, MM_ROOT_COLOR);
+  branchColorOf.set(root.id, T.anchor);
   const rootChildren = children.get(root.id) ?? [];
   rootChildren.forEach((childId, idx) => {
-    const branchColor = MM_BRANCH_PALETTE[idx % MM_BRANCH_PALETTE.length];
+    const branchColor = T.branch[idx % T.branch.length];
     const assign = (id: string) => {
       branchColorOf.set(id, branchColor);
       for (const kid of children.get(id) ?? []) assign(kid);
@@ -284,11 +399,12 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
     if (!pos) continue;
     const isRoot = !n.parent;
     const depth = depthOf.get(n.id) ?? 0;
-    const branchColor = branchColorOf.get(n.id) ?? MM_BRANCH_PALETTE[0];
+    const branchColor = branchColorOf.get(n.id) ?? T.branch[0];
     // 分支节点本身（depth1）用基础色，越往下的子孙节点背景色越浅，色相不变
-    const lightenAmt = isRoot ? 0 : Math.min(0.55, Math.max(0, depth - 1) * 0.22);
+    // REQ-049：提亮步长/封顶改由主题控制（收窄后深层不再发白）
+    const lightenAmt = isRoot ? 0 : Math.min(T.lightenCap, Math.max(0, depth - 1) * T.lightenStep);
     const color = isRoot
-      ? MM_ROOT_COLOR
+      ? T.anchor
       : {
           bg: lightenHex(branchColor.bg, lightenAmt),
           stroke: branchColor.stroke,
@@ -321,7 +437,7 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
       const pPos = coords.get(n.parent)!;
       const pNode = nodeMap.get(n.parent);
       const pW = pNode && !pNode.parent ? MM_NODE_W + 20 : MM_NODE_W;
-      const edgeColor = branchColorOf.get(n.id) ?? MM_BRANCH_PALETTE[0];
+      const edgeColor = branchColorOf.get(n.id) ?? T.branch[0];
       skeletons.push(mindmapEdge(
         edgeElemId(n.parent, n.id),
         pPos.x + pW, pPos.y + MM_NODE_H / 2,
@@ -351,6 +467,7 @@ function buildFlowchart(
   ox: number,
   oy: number
 ): ExcalidrawElement[] {
+  const T = getActiveTheme();
   // 用 BFS 按 parent 关系分配层级和列
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const children = new Map<string, string[]>();
@@ -419,7 +536,7 @@ function buildFlowchart(
   for (const n of nodes) {
     const pos = getPos(n.id);
     const nt = n.node_type ?? "process";
-    const color = PALETTE.flowchart[nt as keyof typeof PALETTE.flowchart] ?? PALETTE.flowchart.process;
+    const color = T.flow[nt as keyof typeof T.flow] ?? T.flow.process;
 
     if (nt === "decision") {
       skeletons.push({
@@ -508,6 +625,9 @@ const TL_H_STEP = 200; // 主轴节点水平间距
 const TL_OFFSET = 100; // 主轴到节点的垂直偏移
 
 function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
+  const T = getActiveTheme();
+  const tlMain = T.branch[1];                 // 主轴节点色
+  const tlSub = themeLighten(tlMain, 0.5);    // 说明卡：主色提亮
   const titleNode = nodes.find(n => !n.parent);
   const mainNodes = nodes
     .filter(n => n.parent === titleNode?.id)
@@ -534,7 +654,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     y: axisY + TL_NODE_H / 2,
     width: endX - startX + 40,
     height: 0,
-    strokeColor: "#BA7517",
+    strokeColor: tlMain.stroke,
     strokeWidth: 2.5,
     endArrowhead: "arrow",
     startArrowhead: null,
@@ -542,7 +662,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
 
   // 标题节点（在主轴左上方）
   if (titleNode) {
-    const color = PALETTE.timeline.title;
+    const color = T.anchor;
     skeletons.push({
       type: "rectangle",
       id: `tl_node_${titleNode.id}`,
@@ -563,7 +683,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     const x = startX + i * TL_H_STEP;
     const isTop = i % 2 === 0;
     const nodeY = isTop ? axisY - TL_OFFSET - TL_NODE_H : axisY + TL_OFFSET;
-    const color = PALETTE.timeline.main;
+    const color = tlMain;
 
     // 节点框
     skeletons.push({
@@ -593,7 +713,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       y: isTop ? nodeY + TL_NODE_H : axisY + TL_NODE_H / 2,
       width: 0,
       height: isTop ? axisY + TL_NODE_H / 2 - nodeY - TL_NODE_H : nodeY - axisY - TL_NODE_H / 2,
-      strokeColor: "#BA7517",
+      strokeColor: tlMain.stroke,
       strokeWidth: 1.5,
     } as any);
 
@@ -605,14 +725,14 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       y: axisY + TL_NODE_H / 2 - 6,
       width: 12,
       height: 12,
-      backgroundColor: "#BA7517",
-      strokeColor: "#8a5511",
+      backgroundColor: tlMain.stroke,
+      strokeColor: tlMain.stroke,
       strokeWidth: 1,
     } as any);
 
     // 子节点
     (subOf.get(n.id) ?? []).forEach((sub, si) => {
-      const subColor = PALETTE.timeline.sub;
+      const subColor = tlSub;
       const subX = isTop ? x - TL_SUB_W / 2 : x - TL_SUB_W / 2;
       const subY = isTop
         ? nodeY - (si + 1) * (TL_SUB_H + 10) - 10
@@ -634,7 +754,7 @@ function buildTimeline(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
         `tl_sub_edge_${sub.id}`,
         x, isTop ? nodeY : nodeY + TL_NODE_H,
         x, isTop ? subY + TL_SUB_H : subY,
-        { strokeColor: "#d4a44c", strokeWidth: 1 }
+        { strokeColor: tlMain.stroke, strokeWidth: 1 }
       ));
     });
   });
@@ -652,6 +772,9 @@ const ORG_H_GAP = 30;
 const ORG_V_GAP = 60;
 
 function buildOrgchart(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
+  const T = getActiveTheme();
+  const orgDept = T.branch[2];                  // 部门层
+  const orgMember = themeLighten(orgDept, 0.5); // 成员层：部门色提亮
   const children = new Map<string, string[]>();
   for (const n of nodes) {
     if (!children.has(n.id)) children.set(n.id, []);
@@ -696,7 +819,7 @@ function buildOrgchart(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     const pos = coords.get(n.id);
     if (!pos) continue;
     const role = n.role ?? (n.level === 0 ? "lead" : n.level === 1 ? "dept" : "member");
-    const color = PALETTE.orgchart[role as keyof typeof PALETTE.orgchart] ?? PALETTE.orgchart.member;
+    const color = role === "lead" ? T.anchor : role === "dept" ? orgDept : orgMember;
 
     skeletons.push({
       type: "rectangle",
@@ -719,7 +842,7 @@ function buildOrgchart(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
           `org_edge_${n.parent}_${n.id}`,
           p.x + ORG_NODE_W / 2, p.y + ORG_NODE_H,
           pos.x + ORG_NODE_W / 2, pos.y,
-          { strokeColor: "#BA7517", strokeWidth: 1.5 }
+          { strokeColor: orgDept.stroke, strokeWidth: 1.5 }
         ));
       }
     }
@@ -738,6 +861,7 @@ const FB_SUB_LEN = 110;    // 小骨长度
 const FB_BONE_ANGLE = 35;  // 大骨角度（度）
 
 function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
+  const T = getActiveTheme();
   const effectNode = nodes.find(n => !n.parent);
   if (!effectNode) return [];
 
@@ -768,14 +892,14 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
     y: centerY,
     width: FB_SPINE_LEN,
     height: 0,
-    strokeColor: "#BA7517",
+    strokeColor: T.fishHead.stroke,
     strokeWidth: 3,
     endArrowhead: "arrow",
     startArrowhead: null,
   } as any);
 
   // 鱼头（结果节点）
-  const effColor = PALETTE.fishbone.effect;
+  const effColor = T.fishHead;
   const effectW = 160;
   const effectH = 60;
   skeletons.push({
@@ -799,7 +923,9 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
   const spacing = maxSide > 0 ? Math.min(140, (FB_SPINE_LEN - 100) / maxSide) : 140;
 
   function drawCause(cause: DiagramNode, boneX: number, isTop: boolean) {
-    const causeColor = PALETTE.fishbone.cause;
+    // REQ-049：各原因分支按其在原因列表中的序号循环取主题分支色（与思维导图同思路）
+    const gi = causeNodes.indexOf(cause);
+    const causeColor = T.branch[(gi < 0 ? 0 : gi) % T.branch.length];
     const dy = isTop ? -1 : 1;
     const boneEndX = boneX - FB_BONE_LEN * Math.cos(ang);
     const boneEndY = centerY + dy * FB_BONE_LEN * Math.sin(ang);
@@ -812,7 +938,7 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
       y: centerY,
       width: boneEndX - boneX,
       height: boneEndY - centerY,
-      strokeColor: "#BA7517",
+      strokeColor: causeColor.stroke,
       strokeWidth: 2,
     } as any);
 
@@ -835,7 +961,7 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
 
     // 子骨（小鱼刺）
     (subOf.get(cause.id) ?? []).forEach((sub, si) => {
-      const subColor = PALETTE.fishbone.sub;
+      const subColor = themeLighten(causeColor, 0.5);
       const t = (si + 1) / ((subOf.get(cause.id)?.length ?? 1) + 1);
       const subAttachX = boneX + t * (boneEndX - boneX);
       const subAttachY = centerY + t * (boneEndY - centerY);
@@ -849,7 +975,7 @@ function buildFishbone(nodes: DiagramNode[], ox: number, oy: number): Excalidraw
         y: subAttachY,
         width: subEndX - subAttachX,
         height: subEndY - subAttachY,
-        strokeColor: "#d4a44c",
+        strokeColor: causeColor.stroke,
         strokeWidth: 1.5,
       } as any);
 
