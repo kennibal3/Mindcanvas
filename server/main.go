@@ -167,6 +167,10 @@ func main() {
 	tokenHandler      := handlers.NewTokenHandler(tokenService)
 	shelfHandler      := handlers.NewShelfHandler(roomService, hub)
 
+	// REQ-045 P2 班级/花名册
+	classService := services.NewClassService(db)
+	classHandler := handlers.NewClassHandler(classService)
+
 	// Chat养成对话处理器
 	chatHandler := handlers.NewChatHandler(db)
 	chatDoubaoHandler := handlers.NewChatDoubaoHandler(db, aiSvc)
@@ -306,6 +310,19 @@ func main() {
 		admin.GET("/room-stats", adminHandler.GetRoomStats)
 		admin.GET("/room-stats/export", adminHandler.ExportRoomStatsCSV)
 		admin.GET("/room-stats/:teacher_id/rooms", adminHandler.GetTeacherRooms)
+	}
+
+	// REQ-045 P2 班级/花名册管理（认证，教师私有）
+	classes := r.Group("/api/classes")
+	classes.Use(middleware.AuthRequired(), middleware.RequireRole("superadmin", "admin", "teacher"))
+	{
+		classes.GET("", classHandler.ListClasses)
+		classes.POST("", classHandler.CreateClass)
+		classes.DELETE("/:cid", classHandler.DeleteClass)
+		classes.GET("/:cid/students", classHandler.ListStudents)
+		classes.POST("/:cid/students", classHandler.AddStudent)
+		classes.POST("/:cid/students/import", classHandler.ImportStudents)
+		classes.DELETE("/:cid/students/:sid", classHandler.DeleteStudent)
 	}
 
 	// 房间管理（需认证）
