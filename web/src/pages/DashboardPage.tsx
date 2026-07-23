@@ -13,10 +13,11 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   Plus, Copy, Trash2, Lock, Users, LogOut, Settings,
   Check, Pencil, Calendar, UserCircle, Eye, EyeOff,
-  LayoutTemplate, BookOpen, Globe, Star, MessageSquare,
+  LayoutTemplate, BookOpen, Globe, Star, MessageSquare, GraduationCap,
 } from 'lucide-react';
 import type { Room, CollabMode } from '@/types/room';
 import { ROOM_MODE_LABELS, COLLAB_MODE_OPTIONS } from '@/types/room';
+import { listClasses, type Class } from '@/utils/classApi';
 
 const API_BASE = '/api';
 
@@ -47,6 +48,9 @@ const DashboardPage = () => {
   const [newTitle, setNewTitle] = useState('');
   const [newCapacity, setNewCapacity] = useState(50);
   const [newCollabMode, setNewCollabMode] = useState<CollabMode>('anonymous');
+  const [newClassId, setNewClassId] = useState('');           // REQ-045：roster 房间绑定的班级
+  const [classes, setClasses] = useState<Class[]>([]);
+  const [classesLoaded, setClassesLoaded] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [copied, setCopied] = useState('');
   const [toast, setToast] = useState('');
@@ -121,6 +125,16 @@ const DashboardPage = () => {
 
   useEffect(() => { fetchRooms(); }, [fetchRooms]);
 
+  // REQ-045：打开建房弹窗时懒加载班级列表（供"实名上课"选班级）
+  useEffect(() => {
+    if (showCreate && !classesLoaded) {
+      listClasses()
+        .then(setClasses)
+        .catch(() => { /* 无班级不阻塞建房 */ })
+        .finally(() => setClassesLoaded(true));
+    }
+  }, [showCreate, classesLoaded]);
+
   useEffect(() => {
     if (activeTab === 'templates' && templates.length === 0) {
       fetchTemplates();
@@ -146,6 +160,11 @@ const DashboardPage = () => {
   // ===== 创建房间（不再传 room_mode，后端默认 interactive）=====
   const handleCreate = async () => {
     if (!newTitle.trim()) return;
+    // REQ-045：实名上课必须绑定一个班级
+    if (newCollabMode === 'roster' && !newClassId) {
+      showToast('「实名上课」需要先选择一个班级');
+      return;
+    }
     setCreateLoading(true);
     try {
       const res = await fetch(`${API_BASE}/rooms`, {
@@ -156,6 +175,7 @@ const DashboardPage = () => {
           title: newTitle.trim(),
           max_capacity: newCapacity,
           collab_mode: newCollabMode,
+          ...(newCollabMode === 'roster' ? { class_id: newClassId } : {}),
         }),
       });
       if (res.ok) {
@@ -164,6 +184,7 @@ const DashboardPage = () => {
         setNewTitle('');
         setNewCapacity(50);
         setNewCollabMode('anonymous');
+        setNewClassId('');
         scrollToRoomId.current = data.room.id;
         fetchRooms();
         showToast(`房间「${data.room.title}」创建成功，邀请码：${data.invite_code}`);
@@ -448,6 +469,13 @@ const DashboardPage = () => {
               className="btn-secondary btn-sm flex items-center gap-1 text-xs sm:text-sm"
             >
               <BookOpen size={14} /> 作业评价
+            </button>
+            {/* REQ-045：班级管理入口（实名上课花名册）*/}
+            <button
+              onClick={() => navigate('/classes')}
+              className="btn-secondary btn-sm flex items-center gap-1 text-xs sm:text-sm"
+            >
+              <GraduationCap size={14} /> <span className="hidden sm:inline">班级</span>
             </button>
             {/* REQ-026：AI对话入口（仅 chat_enabled 用户可见）*/}
             {user?.chat_enabled && (
@@ -822,19 +850,58 @@ const DashboardPage = () => {
                   ))}
                 </div>
               </div>
+              {/* REQ-045：实名上课选班级 */}
+              {newCollabMode === 'roster' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    选择班级 <span className="text-red-500">*</span>
+                  </label>
+                  {!classesLoaded ? (
+                    <div className="text-sm text-gray-400 py-2">加载班级中...</div>
+                  ) : classes.length === 0 ? (
+                    <div className="bg-amber-50 rounded-xl px-4 py-3 text-xs text-amber-800">
+                      还没有班级。请先到{' '}
+                      <button
+                        type="button"
+                        onClick={() => navigate('/classes')}
+                        className="underline font-medium hover:text-amber-900"
+                      >
+                        班级管理
+                      </button>{' '}
+                      建班并录入名单，再回来创建实名课堂。
+                    </div>
+                  ) : (
+                    <select
+                      value={newClassId}
+                      onChange={e => setNewClassId(e.target.value)}
+                      className="input"
+                    >
+                      <option value="">— 请选择班级 —</option>
+                      {classes.map(cls => (
+                        <option key={cls.id} value={cls.id}>
+                          {cls.name}（{cls.student_count}人）
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
               {/* 提示文案：模式可在进入房间后切换 */}
               <div className="bg-amber-50 rounded-xl px-4 py-3 text-xs text-amber-800">
                 💡 所有房间支持白板、卡片、投票、词云、问答等全部功能，进入后可随时切换使用
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setShowCreate(false)} className="btn-secondary">
+              <button
+                onClick={() => { setShowCreate(false); setNewCollabMode('anonymous'); setNewClassId(''); }}
+                className="btn-secondary"
+              >
                 {t('common.cancel')}
               </button>
               <button
                 onClick={handleCreate}
                 className="btn-primary"
-                disabled={createLoading || !newTitle.trim()}
+                disabled={createLoading || !newTitle.trim() || (newCollabMode === 'roster' && !newClassId)}
               >
                 {createLoading ? '创建中...' : t('common.confirm')}
               </button>
