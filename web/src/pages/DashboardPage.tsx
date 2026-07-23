@@ -13,7 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   Plus, Copy, Trash2, Lock, Users, LogOut, Settings,
   Check, Pencil, Calendar, UserCircle, Eye, EyeOff,
-  LayoutTemplate, BookOpen, Globe, Star, MessageSquare, GraduationCap,
+  LayoutTemplate, BookOpen, Globe, Star, MessageSquare, GraduationCap, Link2,
 } from 'lucide-react';
 import type { Room, CollabMode } from '@/types/room';
 import { ROOM_MODE_LABELS, COLLAB_MODE_OPTIONS } from '@/types/room';
@@ -53,6 +53,7 @@ const DashboardPage = () => {
   const [classesLoaded, setClassesLoaded] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
   const [copied, setCopied] = useState('');
+  const [copiedLink, setCopiedLink] = useState('');   // REQ-050：复制入场链接的独立提示态
   const [toast, setToast] = useState('');
 
   // ===== 编辑房间状态 =====
@@ -256,6 +257,17 @@ const DashboardPage = () => {
     navigator.clipboard.writeText(code).then(() => {
       setCopied(code);
       setTimeout(() => setCopied(''), 2000);
+    });
+  };
+
+  // ===== 复制学生入场链接（REQ-050：任意房间通用，打开后自动填房间码）=====
+  const copyJoinLink = (e: React.MouseEvent, code: string) => {
+    e.stopPropagation();
+    const link = `${window.location.origin}/join/${code}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopiedLink(code);
+      setTimeout(() => setCopiedLink(''), 2000);
+      showToast('入场链接已复制，发给学生即可（打开后只需填名字）');
     });
   };
 
@@ -655,6 +667,22 @@ const DashboardPage = () => {
                         {copied === room.invite_code ? <Check size={16} /> : <Copy size={16} />}
                       </button>
                     </div>
+
+                    {/* REQ-050：复制学生入场链接（任意房间通用）*/}
+                    <button
+                      onClick={e => copyJoinLink(e, room.invite_code)}
+                      className={`mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-medium
+                                  rounded-lg py-2 border transition-colors ${
+                        copiedLink === room.invite_code
+                          ? 'border-green-200 bg-green-50 text-green-600'
+                          : 'border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50'
+                      }`}
+                    >
+                      {copiedLink === room.invite_code
+                        ? <><Check size={13} /> 链接已复制</>
+                        : <><Link2 size={13} /> 复制学生入场链接</>}
+                    </button>
+
                     <div className="mt-3 text-xs text-gray-400">
                       创建于 {new Date(room.created_at).toLocaleString('zh-CN')}
                     </div>
