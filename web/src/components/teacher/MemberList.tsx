@@ -125,9 +125,11 @@ const MemberList: React.FC<MemberListProps> = ({
 
   const activeMembers = members.filter((m) => !m.is_banned);
 
-  // 判断是否为教师（UUID不以guest-开头 或 role===teacher）
-  const isMemberTeacher = (m: RoomMember) =>
-    m.role === 'teacher' || (m.uuid && !m.uuid.startsWith('guest-'));
+  // 判断是否为教师：只认服务端下发的连接角色。
+  // REQ-045 起 roster 实名学生拿的是「裸稳定 UUID」（无 guest- 前缀），
+  // 旧的「!startsWith('guest-') 即教师」启发式会把他们误标成教师（BUG-017 前端孪生）。
+  // 服务端 role 对每个成员都可靠（URL uuid→student / Cookie→teacher，缺省也默认 student），故直接以它为准。
+  const isMemberTeacher = (m: RoomMember) => m.role === 'teacher';
 
   return (
     <div>
