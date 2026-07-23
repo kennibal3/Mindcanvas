@@ -344,6 +344,14 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			myWordSubmissions, _ = h.widgetService.GetStudentWordCloudSubmissions(roomID, senderUUID)
 		}
 
+		// BUG-018：重连时随 room_sync 带回当前成员快照（排除自己），前端 setMembers 复原成员列表与在线人数；
+		// 否则老师退出再进只靠增量 member_join，看不到重连前已在线的学生，在线人数/成员列表卡 0。
+		onlineMembers := make([]map[string]interface{}, 0)
+		for _, m := range room.GetClientList() {
+			if uid, _ := m["uuid"].(string); uid != senderUUID {
+				onlineMembers = append(onlineMembers, m)
+			}
+		}
 		syncBytes, _ := json.Marshal(map[string]interface{}{
 			"type":             ws.MsgRoomSync,
 			"room_id":          roomID,
@@ -362,6 +370,7 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			"my_submissions": mySubmissions,
 			// BUG-009：本学生在各词云组件下已提交过的具体词语（{element_id: [word,...]}）
 			"my_word_submissions": myWordSubmissions,
+			"members":             onlineMembers,
 		})
 		client.Send <- syncBytes
 	}()
