@@ -405,11 +405,25 @@ func (h *WSHandler) SetupMessageHandler() {
 			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 				return
 			}
-			if illegalIDs := validateDeletePermissions(senderUUID, payload); len(illegalIDs) > 0 {
-				// REQ-046 团队协作形态：人人可删他人元素，跳过恢复。
+			if illegalIDs := validateDeletePermissions(senderUUID, client.Role == "student", payload); len(illegalIDs) > 0 {
+				// REQ-046 团队协作形态：人人可删他人元素，放行、不恢复。
 				// 仅在确有越权删除时才查库（罕见），避免每次 scene_update 都查房间形态。
 				if !h.isTeamRoom(roomID) {
 					payload = filterIllegalDeletes(payload, illegalIDs)
+					log.Printf("[删除校验] 非团队 room:%s sender:%s 恢复并回弹 %d 个越权删除", roomID, senderUUID, len(illegalIDs))
+					// 把被恢复的元素ID回发删除者本人，令其画布即时回弹。
+					// BroadcastRawToOthers 不含本人，缺这一步删除者要刷新才看到恢复（体验缺口）。
+					if restoreBytes, err := json.Marshal(map[string]interface{}{
+						"type": "scene_restore",
+						"data": map[string]interface{}{"illegal_ids": illegalIDs},
+					}); err == nil {
+						select {
+						case client.Send <- restoreBytes:
+						default:
+						}
+					}
+				} else {
+					log.Printf("[删除校验] 团队 room:%s sender:%s 放行 %d 个跨人删除", roomID, senderUUID, len(illegalIDs))
 				}
 			}
 			broadcastBytes, _ := json.Marshal(map[string]interface{}{
@@ -821,9 +835,12 @@ func (h *WSHandler) isTeamRoom(roomID string) bool {
 	return collabMode == models.CollabModeTeam
 }
 
-// validateDeletePermissions 检查学生是否尝试删除他人元素
-func validateDeletePermissions(senderUUID string, payload map[string]interface{}) []string {
-	if !isGuestUUID(senderUUID) {
+// validateDeletePermissions 检查学生是否尝试删除他人元素。
+// 身份判定改用连接时确定的真实角色 senderIsStudent，不再用 isGuestUUID 猜——
+// 教师 UUID 是裸 36 位标准 UUID，会被 isGuestUUID 的向后兼容分支误判为 guest，
+// 导致教师删学生元素被当作越权而恢复（教师本应可删任何人）。
+func validateDeletePermissions(senderUUID string, senderIsStudent bool, payload map[string]interface{}) []string {
+	if !senderIsStudent {
 		return nil
 	}
 	elements, ok := payload["elements"].([]interface{})
