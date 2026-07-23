@@ -15,6 +15,13 @@ import { AVATARS } from '@/utils/constants';
 
 const API_BASE = '/api';
 
+// REQ-045：roster（实名上课）房间重名时，后端返回的候选
+interface RosterCandidate {
+  student_id: string;
+  student_name: string;
+  disambig: string;
+}
+
 const JoinPage = () => {
   const { t } = useTranslation();
   const { code: urlCode } = useParams<{ code: string }>();
@@ -30,6 +37,8 @@ const JoinPage = () => {
   const avatarInputRef = useRef<HTMLInputElement>(null);         // 隐藏 file input
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // REQ-045：roster 重名候选（后端 need_disambig 时填充；非 null 即展示二选一）
+  const [candidates, setCandidates] = useState<RosterCandidate[] | null>(null);
 
   // 手机端：记录键盘是否弹出，动态调整布局
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -114,9 +123,8 @@ const JoinPage = () => {
     });
   };
 
-  const handleJoin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!roomCode.trim() || !nickname.trim()) return;
+  // 实际提交入场。studentId：roster 房间重名时二选一后带上定位的稳定学生 id。
+  const submitJoin = async (studentId?: string) => {
     setError('');
     setLoading(true);
 
@@ -129,29 +137,46 @@ const JoinPage = () => {
           nickname: nickname.trim(),
           avatar_id: avatarId,
           avatar_url: avatarURL || undefined,
+          ...(studentId ? { student_id: studentId } : {}),
         }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
+        // roster 不在册等硬拒：展示后端 message，并退出候选态
+        setCandidates(null);
         throw new Error(data.message || '加入失败，请检查房间码');
       }
 
+      const d = data.data;
+
+      // REQ-045：roster 房间重名 —— 后端未入场，返回候选让学生二选一
+      if (d.need_disambig) {
+        setCandidates(d.candidates || []);
+        return;
+      }
+
       // 存储到 localStorage
-      localStorage.setItem('mc_uuid', data.data.uuid);
-      localStorage.setItem('mc_nickname', data.data.nickname);
-      localStorage.setItem('mc_room_id', data.data.room_id);
-      localStorage.setItem('mc_avatar_id', String(data.data.avatar_id));
+      localStorage.setItem('mc_uuid', d.uuid);
+      localStorage.setItem('mc_nickname', d.nickname);
+      localStorage.setItem('mc_room_id', d.room_id);
+      localStorage.setItem('mc_avatar_id', String(d.avatar_id));
       if (avatarURL) localStorage.setItem('mc_avatar_url', avatarURL);
 
       // 跳转房间
-      navigate(`/room/${data.data.room_id}?uuid=${data.data.uuid}`);
+      navigate(`/room/${d.room_id}?uuid=${d.uuid}`);
     } catch (err: any) {
       setError(err.message || '加入失败，请重试');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleJoin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roomCode.trim() || !nickname.trim()) return;
+    submitJoin();
   };
 
   const canSubmit = roomCode.trim().length > 0 && nickname.trim().length >= 1 && !loading;
@@ -231,6 +256,7 @@ const JoinPage = () => {
                   autoComplete="nickname"
                   inputMode="text"
                 />
+                <p className="text-xs text-gray-400 mt-1">实名课堂请填写你的真实姓名</p>
               </div>
 
               {/* 头像选择 */}
@@ -354,6 +380,49 @@ const JoinPage = () => {
 
         </div>
       </div>
+
+      {/* REQ-045：roster 房间重名二选一 */}
+      {candidates !== null && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl p-6">
+            <h3 className="text-lg font-bold text-gray-900">有多位同名同学</h3>
+            <p className="text-sm text-gray-500 mt-1 mb-4">
+              花名册里「{nickname.trim()}」有多位，请选择你是哪一位：
+            </p>
+            {candidates.length === 0 ? (
+              <p className="text-sm text-gray-400 py-6 text-center">
+                没有可选项，请联系老师核对花名册
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {candidates.map(c => (
+                  <button
+                    key={c.student_id}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => submitJoin(c.student_id)}
+                    className="w-full flex items-center justify-between rounded-xl border-2 border-gray-200
+                               hover:border-amber-500 hover:bg-amber-50 px-4 py-3 transition-all
+                               disabled:opacity-50 text-left"
+                  >
+                    <span className="font-medium text-gray-800">{c.student_name}</span>
+                    {c.disambig && (
+                      <span className="text-sm text-amber-600 font-mono">#{c.disambig}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => { setCandidates(null); setError(''); }}
+              className="w-full mt-4 py-2.5 text-sm text-gray-500 hover:text-gray-700"
+            >
+              都不是？返回改名
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

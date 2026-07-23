@@ -32,6 +32,8 @@ import SubmitPage           from '@/pages/SubmitPage';
 // Phase8：作业评价中心
 import AssignmentPage       from '@/pages/AssignmentPage';
 import AssignmentDetailPage from '@/pages/AssignmentDetailPage';
+// REQ-045 P2：班级管理（实名上课花名册）
+import ClassesPage          from '@/pages/ClassesPage';
 // Chat养成对话页面（Victoria专属）
 import ChatPage from '@/pages/ChatPage';
 
@@ -138,6 +140,16 @@ const App = () => {
         element={
           <ProtectedRoute>
             <DashboardPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* REQ-045 P2：班级管理（实名上课花名册）*/}
+      <Route
+        path="/classes"
+        element={
+          <ProtectedRoute>
+            <ClassesPage />
           </ProtectedRoute>
         }
       />
