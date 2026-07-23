@@ -24,16 +24,28 @@ type Session struct {
 // JoinRoomRequest 学生入场请求
 type JoinRoomRequest struct {
 	RoomCode string `json:"room_code" binding:"required"` // 房间邀请码（必填）
-	Nickname string `json:"nickname" binding:"required"`  // 昵称（必填）
+	Nickname string `json:"nickname" binding:"required"`  // 昵称/实名（必填）
 	AvatarID int    `json:"avatar_id"`                    // 头像 ID（默认1）
+	// REQ-045：roster 房间重名时，第二次提交带上从候选里选定的稳定学生 id
+	StudentID string `json:"student_id"`
+}
+
+// RosterCandidate roster 房间重名候选（REQ-045）
+type RosterCandidate struct {
+	StudentID   string `json:"student_id"`
+	StudentName string `json:"student_name"`
+	Disambig    string `json:"disambig"`
 }
 
 // JoinRoomResponse 学生入场响应
 type JoinRoomResponse struct {
-	UUID     string `json:"uuid"`      // 生成的学生 UUID
-	Nickname string `json:"nickname"`  // 处理后的昵称（含后缀）
+	UUID     string `json:"uuid"`      // 学生 UUID（roster=稳定 student_id；否则 guest- 临时）
+	Nickname string `json:"nickname"`  // 展示昵称
 	RoomID   string `json:"room_id"`   // 房间 ID
 	AvatarID int    `json:"avatar_id"` // 头像 ID
+	// REQ-045：roster 重名时 NeedDisambig=true 且不入场，前端让学生从 Candidates 二选一后带 student_id 重提交
+	NeedDisambig bool              `json:"need_disambig,omitempty"`
+	Candidates   []RosterCandidate `json:"candidates,omitempty"`
 }
 
 // ReclaimGenerateResponse 生成认领码响应

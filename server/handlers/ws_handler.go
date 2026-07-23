@@ -539,7 +539,8 @@ func (h *WSHandler) SetupMessageHandler() {
 			h.handleWidgetSubmit(room, client, msg)
 
 		case ws.MsgDropzoneSubmit:
-			if !isGuestUUID(senderUUID) {
+			// REQ-045：身份用连接时确定的角色，不猜 UUID 前缀（roster 学生是裸稳定 UUID）
+			if client.Role != "student" {
 				return
 			}
 			var req services.DropzoneSubmitRequest
@@ -573,7 +574,8 @@ func (h *WSHandler) SetupMessageHandler() {
 			room.BroadcastRaw(broadcastBytes)
 
 		case ws.MsgDropzoneAction:
-			if isGuestUUID(senderUUID) {
+			// REQ-045：教师专属操作（like/pin/hide 等），学生一律拦
+			if client.Role == "student" {
 				return
 			}
 			var req services.DropzoneActionRequest
@@ -673,8 +675,9 @@ func (h *WSHandler) throttledPersistSceneDB(roomID string, sceneJSON []byte, sav
 //   - 确保教师端widget_update消息携带有效payload
 // =============================================================
 func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws.RawMessage) {
-	if !isGuestUUID(client.UUID) {
-		log.Printf("[Widget] 教师 %s 尝试提交互动，已拦截", client.UUID)
+	if client.Role != "student" {
+		// REQ-045：身份用连接角色，roster 学生是裸稳定 UUID，不能靠 isGuestUUID 猜
+		log.Printf("[Widget] 非学生 %s(%s) 尝试提交互动，已拦截", client.UUID, client.Role)
 		return
 	}
 

@@ -20,6 +20,7 @@ type Room struct {
 	Status      string     `json:"status"`
 	RoomMode    string     `json:"room_mode"`
 	CollabMode  string     `json:"collab_mode"`
+	ClassID     *string    `json:"class_id,omitempty"` // REQ-045 roster 形态绑定的班级
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
@@ -45,6 +46,7 @@ type CreateRoomRequest struct {
 	MaxCapacity int    `json:"max_capacity"`
 	RoomMode    string `json:"room_mode"`
 	CollabMode  string `json:"collab_mode"` // roster/anonymous/team，空则默认 anonymous
+	ClassID     string `json:"class_id"`    // REQ-045 roster 形态绑定的班级；其它形态忽略
 }
 
 // UpdateRoomRequest 更新房间请求（字段可选）

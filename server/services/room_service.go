@@ -31,7 +31,7 @@ func (s *RoomService) DB() *sql.DB {
 
 // roomSelectFields 统一的 SELECT 字段列表（含 room_mode）
 const roomSelectFields = `id, teacher_id, tenant_id, title, invite_code, is_locked, is_readonly,
-	max_capacity, status, room_mode, collab_mode, created_at, updated_at, finished_at`
+	max_capacity, status, room_mode, collab_mode, created_at, updated_at, finished_at, class_id`
 
 // scanRoom 统一的行扫描方法
 func scanRoom(scanner interface{ Scan(...interface{}) error }) (*models.Room, error) {
@@ -40,7 +40,7 @@ func scanRoom(scanner interface{ Scan(...interface{}) error }) (*models.Room, er
 		&room.ID, &room.TeacherID, &room.TenantID, &room.Title,
 		&room.InviteCode, &room.IsLocked, &room.IsReadOnly,
 		&room.MaxCapacity, &room.Status, &room.RoomMode, &room.CollabMode,
-		&room.CreatedAt, &room.UpdatedAt, &room.FinishedAt,
+		&room.CreatedAt, &room.UpdatedAt, &room.FinishedAt, &room.ClassID,
 	)
 	return room, err
 }
@@ -121,12 +121,29 @@ func (s *RoomService) CreateRoom(teacherID, tenantID string, req models.CreateRo
 		}
 	}
 
+	// REQ-045：仅 roster 形态绑定班级，且班级须归当前教师所有
+	var classIDArg interface{} = nil
+	if collabMode == models.CollabModeRoster && req.ClassID != "" {
+		var owner string
+		e := s.db.QueryRow(`SELECT teacher_id FROM classes WHERE id=$1`, req.ClassID).Scan(&owner)
+		if e == sql.ErrNoRows {
+			return nil, fmt.Errorf("绑定的班级不存在")
+		}
+		if e != nil {
+			return nil, fmt.Errorf("查询班级失败: %w", e)
+		}
+		if owner != teacherID {
+			return nil, fmt.Errorf("无权绑定他人班级")
+		}
+		classIDArg = req.ClassID
+	}
+
 	// 插入房间记录
 	room, err := scanRoom(s.db.QueryRow(
-		`INSERT INTO rooms (teacher_id, tenant_id, title, invite_code, max_capacity, room_mode, collab_mode)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO rooms (teacher_id, tenant_id, title, invite_code, max_capacity, room_mode, collab_mode, class_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING `+roomSelectFields,
-		teacherID, tenantID, req.Title, inviteCode, maxCapacity, roomMode, collabMode,
+		teacherID, tenantID, req.Title, inviteCode, maxCapacity, roomMode, collabMode, classIDArg,
 	))
 	if err != nil {
 		return nil, fmt.Errorf("创建房间失败: %w", err)
