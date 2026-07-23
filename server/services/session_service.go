@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -34,7 +35,10 @@ func NewSessionService(db *sql.DB, rdb *redis.Client, profanity *ProfanityServic
 }
 
 // JoinRoom 学生入场
-// 生成 UUID，敏感词过滤昵称，追加防冒充后缀
+// 按房间协作形态分流：
+//   roster            实名上课：真名匹配 class_students，session 绑稳定 student_id；
+//                     重名返候选让学生二选一（不入场）；不在册硬拒。
+//   anonymous / team  保持现状：自由昵称 + guest- 临时 UUID + 防冒充后缀。
 func (s *SessionService) JoinRoom(req *models.JoinRoomRequest, ipAddress string) (*models.JoinRoomResponse, error) {
 	ctx := context.Background()
 
@@ -43,59 +47,119 @@ func (s *SessionService) JoinRoom(req *models.JoinRoomRequest, ipAddress string)
 		return nil, err
 	}
 
-	// 2. 敏感词过滤昵称
-	filteredNickname := s.profanity.Filter(req.Nickname)
-
-	// 3. 生成学生 UUID
-	studentUUID := utils.GenerateGuestUUID()
-
-	// 4. 生成防冒充后缀
-	suffix := utils.GenerateSuffix()
-
-	// 5. 默认头像
-	avatarID := req.AvatarID
-	if avatarID < 1 || avatarID > 8 {
-		avatarID = 1
-	}
-
-	// 6. 根据邀请码查找房间
-	var roomID string
-	var roomStatus string
+	// 2. 根据邀请码查找房间（含协作形态与绑定班级）
+	var roomID, roomStatus, collabMode string
+	var classID sql.NullString
 	err := s.db.QueryRow(
-		"SELECT id, status FROM rooms WHERE invite_code = $1",
+		"SELECT id, status, collab_mode, class_id FROM rooms WHERE invite_code = $1",
 		req.RoomCode,
-	).Scan(&roomID, &roomStatus)
+	).Scan(&roomID, &roomStatus, &collabMode, &classID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("房间不存在或邀请码无效")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("查询房间失败: %w", err)
 	}
-
-	// 7. 检查房间状态
 	if roomStatus != "active" {
 		return nil, fmt.Errorf("房间已结束，无法加入")
 	}
 
-	// 8. 写入 room_sessions 表
+	// 3. 默认头像
+	avatarID := req.AvatarID
+	if avatarID < 1 || avatarID > 8 {
+		avatarID = 1
+	}
+
+	// 4. 按协作形态决定 student_uuid / 昵称 / 后缀
+	var studentUUID, displayNickname, suffix string
+
+	if collabMode == models.CollabModeRoster {
+		// —— 实名上课：真名匹配花名册，session 绑稳定 student_id ——
+		if !classID.Valid || classID.String == "" {
+			return nil, fmt.Errorf("该房间未绑定班级，请联系老师")
+		}
+
+		if req.StudentID != "" {
+			// 二次提交：学生已从重名候选里选定 student_id
+			var name, disambig string
+			e := s.db.QueryRow(
+				`SELECT student_name, disambig FROM class_students WHERE id=$1 AND class_id=$2`,
+				req.StudentID, classID.String,
+			).Scan(&name, &disambig)
+			if e == sql.ErrNoRows {
+				return nil, fmt.Errorf("所选学生不在本班花名册")
+			}
+			if e != nil {
+				return nil, fmt.Errorf("查询花名册失败: %w", e)
+			}
+			studentUUID, displayNickname, suffix = req.StudentID, name, disambig
+		} else {
+			// 按真名匹配
+			realName := strings.TrimSpace(req.Nickname)
+			rows, e := s.db.Query(
+				`SELECT id, student_name, disambig FROM class_students
+				 WHERE class_id=$1 AND student_name=$2 ORDER BY disambig`,
+				classID.String, realName,
+			)
+			if e != nil {
+				return nil, fmt.Errorf("查询花名册失败: %w", e)
+			}
+			var cands []models.RosterCandidate
+			for rows.Next() {
+				var c models.RosterCandidate
+				if e := rows.Scan(&c.StudentID, &c.StudentName, &c.Disambig); e != nil {
+					rows.Close()
+					return nil, fmt.Errorf("扫描花名册失败: %w", e)
+				}
+				cands = append(cands, c)
+			}
+			rows.Close()
+
+			switch len(cands) {
+			case 0:
+				return nil, fmt.Errorf("「%s」不在花名册，请联系老师核对姓名", realName)
+			case 1:
+				studentUUID, displayNickname, suffix = cands[0].StudentID, cands[0].StudentName, cands[0].Disambig
+			default:
+				// 重名：不入场，返回候选让学生二选一
+				return &models.JoinRoomResponse{
+					RoomID:       roomID,
+					NeedDisambig: true,
+					Candidates:   cands,
+				}, nil
+			}
+		}
+	} else {
+		// —— 匿名培训 / 团队协作：保持现状 ——
+		displayNickname = s.profanity.Filter(req.Nickname)
+		suffix = utils.GenerateSuffix()
+		studentUUID = utils.GenerateGuestUUID()
+	}
+
+	// 5. 写入 room_sessions 表
 	_, err = s.db.Exec(
 		`INSERT INTO room_sessions (room_id, student_uuid, nickname, suffix, avatar_id, ip_address)
 		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		roomID, studentUUID, filteredNickname, suffix, avatarID, ipAddress,
+		roomID, studentUUID, displayNickname, suffix, avatarID, ipAddress,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("创建会话失败: %w", err)
 	}
 
-	// 9. 写入 Redis 会话缓存
-	sessionData := fmt.Sprintf(`{"room_id":"%s","nickname":"%s","suffix":"%s"}`, roomID, filteredNickname, suffix)
+	// 6. 写入 Redis 会话缓存
+	sessionData := fmt.Sprintf(`{"room_id":"%s","nickname":"%s","suffix":"%s"}`, roomID, displayNickname, suffix)
 	s.rdb.Set(ctx, fmt.Sprintf("session:%s", studentUUID), sessionData, 24*time.Hour)
 
-	log.Printf("[会话] 学生入场 - UUID:%s 昵称:%s#%s 房间:%s", studentUUID, filteredNickname, suffix, roomID)
+	// 7. 展示昵称：有后缀/消歧才拼 #
+	shown := displayNickname
+	if suffix != "" {
+		shown = displayNickname + "#" + suffix
+	}
+	log.Printf("[会话] 学生入场 - 形态:%s UUID:%s 昵称:%s 房间:%s", collabMode, studentUUID, shown, roomID)
 
 	return &models.JoinRoomResponse{
 		UUID:     studentUUID,
-		Nickname: fmt.Sprintf("%s#%s", filteredNickname, suffix),
+		Nickname: shown,
 		RoomID:   roomID,
 		AvatarID: avatarID,
 	}, nil
