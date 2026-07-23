@@ -380,36 +380,9 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
     for (const el of elements) nv.set(el.id, el.version);
     prevVersionsRef.current = nv;
 
-    // 学生删除权限校验
-    if (!isTeacher && changed.length > 0) {
-      const illegalDeletes = changed.filter(el => {
-        if (!el.isDeleted) return false;
-        const owner = ownersRef.current.get(el.id);
-        if (!owner) return knownIdsRef.current.has(el.id);
-        return owner.id !== currentUserUUID;
-      });
-
-      if (illegalDeletes.length > 0) {
-        setTimeout(() => {
-          const api = apiRef.current;
-          if (!api) return;
-          isApplyingRemoteRef.current = true;
-          const all: any[] = api.getSceneElements() || [];
-          const m = new Map<string, any>();
-          for (const e of all) m.set(e.id, e);
-          for (const d of illegalDeletes) {
-            const existing = m.get(d.id);
-            if (existing) {
-              m.set(d.id, { ...existing, isDeleted: false, version: existing.version + 1 });
-            }
-          }
-          api.updateScene({ elements: Array.from(m.values()) });
-          setTimeout(() => { isApplyingRemoteRef.current = false; }, 100);
-        }, 200);
-        return;
-      }
-    }
-
+    // 删除权限判定统一交给服务端（单一权威，见 ws_handler validateDeletePermissions + isTeamRoom）：
+    // 客户端一律把改动（含删除）发出去，服务端按房间形态决定放行(团队)或恢复(其它)。
+    // 被恢复时服务端会向本人回发 scene_restore，由下方监听器即时回弹（不再本地预判，避免 owner 追踪时序漏判）。
     if (changed.length > 0) {
       pendingRef.current.push(...changed);
       if (!syncTimerRef.current) {
@@ -447,7 +420,9 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
       if (!api) return;
       const illegalSet = new Set<string>(detail.illegal_ids as string[]);
       isApplyingRemoteRef.current = true;
-      const all: any[] = api.getSceneElements() || [];
+      // 必须用 getSceneElementsIncludingDeleted：刚被删的元素 isDeleted=true，
+      // getSceneElements() 不含已删元素 → 找不到就恢复不了（这是"删了不回弹、要刷新才复原"的根因）。
+      const all: any[] = (api.getSceneElementsIncludingDeleted?.() ?? api.getSceneElements()) || [];
       const m = new Map<string, any>();
       for (const el of all) m.set(el.id, el);
       let c = false;
