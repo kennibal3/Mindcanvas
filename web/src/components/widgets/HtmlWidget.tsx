@@ -115,8 +115,10 @@ export const HtmlWidget: React.FC<Props> = ({
       };
       if (typeof d.questionId === 'string') out.questionId = (d.questionId as string).slice(0, 80);
       if (typeof d.isCorrect === 'boolean') out.isCorrect = d.isCorrect;
-      if (typeof d.knowledgePoint === 'string') out.knowledgePoint = (d.knowledgePoint as string).slice(0, 100);
       if (typeof d.score === 'number') out.score = d.score;
+      if (typeof d.maxScore === 'number') out.maxScore = d.maxScore;
+      if (typeof d.knowledgePoint === 'string') out.knowledgePoint = (d.knowledgePoint as string).slice(0, 100);
+      if (typeof d.response === 'string') out.response = (d.response as string).slice(0, 500);
       if (d.data && typeof d.data === 'object' && !Array.isArray(d.data)) out.data = d.data;
       onSubmitRef.current?.('html_event', out);
     };
