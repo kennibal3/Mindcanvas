@@ -1116,12 +1116,16 @@ func (s *WidgetService) GetHtmlContent(elementID string) (string, error) {
 // =============================================================
 
 // htmlEventData 课件上报的结构化事件（mc_event 契约的服务端镜像）
+//   对错表达三档：isCorrect(二元) / score+maxScore(部分得分) / 都不给(无对错的行为事件)。
+//   response = 学生实际作答的可读文本，供教师端直接查看。
 type htmlEventData struct {
 	Event          string          `json:"event"`
 	QuestionID     string          `json:"questionId"`
 	IsCorrect      *bool           `json:"isCorrect"`
-	KnowledgePoint string          `json:"knowledgePoint"`
 	Score          *float64        `json:"score"`
+	MaxScore       *float64        `json:"maxScore"`
+	KnowledgePoint string          `json:"knowledgePoint"`
+	Response       string          `json:"response"`
 	Data           json.RawMessage `json:"data"`
 }
 
@@ -1167,6 +1171,9 @@ func (s *WidgetService) HandleHtmlEvent(
 	if len(ev.KnowledgePoint) > 100 {
 		ev.KnowledgePoint = ev.KnowledgePoint[:100]
 	}
+	if len(ev.Response) > 500 {
+		ev.Response = ev.Response[:500]
+	}
 
 	// 3. 知识点 resolve-or-create（按房间 teacher_id，课件自报名字；失败不阻断落库）
 	var kpID interface{} = nil
@@ -1195,6 +1202,12 @@ func (s *WidgetService) HandleHtmlEvent(
 	}
 	if ev.Score != nil {
 		stored["score"] = *ev.Score
+	}
+	if ev.MaxScore != nil {
+		stored["maxScore"] = *ev.MaxScore
+	}
+	if ev.Response != "" {
+		stored["response"] = ev.Response
 	}
 	if len(ev.Data) > 0 {
 		stored["data"] = json.RawMessage(ev.Data)
