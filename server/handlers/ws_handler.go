@@ -730,6 +730,20 @@ func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws
 			updatedPayload = h.readElementPayload(submitData.ElementID)
 		}
 
+	case "html_event":
+		// REQ-043：HTML 课件互动事件，落 widget_interactions（无聚合、无需向房间广播）
+		if err := h.widgetService.HandleHtmlEvent(
+			submitData.ElementID, room.ID, client.UUID, client.Nickname, submitData.Data,
+		); err != nil {
+			errBytes, _ := json.Marshal(map[string]interface{}{
+				"type": "widget_error", "error": err.Error(),
+			})
+			client.Send <- errBytes
+			return
+		}
+		log.Printf("[Widget] ✅ html_event 记录 element:%s student:%s", submitData.ElementID, client.UUID)
+		return
+
 	default:
 		log.Printf("[Widget] 未知 action_type: %s", submitData.ActionType)
 		return
