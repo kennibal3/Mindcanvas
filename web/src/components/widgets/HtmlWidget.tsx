@@ -34,7 +34,7 @@ function extractInner(payload: Record<string, unknown>): Record<string, unknown>
 }
 
 export const HtmlWidget: React.FC<Props> = ({
-  id, payload: rawPayload, isTeacher, isLocked, onUpdate,
+  id, payload: rawPayload, isTeacher, isLocked, onUpdate, onSubmit,
 }) => {
   const inner = extractInner(rawPayload);
   const title = (inner.title as string) ?? 'HTML 展示';
@@ -47,6 +47,12 @@ export const HtmlWidget: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showEdit, setShowEdit] = useState(false);
+
+  // ===== REQ-043：课件互动上报桥 =====
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // 用 ref 持有最新 onSubmit，监听器只订阅一次、不随父组件重渲染反复增删
+  const onSubmitRef = useRef(onSubmit);
+  onSubmitRef.current = onSubmit;
 
   // ===== REQ-042 一期：全屏播放（浏览器原生 Fullscreen API，师生均可用）=====
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,6 +99,30 @@ export const HtmlWidget: React.FC<Props> = ({
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [id, roomID, htmlVersion]);
+
+  // REQ-043：接收课件 iframe 通过 postMessage 上报的互动事件。
+  // 沙箱 iframe（allow-scripts 无 same-origin）为 opaque 源，event.origin 恒为 "null"，
+  // 故以 event.source === 本 iframe.contentWindow 作为来源校验，只收自己这个课件的事件；
+  // 多个 HTML 组件并存时，每个实例只认自己的 iframe，天然互不串。
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
+      const d = e.data as Record<string, unknown> | null;
+      if (!d || (d as { type?: unknown }).type !== 'mc_event') return;
+      // 白名单收敛字段；elementId 一律不信课件、由父页面（本组件 id）决定
+      const out: Record<string, unknown> = {
+        event: typeof d.event === 'string' ? (d.event as string).slice(0, 40) : 'interact',
+      };
+      if (typeof d.questionId === 'string') out.questionId = (d.questionId as string).slice(0, 80);
+      if (typeof d.isCorrect === 'boolean') out.isCorrect = d.isCorrect;
+      if (typeof d.knowledgePoint === 'string') out.knowledgePoint = (d.knowledgePoint as string).slice(0, 100);
+      if (typeof d.score === 'number') out.score = d.score;
+      if (d.data && typeof d.data === 'object' && !Array.isArray(d.data)) out.data = d.data;
+      onSubmitRef.current?.('html_event', out);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   const handleDelete = () => {
     if (confirm('确定删除这个 HTML 展示组件？删除后无法恢复。')) {
@@ -176,6 +206,7 @@ export const HtmlWidget: React.FC<Props> = ({
           </div>
         ) : (
           <iframe
+            ref={iframeRef}
             title={title}
             // 安全核心：只给 allow-scripts，不给 allow-same-origin
             sandbox="allow-scripts"
