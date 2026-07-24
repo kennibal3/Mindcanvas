@@ -1109,6 +1109,111 @@ func (s *WidgetService) GetHtmlContent(elementID string) (string, error) {
 }
 
 // =============================================================
+// REQ-043 HTML 课件互动数据收集
+//   课件 iframe 经 postMessage → HtmlWidget → onSubmit('html_event') → WS widget_submit
+//   → 本方法落 widget_interactions（widget_type='html_widget', action_type='html_event'）。
+//   身份由调用方（ws_handler）传入 client.UUID/Nickname，课件自报的任何 id 一律不信。
+// =============================================================
+
+// htmlEventData 课件上报的结构化事件（mc_event 契约的服务端镜像）
+type htmlEventData struct {
+	Event          string          `json:"event"`
+	QuestionID     string          `json:"questionId"`
+	IsCorrect      *bool           `json:"isCorrect"`
+	KnowledgePoint string          `json:"knowledgePoint"`
+	Score          *float64        `json:"score"`
+	Data           json.RawMessage `json:"data"`
+}
+
+// HandleHtmlEvent 处理 HTML 课件的互动事件
+func (s *WidgetService) HandleHtmlEvent(
+	elementID, roomID, studentUUID, studentName string, actionData json.RawMessage,
+) error {
+	// 防滥用：限制单条事件体积
+	if len(actionData) > 8*1024 {
+		return fmt.Errorf("事件数据过大")
+	}
+
+	// 1. 校验元素存在、类型为 html_widget、属于本房间（课件传的 elementId 也要核）
+	var elemType, teacherID string
+	if err := s.db.QueryRow(
+		`SELECT e.type, r.teacher_id
+		   FROM room_elements e JOIN rooms r ON r.id = e.room_id
+		  WHERE e.id = $1 AND e.room_id = $2 AND e.is_deleted = FALSE`,
+		elementID, roomID,
+	).Scan(&elemType, &teacherID); err != nil {
+		return fmt.Errorf("HTML 组件不存在")
+	}
+	if elemType != models.ElementTypeHtmlWidget {
+		return fmt.Errorf("目标元素不是 HTML 组件")
+	}
+
+	// 2. 解析事件 + 字段收敛
+	var ev htmlEventData
+	if err := json.Unmarshal(actionData, &ev); err != nil {
+		return fmt.Errorf("事件数据格式错误: %w", err)
+	}
+	ev.Event = strings.TrimSpace(ev.Event)
+	if ev.Event == "" {
+		ev.Event = "interact"
+	}
+	if len(ev.Event) > 40 {
+		ev.Event = ev.Event[:40]
+	}
+	if len(ev.QuestionID) > 80 {
+		ev.QuestionID = ev.QuestionID[:80]
+	}
+	ev.KnowledgePoint = strings.TrimSpace(ev.KnowledgePoint)
+	if len(ev.KnowledgePoint) > 100 {
+		ev.KnowledgePoint = ev.KnowledgePoint[:100]
+	}
+
+	// 3. 知识点 resolve-or-create（按房间 teacher_id，课件自报名字；失败不阻断落库）
+	var kpID interface{} = nil
+	if ev.KnowledgePoint != "" {
+		var id string
+		if e := s.db.QueryRow(
+			`INSERT INTO knowledge_points (teacher_id, name)
+			 VALUES ($1, $2)
+			 ON CONFLICT (teacher_id, name) DO UPDATE SET name = EXCLUDED.name
+			 RETURNING id`,
+			teacherID, ev.KnowledgePoint,
+		).Scan(&id); e != nil {
+			log.Printf("[html_event] 知识点 resolve 失败 kp=%q: %v", ev.KnowledgePoint, e)
+		} else {
+			kpID = id
+		}
+	}
+
+	// 4. 组织存库 action_data（只留白名单字段）
+	stored := map[string]interface{}{"event": ev.Event}
+	if ev.QuestionID != "" {
+		stored["questionId"] = ev.QuestionID
+	}
+	if ev.KnowledgePoint != "" {
+		stored["knowledgePoint"] = ev.KnowledgePoint
+	}
+	if ev.Score != nil {
+		stored["score"] = *ev.Score
+	}
+	if len(ev.Data) > 0 {
+		stored["data"] = json.RawMessage(ev.Data)
+	}
+	storedJSON, _ := json.Marshal(stored)
+
+	// 5. 落库（html_event 无去重约束，学生可多次触发）
+	if _, err := s.db.Exec(
+		`INSERT INTO widget_interactions
+		   (room_id, element_id, student_uuid, student_name, widget_type, action_type, action_data, is_correct, knowledge_point_id)
+		 VALUES ($1, $2, $3, $4, 'html_widget', 'html_event', $5, $6, $7)`,
+		roomID, elementID, studentUUID, studentName, storedJSON, ev.IsCorrect, kpID,
+	); err != nil {
+		return fmt.Errorf("互动事件写入失败: %w", err)
+	}
+	return nil
+}
+
+// =============================================================
 // 辅助函数
 // =============================================================
 
