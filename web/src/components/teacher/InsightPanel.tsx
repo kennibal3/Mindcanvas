@@ -61,6 +61,15 @@ interface QAStat {
 interface WordStat { word: string; count: number; }
 interface GroupActivity { group_id: string; group_name: string; action_count: number; }
 interface TopStudent { uuid: string; nickname: string; action_count: number; }
+// REQ-043 Slice-3：HTML 课件互动
+interface HtmlKnowledgeStat { knowledge: string; students: number; got: number; full: number; rate: number; }
+interface HtmlWidgetStat { element_id: string; title: string; students: number; events: number; }
+interface HtmlQuestionResult {
+  question_id: string; knowledge: string; event: string;
+  is_correct: boolean | null; score: number | null; max_score: number | null;
+  response: string; attempts: number;
+}
+interface HtmlStudentStat { uuid: string; nickname: string; questions: HtmlQuestionResult[]; }
 interface InsightData {
   online_count: number;
   total_joined: number;
@@ -70,6 +79,9 @@ interface InsightData {
   top_words: WordStat[];
   group_activity: GroupActivity[];
   top_students: TopStudent[];
+  html_knowledge: HtmlKnowledgeStat[];
+  html_widgets: HtmlWidgetStat[];
+  html_students: HtmlStudentStat[];
 }
 
 interface Props { roomId: string; }
@@ -89,15 +101,20 @@ const rateColor = (rate: number) => {
 
 // ===== 防御性数据解析：确保所有数组字段不为undefined =====
 function safeInsightData(raw: any): InsightData {
+  // 归一化：后端 handler 把数据包在 { insight: {...} } 里，兼容包裹/未包裹两种
+  const r = raw?.insight ?? raw ?? {};
   return {
-    online_count:    typeof raw?.online_count === 'number'  ? raw.online_count    : 0,
-    total_joined:    typeof raw?.total_joined === 'number'  ? raw.total_joined    : 0,
-    components:      Array.isArray(raw?.components)         ? raw.components      : [],
-    unsubmitted:     Array.isArray(raw?.unsubmitted)        ? raw.unsubmitted     : [],
-    qa_stats:        Array.isArray(raw?.qa_stats)           ? raw.qa_stats        : [],
-    top_words:       Array.isArray(raw?.top_words)          ? raw.top_words       : [],
-    group_activity:  Array.isArray(raw?.group_activity)     ? raw.group_activity  : [],
-    top_students:    Array.isArray(raw?.top_students)       ? raw.top_students    : [],
+    online_count:    typeof r?.online_count === 'number'  ? r.online_count    : 0,
+    total_joined:    typeof r?.total_joined === 'number'  ? r.total_joined    : 0,
+    components:      Array.isArray(r?.components)         ? r.components      : [],
+    unsubmitted:     Array.isArray(r?.unsubmitted)        ? r.unsubmitted     : [],
+    qa_stats:        Array.isArray(r?.qa_stats)           ? r.qa_stats        : [],
+    top_words:       Array.isArray(r?.top_words)          ? r.top_words       : [],
+    group_activity:  Array.isArray(r?.group_activity)     ? r.group_activity  : [],
+    top_students:    Array.isArray(r?.top_students)       ? r.top_students    : [],
+    html_knowledge:  Array.isArray(r?.html_knowledge)     ? r.html_knowledge  : [],
+    html_widgets:    Array.isArray(r?.html_widgets)       ? r.html_widgets    : [],
+    html_students:   Array.isArray(r?.html_students)      ? r.html_students   : [],
   };
 }
 
@@ -109,6 +126,7 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
   const [error, setError]                     = useState('');
   const [lastUpdated, setLastUpdated]         = useState('');
   const [showUnsubmitted, setShowUnsubmitted] = useState(false);
+  const [showHtmlStudents, setShowHtmlStudents] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchInsight = useCallback(async (force = false) => {
@@ -329,6 +347,69 @@ const InsightPanelInner: React.FC<Props> = ({ roomId }) => {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* REQ-043 课件互动 */}
+              {((data.html_knowledge?.length ?? 0) > 0 || (data.html_students?.length ?? 0) > 0) && (
+                <div>
+                  <div className="text-xs font-medium text-gray-500 mb-1.5 flex items-center gap-1">
+                    <span>🖥️</span>课件互动
+                  </div>
+                  {/* 知识点掌握度（latest-wins） */}
+                  <div className="space-y-2">
+                    {(data.html_knowledge ?? []).map(k => (
+                      <div key={k?.knowledge ?? Math.random()}>
+                        <div className="flex justify-between text-xs text-gray-600 mb-0.5">
+                          <span className="truncate max-w-[120px]">📎 {k?.knowledge || ''}</span>
+                          <span className="text-gray-500 flex-shrink-0">
+                            {Math.round((k?.rate ?? 0) * 100)}%
+                            <span className="ml-1 text-gray-400">
+                              ({k?.got ?? 0}/{k?.full ?? 0}·{k?.students ?? 0}人)
+                            </span>
+                          </span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${rateColor(k?.rate ?? 0)}`}
+                            style={{ width: `${Math.round((k?.rate ?? 0) * 100)}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* 学生作答明细（可展开，含尝试次数；历史完整留库） */}
+                  {(data.html_students?.length ?? 0) > 0 && (
+                    <>
+                      <button
+                        onClick={() => setShowHtmlStudents(!showHtmlStudents)}
+                        className="w-full flex items-center justify-between text-xs font-medium text-gray-500 mt-2"
+                      >
+                        <span>学生作答明细（{data.html_students?.length ?? 0}人）</span>
+                        {showHtmlStudents ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                      {showHtmlStudents && (
+                        <div className="mt-1 space-y-1.5">
+                          {(data.html_students ?? []).map(stu => (
+                            <div key={stu?.uuid ?? Math.random()} className="pl-2 border-l-2 border-indigo-100">
+                              <div className="text-xs font-medium text-gray-600">{stu?.nickname || '匿名'}</div>
+                              {(stu?.questions ?? []).map((q, i) => (
+                                <div key={i} className="flex items-center justify-between text-[11px] text-gray-500">
+                                  <span className="truncate max-w-[150px]">
+                                    {q?.is_correct === true ? '✅' : q?.is_correct === false ? '❌'
+                                      : (q?.max_score ? `${q?.score ?? 0}/${q?.max_score}` : '·')}{' '}
+                                    {q?.knowledge || q?.question_id || q?.event || ''}
+                                    {q?.response ? ` — ${q.response}` : ''}
+                                  </span>
+                                  {(q?.attempts ?? 1) > 1 && (
+                                    <span className="text-amber-500 flex-shrink-0 ml-1">试{q.attempts}次</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
