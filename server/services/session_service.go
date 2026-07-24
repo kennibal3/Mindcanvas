@@ -20,9 +20,9 @@ import (
 
 // SessionService 学生会话服务
 type SessionService struct {
-	db        *sql.DB            // 数据库连接
-	rdb       *redis.Client      // Redis 客户端
-	profanity *ProfanityService  // 敏感词服务
+	db        *sql.DB           // 数据库连接
+	rdb       *redis.Client     // Redis 客户端
+	profanity *ProfanityService // 敏感词服务
 }
 
 // NewSessionService 创建会话服务实例
@@ -36,9 +36,10 @@ func NewSessionService(db *sql.DB, rdb *redis.Client, profanity *ProfanityServic
 
 // JoinRoom 学生入场
 // 按房间协作形态分流：
-//   roster            实名上课：真名匹配 class_students，session 绑稳定 student_id；
-//                     重名返候选让学生二选一（不入场）；不在册硬拒。
-//   anonymous / team  保持现状：自由昵称 + guest- 临时 UUID + 防冒充后缀。
+//
+//	roster            实名上课：真名匹配 class_students，session 绑稳定 student_id；
+//	                  重名返候选让学生二选一（不入场）；不在册硬拒。
+//	anonymous / team  保持现状：自由昵称 + guest- 临时 UUID + 防冒充后缀。
 func (s *SessionService) JoinRoom(req *models.JoinRoomRequest, ipAddress string) (*models.JoinRoomResponse, error) {
 	ctx := context.Background()
 
@@ -134,6 +135,11 @@ func (s *SessionService) JoinRoom(req *models.JoinRoomRequest, ipAddress string)
 		displayNickname = s.profanity.Filter(req.Nickname)
 		suffix = utils.GenerateSuffix()
 		studentUUID = utils.GenerateGuestUUID()
+	}
+
+	// BUG-019 修复：建会话前查封禁名单，命中直接拒绝下发会话
+	if s.IsStudentBanned(roomID, studentUUID) {
+		return nil, fmt.Errorf("您已被移出该房间")
 	}
 
 	// 5. 写入 room_sessions 表
