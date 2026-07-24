@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -95,6 +96,44 @@ type TopStudent struct {
 	Count    int    `json:"count"` // 互动次数
 }
 
+// ---- REQ-043 Slice-3：HTML 课件互动统计 ----
+
+// HtmlKnowledgeStat 按知识点的班级掌握度（latest-wins 去重后聚合）
+type HtmlKnowledgeStat struct {
+	Knowledge string  `json:"knowledge"`
+	Students  int     `json:"students"`
+	Got       float64 `json:"got"`
+	Full      float64 `json:"full"`
+	Rate      float64 `json:"rate"`
+}
+
+// HtmlWidgetStat 单个 HTML 课件的参与情况
+type HtmlWidgetStat struct {
+	ElementID string `json:"element_id"`
+	Title     string `json:"title"`
+	Students  int    `json:"students"`
+	Events    int    `json:"events"`
+}
+
+// HtmlQuestionResult 某学生某题的最新一次结果（含尝试次数，历史保留在库中）
+type HtmlQuestionResult struct {
+	QuestionID string   `json:"question_id"`
+	Knowledge  string   `json:"knowledge"`
+	Event      string   `json:"event"`
+	IsCorrect  *bool    `json:"is_correct"`
+	Score      *float64 `json:"score"`
+	MaxScore   *float64 `json:"max_score"`
+	Response   string   `json:"response"`
+	Attempts   int      `json:"attempts"`
+}
+
+// HtmlStudentStat 某学生在 HTML 课件里的作答明细
+type HtmlStudentStat struct {
+	UUID      string               `json:"uuid"`
+	Nickname  string               `json:"nickname"`
+	Questions []HtmlQuestionResult `json:"questions"`
+}
+
 // InsightData 学情雷达完整数据
 type InsightData struct {
 	RoomID        string               `json:"room_id"`
@@ -109,6 +148,10 @@ type InsightData struct {
 	TopWords      []WordFreq           `json:"top_words"`
 	GroupActivity []GroupActivity      `json:"group_activity"`
 	TopStudents   []TopStudent         `json:"top_students"`
+	// REQ-043 Slice-3：HTML 课件互动
+	HtmlKnowledge []HtmlKnowledgeStat  `json:"html_knowledge"`
+	HtmlWidgets   []HtmlWidgetStat     `json:"html_widgets"`
+	HtmlStudents  []HtmlStudentStat    `json:"html_students"`
 	UpdatedAt     string               `json:"updated_at"`
 }
 
@@ -211,6 +254,9 @@ func (s *InsightService) buildInsight(roomID string) (*InsightData, error) {
 		log.Printf("[InsightService] 查询Top5学生失败: %v", err)
 	}
 	data.TopStudents = topStudents
+
+	// 9. HTML 课件互动（REQ-043 Slice-3）
+	data.HtmlKnowledge, data.HtmlWidgets, data.HtmlStudents = s.buildHtmlStats(roomID)
 
 	return data, nil
 }
@@ -501,6 +547,160 @@ func (s *InsightService) buildTopStudents(roomID string) ([]TopStudent, error) {
 		result = append(result, s)
 	}
 	return result, nil
+}
+
+// buildHtmlStats 聚合 HTML 课件互动（REQ-043 Slice-3）。
+// 口径（用户 2026-07-24 拍板）：掌握度取每个 (学生,元素,题) 的最后一次提交（latest-wins），
+// 但保留每题尝试次数（历史完整留在库里）；complete 汇总事件不计入按题统计。
+func (s *InsightService) buildHtmlStats(roomID string) ([]HtmlKnowledgeStat, []HtmlWidgetStat, []HtmlStudentStat) {
+	rows, err := s.db.Query(`
+		SELECT wi.student_uuid,
+		       COALESCE(NULLIF(wi.student_name,''), wi.student_uuid) AS name,
+		       wi.element_id,
+		       COALESCE(re.payload->'payload'->>'title', re.payload->>'title', 'HTML 课件') AS title,
+		       COALESCE(wi.action_data->>'questionId','')     AS qid,
+		       COALESCE(wi.action_data->>'event','interact')  AS event,
+		       wi.is_correct,
+		       wi.action_data->>'score'    AS score,
+		       wi.action_data->>'maxScore' AS maxscore,
+		       COALESCE(kp.name,'')                           AS kp,
+		       COALESCE(wi.action_data->>'response','')       AS response
+		FROM widget_interactions wi
+		LEFT JOIN knowledge_points kp ON kp.id = wi.knowledge_point_id
+		LEFT JOIN room_elements re    ON re.id = wi.element_id
+		WHERE wi.room_id = $1 AND wi.action_type = 'html_event'
+		ORDER BY wi.created_at DESC`, roomID)
+	if err != nil {
+		log.Printf("[InsightService] 查询 HTML 互动失败: %v", err)
+		return nil, nil, nil
+	}
+	defer rows.Close()
+
+	type rowT struct {
+		student, name, elem, title, qid, event, kp, response string
+		isCorrect                                            *bool
+		score, max                                           *float64
+	}
+	type key struct{ s, e, q string }
+	latest := map[key]*rowT{}
+	attempts := map[key]int{}
+	var order []key
+
+	widgetStudents := map[string]map[string]bool{}
+	widgetEvents := map[string]int{}
+	widgetTitle := map[string]string{}
+
+	for rows.Next() {
+		var r rowT
+		var ic sql.NullBool
+		var sc, mx sql.NullString
+		if err := rows.Scan(&r.student, &r.name, &r.elem, &r.title, &r.qid, &r.event,
+			&ic, &sc, &mx, &r.kp, &r.response); err != nil {
+			continue
+		}
+		if ic.Valid {
+			b := ic.Bool
+			r.isCorrect = &b
+		}
+		if sc.Valid {
+			if f, e := strconv.ParseFloat(sc.String, 64); e == nil {
+				r.score = &f
+			}
+		}
+		if mx.Valid {
+			if f, e := strconv.ParseFloat(mx.String, 64); e == nil {
+				r.max = &f
+			}
+		}
+
+		// 课件参与统计：所有事件都算
+		if widgetStudents[r.elem] == nil {
+			widgetStudents[r.elem] = map[string]bool{}
+		}
+		widgetStudents[r.elem][r.student] = true
+		widgetEvents[r.elem]++
+		widgetTitle[r.elem] = r.title
+
+		// complete 汇总事件不进按题统计
+		if r.event == "complete" {
+			continue
+		}
+		k := key{r.student, r.elem, r.qid}
+		attempts[k]++
+		if _, ok := latest[k]; !ok { // 已按 created_at DESC 排序，首见即最新
+			rr := r
+			latest[k] = &rr
+			order = append(order, k)
+		}
+	}
+
+	kAgg := map[string]*HtmlKnowledgeStat{}
+	kStudents := map[string]map[string]bool{}
+	var kOrder []string
+	stuAgg := map[string]*HtmlStudentStat{}
+	var stuOrder []string
+
+	for _, k := range order {
+		r := latest[k]
+		if _, ok := stuAgg[r.student]; !ok {
+			stuAgg[r.student] = &HtmlStudentStat{UUID: r.student, Nickname: r.name}
+			stuOrder = append(stuOrder, r.student)
+		}
+		stuAgg[r.student].Questions = append(stuAgg[r.student].Questions, HtmlQuestionResult{
+			QuestionID: k.q, Knowledge: r.kp, Event: r.event,
+			IsCorrect: r.isCorrect, Score: r.score, MaxScore: r.max,
+			Response: r.response, Attempts: attempts[k],
+		})
+
+		// 知识点掌握度：仅统计有对错信号且挂了知识点的
+		if r.kp == "" {
+			continue
+		}
+		var got, full float64
+		has := false
+		if r.score != nil && r.max != nil && *r.max > 0 {
+			got, full, has = *r.score, *r.max, true
+		} else if r.isCorrect != nil {
+			full = 1
+			if *r.isCorrect {
+				got = 1
+			}
+			has = true
+		}
+		if !has {
+			continue
+		}
+		if _, ok := kAgg[r.kp]; !ok {
+			kAgg[r.kp] = &HtmlKnowledgeStat{Knowledge: r.kp}
+			kStudents[r.kp] = map[string]bool{}
+			kOrder = append(kOrder, r.kp)
+		}
+		kAgg[r.kp].Got += got
+		kAgg[r.kp].Full += full
+		kStudents[r.kp][r.student] = true
+	}
+
+	knowledge := make([]HtmlKnowledgeStat, 0, len(kOrder))
+	for _, name := range kOrder {
+		a := kAgg[name]
+		a.Students = len(kStudents[name])
+		if a.Full > 0 {
+			a.Rate = a.Got / a.Full
+		}
+		knowledge = append(knowledge, *a)
+	}
+	students := make([]HtmlStudentStat, 0, len(stuOrder))
+	for _, id := range stuOrder {
+		students = append(students, *stuAgg[id])
+	}
+	widgets := make([]HtmlWidgetStat, 0, len(widgetEvents))
+	for elem, ev := range widgetEvents {
+		widgets = append(widgets, HtmlWidgetStat{
+			ElementID: elem, Title: widgetTitle[elem],
+			Students: len(widgetStudents[elem]), Events: ev,
+		})
+	}
+	return knowledge, widgets, students
 }
 
 // widgetActionType 根据组件类型返回对应的 action_type
