@@ -37,6 +37,8 @@ import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
 import {
   buildDiagramElements,
   type DiagramData,
+  type DiagramRepair,
+  type DiagramIssue,
   DIAGRAM_THEMES,
   getDiagramThemeKey,
   setDiagramThemeKey,
@@ -175,6 +177,12 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const [inputText, setInputText] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [regenItem, setRegenItem] = useState<WorkbenchItem | null>(null); // 重新生成时复用
+  // REQ-050 一期：后端结构体检回执（自动修了什么 / 还剩什么问题），有内容时成功页不自动收起
+  const [genNotice, setGenNotice] = useState<{
+    repairs: DiagramRepair[];
+    issues: DiagramIssue[];
+    regenerated: boolean;
+  } | null>(null);
   // REQ-049：AI 图形配色风格（全局，存 localStorage，插入画布时生效）
   const [themeKey, setThemeKey] = useState<string>(() => getDiagramThemeKey());
 
@@ -216,6 +224,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     if (!text) return;
     setGenStep("generating");
     setErrorMsg("");
+    setGenNotice(null);
     try {
       const data = await generateDiagram({ markdown: text, diagram_type: selType });
       const rootNode = data.nodes.find(n => !n.parent);
@@ -234,8 +243,17 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
       setGenStep("done");
       clearDraft(roomId); // 文本已生成为正式图形并入历史，草稿失去保护意义，清掉避免和下次新建混淆
 
-      // 自动收起生成区，返回历史列表
-      setTimeout(() => setGenStep("idle"), 1200);
+      // REQ-050 一期：后端体检修过东西或留有问题时，成功页停住让老师看清，
+      // 不再 1.2 秒自动收起（否则提示一闪而过等于没提示）
+      const repairs = data.repairs ?? [];
+      const issues = data.issues ?? [];
+      if (repairs.length > 0 || issues.length > 0 || data.regenerated) {
+        setGenNotice({ repairs, issues, regenerated: !!data.regenerated });
+      } else {
+        setGenNotice(null);
+        // 自动收起生成区，返回历史列表
+        setTimeout(() => setGenStep("idle"), 1200);
+      }
     } catch (e: any) {
       setErrorMsg(e.message ?? "未知错误");
       setGenStep("error");
@@ -370,6 +388,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   // ── 取消生成流程 ─────────────────────────────────────────────
   const cancelGen = () => {
     setGenStep("idle");
+    setGenNotice(null); // REQ-050：体检回执不跨次残留
     setRegenItem(null);
     setInputText("");
     setRefineErr("");
@@ -730,8 +749,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
               </div>
             )}
 
-            {/* ── 生成成功（短暂显示后自动收起）── */}
-            {genStep === "done" && (
+            {/* ── 生成成功（无体检提示时短暂显示后自动收起）── */}
+            {genStep === "done" && !genNotice && (
               <div className="flex flex-col items-center justify-center py-12 gap-2 px-4">
                 <CheckCircle2 size={28} className="text-green-500" />
                 <div className="text-xs text-gray-600 text-center font-medium">
@@ -739,6 +758,78 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                 </div>
                 <div className="text-xs text-gray-400 text-center">
                   在下方列表点「插入画布」
+                </div>
+              </div>
+            )}
+
+            {/* ── 生成成功 + REQ-050 结构体检回执（停住等老师确认）── */}
+            {genStep === "done" && genNotice && (
+              <div className="p-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <CheckCircle2 size={15} className="text-green-500 shrink-0" />
+                  <span className="text-xs font-medium text-gray-700">生成成功，已加入历史</span>
+                </div>
+
+                {genNotice.regenerated && (
+                  <div className="text-xs text-gray-500 mb-2">
+                    首次生成的结构不可用，已自动重新生成了一次。
+                  </div>
+                )}
+
+                {genNotice.repairs.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-2">
+                    <div className="text-xs font-medium text-amber-800 mb-1">
+                      已自动修正 {genNotice.repairs.reduce((s, r) => s + r.count, 0)} 处
+                    </div>
+                    <ul className="space-y-0.5">
+                      {genNotice.repairs.map(r => (
+                        <li key={r.code} className="text-xs text-amber-700 leading-snug">
+                          · {r.detail}
+                          {r.count > 1 && <span className="text-amber-500">（{r.count} 处）</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {genNotice.issues.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-2">
+                    <div className="flex items-start gap-1.5">
+                      <AlertCircle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="text-xs font-medium text-red-700 mb-1">
+                          这些地方需要你确认（没有自动改，改了会变成瞎编）
+                        </div>
+                        <ul className="space-y-0.5">
+                          {genNotice.issues.map(r => (
+                            <li key={r.code} className="text-xs text-red-600 leading-snug">
+                              · {r.detail}
+                              {r.count > 1 && <span className="text-red-400">（{r.count} 处）</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2 mt-1">
+                  <button
+                    onClick={() => { setGenNotice(null); setGenStep("input"); }}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs
+                               text-gray-600 hover:text-gray-800 border border-gray-300
+                               rounded-lg transition-colors"
+                  >
+                    <RotateCcw size={12} />
+                    重新生成
+                  </button>
+                  <button
+                    onClick={() => { setGenNotice(null); setGenStep("idle"); }}
+                    className="flex-1 py-1.5 bg-amber-600 text-white text-xs rounded-lg
+                               hover:bg-amber-700 transition-colors"
+                  >
+                    知道了
+                  </button>
                 </div>
               </div>
             )}

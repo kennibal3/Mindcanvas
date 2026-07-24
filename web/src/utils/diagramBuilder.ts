@@ -36,10 +36,22 @@ export interface DiagramEdge {
   label?: string;
 }
 
+// REQ-050 一期：后端结构体检的回执
+// repairs＝已自动修好的（老师只需知情），issues＝不敢自动修、需要人判断的
+export interface DiagramRepair {
+  code: string;
+  detail: string;
+  count: number;
+}
+export type DiagramIssue = DiagramRepair;
+
 export interface DiagramData {
   diagram_type: string;
   nodes: DiagramNode[];
   edges: DiagramEdge[];
+  repairs?: DiagramRepair[];
+  issues?: DiagramIssue[];
+  regenerated?: boolean;
 }
 
 // ────────────────────────────────────────────────────────────────
