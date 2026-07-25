@@ -31,7 +31,7 @@ import {
   Wand2,
   Upload,
 } from "lucide-react";
-import { generateDiagram, type DiagramType } from "../../utils/diagramApi";
+import { generateDiagram, reportDiagramOutcome, type DiagramType } from "../../utils/diagramApi";
 import { refineText } from "../../utils/refineApi";
 import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
 import {
@@ -61,6 +61,7 @@ interface WorkbenchItem {
   data: DiagramData;
   inputText: string;    // 原始输入，用于重新生成
   createdAt: string;    // ISO 时间
+  genId?: string;       // REQ-050 B：后端采集记录 id（老式历史条目没有，上报时静默跳过）
 }
 
 type GenStep = "idle" | "type" | "input" | "generating" | "done" | "error";
@@ -225,8 +226,17 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     setGenStep("generating");
     setErrorMsg("");
     setGenNotice(null);
+    // REQ-050 B：这次生成是不是在「对上一张不满意」之后发生的？
+    // 是的话把上一张标成质量差信号——同文本重来＝这张不行，换类型＝选型不对。
+    if (regenItem) {
+      reportDiagramOutcome(
+        regenItem.genId,
+        selType !== regenItem.type ? "switched_type" : "regenerated_same_input"
+      );
+    }
+
     try {
-      const data = await generateDiagram({ markdown: text, diagram_type: selType });
+      const data = await generateDiagram({ markdown: text, diagram_type: selType, room_id: roomId });
       const rootNode = data.nodes.find(n => !n.parent);
       const title = rootNode?.label ?? "未命名图形";
 
@@ -237,6 +247,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
         data,
         inputText: text,
         createdAt: new Date().toISOString(),
+        genId: data.generation_id,
       };
 
       setHistory(prev => [item, ...prev].slice(0, MAX_HISTORY));
@@ -258,7 +269,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
       setErrorMsg(e.message ?? "未知错误");
       setGenStep("error");
     }
-  }, [inputText, selType, roomId]);
+  }, [inputText, selType, roomId, regenItem]);
 
   // ── 智能提炼（REQ-028）───────────────────────────────────────
   const handleRefine = useCallback(async () => {
@@ -339,6 +350,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     const newElements = buildDiagramElements(item.data, originX, originY);
     const current = excalidrawAPI.getSceneElements();
     excalidrawAPI.updateScene({ elements: [...current, ...newElements] });
+    // REQ-050 B：插进画布＝这张图能用（验收指标「不用手改就能用的比例」的主信号）
+    reportDiagramOutcome(item.genId, "inserted");
     setTimeout(() => {
       excalidrawAPI.scrollToContent(newElements, { fitToContent: true, animate: true });
     }, 100);
@@ -357,8 +370,10 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   }, []);
 
   // ── 删除 ───────────────────────────────────────────────────
-  const handleDelete = useCallback((id: string) => {
-    setHistory(prev => prev.filter(item => item.id !== id));
+  // REQ-050 B：改收整个 item（原来只收 id），为的是拿到 genId 上报「删掉不要了」
+  const handleDelete = useCallback((item: WorkbenchItem) => {
+    reportDiagramOutcome(item.genId, "deleted");
+    setHistory(prev => prev.filter(it => it.id !== item.id));
   }, []);
 
   // ── 导出（REQ-028 导出中心）──────────────────────────────────
@@ -512,7 +527,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                           </div>
                         </div>
                         <button
-                          onClick={() => handleDelete(item.id)}
+                          onClick={() => handleDelete(item)}
                           className="text-gray-300 hover:text-red-400 transition-colors shrink-0"
                           title="删除"
                         >
