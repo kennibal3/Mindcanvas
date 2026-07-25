@@ -52,6 +52,7 @@ export interface DiagramData {
   repairs?: DiagramRepair[];
   issues?: DiagramIssue[];
   regenerated?: boolean;
+  generation_id?: string; // REQ-050 B：采集记录 id，前端据此回报老师后续动作
 }
 
 // ────────────────────────────────────────────────────────────────

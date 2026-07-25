@@ -174,7 +174,9 @@ func main() {
 	// Chat养成对话处理器
 	chatHandler := handlers.NewChatHandler(db)
 	chatDoubaoHandler := handlers.NewChatDoubaoHandler(db, aiSvc)
-	diagramHandler := handlers.NewDiagramHandler(aiSvc)
+	// REQ-050 一期 B：图形生成信号采集（旁路，失败不影响出图）
+	diagramSampleService := services.NewDiagramSampleService(db)
+	diagramHandler := handlers.NewDiagramHandler(aiSvc, diagramSampleService)
 	refineHandler := handlers.NewRefineHandler(aiSvc) // REQ-028：文本→Markdown AI 提炼
 	parseFileHandler := handlers.NewParseFileHandler(assignmentService, aiSvc) // REQ-038：AI 工作台文件→Markdown 解析；REQ-040：图片走豆包 OCR
 
@@ -489,6 +491,7 @@ func main() {
 	ai.Use(middleware.AuthRequired())
 	{
 		ai.POST("/diagram", diagramHandler.Generate)
+		ai.POST("/diagram/:gid/outcome", diagramHandler.RecordOutcome) // REQ-050 B：老师后续动作回报
 		ai.POST("/refine", refineHandler.Refine) // REQ-028：文本→Markdown AI 提炼
 		ai.POST("/parse-file", parseFileHandler.ParseFile) // REQ-038：文件→Markdown（MarkItDown）
 	}

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"mindcanvas-server/middleware"
 	"mindcanvas-server/services"
 )
 
@@ -50,22 +51,32 @@ type DiagramResponse struct {
 	Issues  []DiagramIssue  `json:"issues,omitempty"`
 	// Regenerated＝首轮结构烂到修不动，已自动回 AI 重生成过一次
 	Regenerated bool `json:"regenerated,omitempty"`
+	// GenerationID＝本次采集记录 id（REQ-050 B），前端据此回报老师后续动作；
+	// 采集失败时为空串，前端应静默跳过上报
+	GenerationID string `json:"generation_id,omitempty"`
 }
 
 // DiagramRequest 请求体
 type DiagramRequest struct {
 	Markdown    string `json:"markdown"    binding:"required"`
 	DiagramType string `json:"diagram_type" binding:"required"`
+	RoomID      string `json:"room_id"` // 可选，仅用于采集归因
+}
+
+// DiagramOutcomeRequest 老师后续动作上报（REQ-050 B）
+type DiagramOutcomeRequest struct {
+	Outcome string `json:"outcome" binding:"required"`
 }
 
 // DiagramHandler 处理器
 type DiagramHandler struct {
-	aiSvc *services.AIService
+	aiSvc     *services.AIService
+	sampleSvc *services.DiagramSampleService
 }
 
-// NewDiagramHandler 构造（注入 AIService）
-func NewDiagramHandler(aiSvc *services.AIService) *DiagramHandler {
-	return &DiagramHandler{aiSvc: aiSvc}
+// NewDiagramHandler 构造（注入 AIService + 采集服务）
+func NewDiagramHandler(aiSvc *services.AIService, sampleSvc *services.DiagramSampleService) *DiagramHandler {
+	return &DiagramHandler{aiSvc: aiSvc, sampleSvc: sampleSvc}
 }
 
 // Generate 处理请求
@@ -105,6 +116,7 @@ func (h *DiagramHandler) Generate(c *gin.Context) {
 	systemPrompt := services.GetDiagramPrompt(req.DiagramType)
 
 	log.Printf("[DiagramHandler] type=%s mdLen=%d", req.DiagramType, utf8.RuneCountInString(md))
+	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
 	ctx = services.WithFastMode(ctx) // 关闭深度思考，图形生成提速
 	defer cancel()
@@ -153,7 +165,84 @@ func (h *DiagramHandler) Generate(c *gin.Context) {
 			req.DiagramType, len(result.Nodes), len(check.Repairs), len(check.Issues))
 	}
 
+	// ── REQ-050 一期 B：采集信号（旁路，失败只记日志绝不影响出图）──
+	result.GenerationID = h.recordSample(c, req, md, &result, check, int(time.Since(startedAt).Milliseconds()))
+
 	c.JSON(http.StatusOK, result)
+}
+
+// recordSample 落一条生成记录，返回记录 id（失败返回空串）。
+// 这是旁路：老师正在上课，采集不通不能变成生成不出图。
+func (h *DiagramHandler) recordSample(
+	c *gin.Context,
+	req DiagramRequest,
+	md string,
+	result *DiagramResponse,
+	check diagramCheck,
+	elapsedMs int,
+) string {
+	if h.sampleSvc == nil {
+		return ""
+	}
+	teacherID := middleware.GetUserID(c)
+	if teacherID == "" {
+		return ""
+	}
+
+	repairsJSON, _ := json.Marshal(check.Repairs)
+	issuesJSON, _ := json.Marshal(check.Issues)
+	resultJSON, _ := json.Marshal(gin.H{"nodes": result.Nodes, "edges": result.Edges})
+
+	id, err := h.sampleSvc.Record(services.DiagramSample{
+		TeacherID:   teacherID,
+		RoomID:      req.RoomID,
+		DiagramType: req.DiagramType,
+		InputText:   truncateRunes(md, 4000),
+		InputChars:  utf8.RuneCountInString(req.Markdown),
+		NodeCount:   len(result.Nodes),
+		EdgeCount:   len(result.Edges),
+		RepairsJSON: repairsJSON,
+		IssuesJSON:  issuesJSON,
+		RepairCount: len(check.Repairs),
+		IssueCount:  len(check.Issues),
+		Regenerated: result.Regenerated,
+		ResultJSON:  resultJSON,
+		ElapsedMs:   elapsedMs,
+	})
+	if err != nil {
+		log.Printf("[DiagramHandler] 采集入库失败（不影响出图）: %v", err)
+		return ""
+	}
+	return id
+}
+
+// RecordOutcome 记录老师拿到图之后干了什么
+//
+//	POST /api/ai/diagram/:gid/outcome
+//	Auth: AuthRequired（归属校验在 service 的 UPDATE ... WHERE teacher_id）
+func (h *DiagramHandler) RecordOutcome(c *gin.Context) {
+	if h.sampleSvc == nil {
+		c.JSON(http.StatusOK, gin.H{"ok": true}) // 采集未启用，静默成功
+		return
+	}
+	gid := c.Param("gid")
+	var req DiagramOutcomeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数缺失：需要 outcome"})
+		return
+	}
+	if !services.IsValidDiagramOutcome(req.Outcome) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的 outcome：" + req.Outcome})
+		return
+	}
+	teacherID := middleware.GetUserID(c)
+	if err := h.sampleSvc.SetOutcome(gid, teacherID, req.Outcome); err != nil {
+		// 采集是旁路：失败不打扰老师，日志留痕即可
+		log.Printf("[DiagramHandler] outcome 记录失败 gid=%s outcome=%s: %v", gid, req.Outcome, err)
+		c.JSON(http.StatusOK, gin.H{"ok": false})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // httpError 内部错误载体（让 generateOnce 能把 4xx/5xx 原样交回 Generate 决定怎么发）
