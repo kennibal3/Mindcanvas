@@ -12,8 +12,10 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, Copy, Check, Lock, BookOpen,
   Wifi, WifiOff, Navigation, Eye,
-  ChevronDown, ChevronUp, X, Camera,
+  ChevronDown, ChevronUp, X, Camera, Share2,
 } from 'lucide-react';
+// REQ-051 二期：房间内分享——生成邀请链接二维码
+import QRCode from 'qrcode';
 import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useWidgetStore } from '@/store/widgetStore';
@@ -275,6 +277,10 @@ const RoomPage = () => {
   const [pageLoading, setPageLoading]     = useState(true);
   const [pageError, setPageError]         = useState('');
   const [copied, setCopied]               = useState(false);
+  // REQ-051 二期：房间内分享(链接+二维码)弹层
+  const [showShare, setShowShare]             = useState(false);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [qrDataUrl, setQrDataUrl]             = useState('');
   const [isGathered, setIsGathered]       = useState(false);
   const [showMembers, setShowMembers]     = useState(false);
   const [kickLoading, setKickLoading]     = useState<string | null>(null);
@@ -479,6 +485,35 @@ const RoomPage = () => {
     });
   }, [currentRoom?.invite_code]);
 
+  // REQ-051 二期：房间内分享入口——链接 + 二维码（打开后自动填房间码）
+  const joinLink = currentRoom?.invite_code
+    ? `${window.location.origin}/join/${currentRoom.invite_code}`
+    : '';
+
+  const handleToggleShare = useCallback(() => {
+    setShowShare(prev => !prev);
+  }, []);
+
+  // 弹层打开时才现算二维码，避免每次渲染都跑一遍图像生成
+  useEffect(() => {
+    if (!showShare || !joinLink) return;
+    let cancelled = false;
+    QRCode.toDataURL(joinLink, {
+      width: 180,
+      margin: 1,
+      color: { dark: '#1f2937', light: '#ffffff' },
+    }).then(url => { if (!cancelled) setQrDataUrl(url); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [showShare, joinLink]);
+
+  const handleCopyShareLink = useCallback(() => {
+    if (!joinLink) return;
+    copyToClipboard(joinLink).then(() => {
+      setCopiedShareLink(true);
+      setTimeout(() => setCopiedShareLink(false), 2000);
+    });
+  }, [joinLink]);
+
   const handleReadOnlyChange = useCallback(async (readonly: boolean) => {
     if (!roomId) return;
     try {
@@ -591,6 +626,14 @@ const RoomPage = () => {
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
+              {/* REQ-051 二期：分享入口(链接+二维码) */}
+              <button
+                onClick={handleToggleShare}
+                className={`p-1 rounded ${showShare ? 'text-amber-700 bg-amber-50' : 'text-gray-400 hover:text-amber-700'}`}
+                title="分享给学生"
+              >
+                <Share2 size={14} />
+              </button>
             </div>
           )}
 
@@ -653,6 +696,40 @@ const RoomPage = () => {
               onKick={handleKick}
               kickLoading={kickLoading}
             />
+          </div>
+        </div>
+      )}
+
+      {/* REQ-051 二期：房间内分享弹层(链接+二维码) */}
+      {isTeacher && showShare && currentRoom?.invite_code && (
+        <div className="fixed top-[44px] left-1/2 -translate-x-1/2 z-[60] bg-white rounded-xl shadow-xl border border-gray-200 w-64 animate-fade-in">
+          <div className="p-4 flex flex-col items-center gap-3">
+            <div className="text-xs font-medium text-gray-400">分享给学生</div>
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="房间二维码"
+                className="w-40 h-40 rounded-lg border border-gray-100"
+              />
+            ) : (
+              <div className="w-40 h-40 rounded-lg border border-gray-100 flex items-center justify-center text-xs text-gray-300">
+                生成中...
+              </div>
+            )}
+            <div className="text-xs text-gray-400 text-center break-all px-1">{joinLink}</div>
+            <button
+              onClick={handleCopyShareLink}
+              className={`w-full flex items-center justify-center gap-1.5 text-xs font-medium
+                          rounded-lg py-2 border transition-colors ${
+                copiedShareLink
+                  ? 'border-green-200 bg-green-50 text-green-600'
+                  : 'border-gray-200 text-gray-500 hover:border-amber-300 hover:text-amber-700 hover:bg-amber-50'
+              }`}
+            >
+              {copiedShareLink
+                ? <><Check size={13} /> 链接已复制</>
+                : <><Copy size={13} /> 复制入场链接</>}
+            </button>
           </div>
         </div>
       )}
@@ -806,11 +883,11 @@ const RoomPage = () => {
         />
       )}
 
-      {/* 遮罩：点击关闭成员浮层 */}
-      {showMembers && (
+      {/* 遮罩：点击关闭成员浮层/分享弹层 */}
+      {(showMembers || showShare) && (
         <div
           className="fixed inset-0 z-[55]"
-          onClick={() => setShowMembers(false)}
+          onClick={() => { setShowMembers(false); setShowShare(false); }}
         />
       )}
 
