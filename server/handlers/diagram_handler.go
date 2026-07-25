@@ -66,6 +66,10 @@ type DiagramRequest struct {
 // DiagramOutcomeRequest 老师后续动作上报（REQ-050 B）
 type DiagramOutcomeRequest struct {
 	Outcome string `json:"outcome" binding:"required"`
+	// ElementIDs 仅 outcome=inserted 时携带：这次插进画布的 excalidraw 元素 id。
+	// 后台 checker 十分钟后据此读 room_scenes 算存活率——**这才是图好不好的真判据**，
+	// 因为「插入画布」本身只是老师看一眼的默认动作，不代表认可（2026-07-25 订正）。
+	ElementIDs []string `json:"element_ids"`
 }
 
 // DiagramHandler 处理器
@@ -242,6 +246,17 @@ func (h *DiagramHandler) RecordOutcome(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": false})
 		return
 	}
+
+	// 插入画布时另记元素 id，供后台 checker 之后观测存活率（真质量判据）
+	if req.Outcome == "inserted" && len(req.ElementIDs) > 0 {
+		idsJSON, mErr := json.Marshal(req.ElementIDs)
+		if mErr != nil {
+			log.Printf("[DiagramHandler] element_ids 序列化失败 gid=%s: %v", gid, mErr)
+		} else if err := h.sampleSvc.MarkInserted(gid, teacherID, idsJSON, len(req.ElementIDs)); err != nil {
+			log.Printf("[DiagramHandler] 记录插入元素失败 gid=%s: %v", gid, err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

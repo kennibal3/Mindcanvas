@@ -350,8 +350,13 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     const newElements = buildDiagramElements(item.data, originX, originY);
     const current = excalidrawAPI.getSceneElements();
     excalidrawAPI.updateScene({ elements: [...current, ...newElements] });
-    // REQ-050 B：插进画布＝这张图能用（验收指标「不用手改就能用的比例」的主信号）
-    reportDiagramOutcome(item.genId, "inserted");
+    // REQ-050 B：上报这批元素 id。插入本身只是「看一眼」的默认动作不代表图好，
+    // 真判据是后端十分钟后回来看这组元素还在不在（2026-07-25 订正）。
+    reportDiagramOutcome(
+      item.genId,
+      "inserted",
+      newElements.map(el => el.id).filter(Boolean)
+    );
     setTimeout(() => {
       excalidrawAPI.scrollToContent(newElements, { fitToContent: true, animate: true });
     }, 100);
@@ -372,7 +377,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   // ── 删除 ───────────────────────────────────────────────────
   // REQ-050 B：改收整个 item（原来只收 id），为的是拿到 genId 上报「删掉不要了」
   const handleDelete = useCallback((item: WorkbenchItem) => {
-    reportDiagramOutcome(item.genId, "deleted");
+    reportDiagramOutcome(item.genId, "deleted_history");
     setHistory(prev => prev.filter(it => it.id !== item.id));
   }, []);
 

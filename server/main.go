@@ -92,6 +92,30 @@ func startHealthCacheUpdater(
 	}()
 }
 
+// startDiagramSurvivalChecker 启动后台 goroutine，每 5 分钟巡检一次
+// 「插进画布的 AI 图形还在不在」（REQ-050 一期B 修正）。
+//
+// 为什么要有这个：老师生成完无法判断图好不好，**默认动作就是插进画布看一眼**，
+// 所以 outcome='inserted' 零区分度；看完不满意时是在画布上删掉那组元素或 Ctrl+Z，
+// 不会回工作台删历史。故真正的质量判据＝插入十分钟后这组元素的存活率。
+//
+// 不用 job_queue 是因为这里只需要「到点扫一遍」，没有任务参数与重试语义，
+// 一个 ticker + 部分索引比排队更简单；与 startHealthCacheUpdater 同款模式。
+func startDiagramSurvivalChecker(svc *services.DiagramSampleService) {
+	if svc == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n := svc.CheckPendingSurvival(); n > 0 {
+				log.Printf("[DiagramSurvival] 本轮观测 %d 条", n)
+			}
+		}
+	}()
+}
+
 func main() {
 	log.Println("========================================")
 	log.Println("  MindCanvas v4.1 Phase8-v2 / V4.3 - 教育协同白板平台")
@@ -188,6 +212,12 @@ func main() {
 	hCache := &healthCache{}
 	startHealthCacheUpdater(hCache, assignmentService, db)
 	log.Printf("[启动] 健康指标缓存已启动（每10秒后台刷新）")
+
+	// REQ-050 一期B 修正：AI 图形「存活观测」后台巡检。
+	// 插入画布只是老师看一眼的默认动作，不代表图好；真判据是十分钟后这组元素
+	// 还在不在画布上。故起一个 5 分钟 ticker 扫待观测记录（部分索引，扫描量与全表无关）。
+	startDiagramSurvivalChecker(diagramSampleService)
+	log.Printf("[启动] AI 图形存活观测已启动（每5分钟巡检，插入后10分钟判定）")
 
 	// ========== 9. V4.3: 启动 pprof 调试服务（内网独立端口 6060）==========
 	// 访问：http://127.0.0.1:6060/debug/pprof/
