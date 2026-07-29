@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -144,6 +145,7 @@ func (s *AIService) refineComplete(ctx context.Context, systemPrompt, userConten
 
 // refineOnce 执行一次请求；retry=true 表示调用方应在 attempt==0 时重试
 func (s *AIService) refineOnce(ctx context.Context, reqBody []byte, timeout time.Duration, attempt int) (content string, retry bool, err error) {
+	startedAt := time.Now()
 	callCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -167,6 +169,8 @@ func (s *AIService) refineOnce(ctx context.Context, reqBody []byte, timeout time
 		raw, _ := io.ReadAll(resp.Body)
 		upstreamMsg := extractUpstreamErrorMsg(raw)
 		retryable := attempt == 0 && (resp.StatusCode == 429 || resp.StatusCode >= 500)
+		log.Printf("[Refine] attempt=%d upstreamStatus=%d retryable=%t elapsed=%s msg=%s",
+			attempt, resp.StatusCode, retryable, time.Since(startedAt).Round(time.Millisecond), upstreamMsg)
 		return "", retryable, &RefineError{Kind: RefineErrUpstream, Status: resp.StatusCode, UpstreamMsg: upstreamMsg}
 	}
 
@@ -180,6 +184,14 @@ func (s *AIService) refineOnce(ctx context.Context, reqBody []byte, timeout time
 	if len(data.Choices) == 0 {
 		return "", false, &RefineError{Kind: RefineErrInvalidResp, Status: 502}
 	}
+	// 单次上游调用的观测点：耗时 + token 用量 + 第几次尝试。
+	// 加这行的原因：2026-07-29 排查「提炼 36s / 图形生成 13s」时，既无耗时也无 token 记录，
+	// 只能靠猜（先猜深度思考未关——错，本文件 125 行一直是 disabled；再猜长文本双轮——也错，输入未超 2500 字）。
+	// Usage 本来就已经解析在 aiResponse 里，白白丢弃。attempt>0 的行同时暴露「静默重试」。
+	log.Printf("[Refine] attempt=%d elapsed=%s promptTokens=%d completionTokens=%d finishReason=%s",
+		attempt, time.Since(startedAt).Round(time.Millisecond),
+		data.Usage.PromptTokens, data.Usage.CompletionTokens, data.Choices[0].FinishReason)
+
 	normalized := normalizeRefinedMarkdown(data.Choices[0].Message.Content)
 	if normalized == "" {
 		return "", false, &RefineError{Kind: RefineErrInvalidResp, Status: 502}
@@ -235,11 +247,18 @@ func splitLongText(source string) []string {
 // RefineToMarkdown 文本 → Markdown 提炼主入口。
 // <= 2500 字：一次直接提炼；超过：并发分段压缩（<=2000字/段）后统一合并提炼。
 func (s *AIService) RefineToMarkdown(ctx context.Context, sourceText string) (*RefineResult, error) {
-	if utf8.RuneCountInString(sourceText) <= refineLongTextThreshold {
+	startedAt := time.Now()
+	srcLen := utf8.RuneCountInString(sourceText)
+
+	if srcLen <= refineLongTextThreshold {
 		content, err := s.refineComplete(ctx, refineDirectPrompt, sourceText, 1800, 60*time.Second)
 		if err != nil {
+			log.Printf("[Refine] path=direct srcLen=%d elapsed=%s result=error err=%v",
+				srcLen, time.Since(startedAt).Round(time.Millisecond), err)
 			return nil, err
 		}
+		log.Printf("[Refine] path=direct srcLen=%d elapsed=%s result=ok",
+			srcLen, time.Since(startedAt).Round(time.Millisecond))
 		return &RefineResult{Markdown: content, Model: s.model}, nil
 	}
 
@@ -258,8 +277,11 @@ func (s *AIService) RefineToMarkdown(ctx context.Context, sourceText string) (*R
 		}(i, chunk)
 	}
 	wg.Wait()
+	chunkDoneAt := time.Now()
 	for _, e := range errs {
 		if e != nil {
+			log.Printf("[Refine] path=chunked srcLen=%d chunks=%d elapsed=%s result=error stage=compress err=%v",
+				srcLen, len(chunks), time.Since(startedAt).Round(time.Millisecond), e)
 			return nil, e
 		}
 	}
@@ -274,7 +296,15 @@ func (s *AIService) RefineToMarkdown(ctx context.Context, sourceText string) (*R
 
 	content, err := s.refineComplete(ctx, refineSynthesisPrompt, sb.String(), 2000, 45*time.Second)
 	if err != nil {
+		log.Printf("[Refine] path=chunked srcLen=%d chunks=%d elapsed=%s result=error stage=synthesis err=%v",
+			srcLen, len(chunks), time.Since(startedAt).Round(time.Millisecond), err)
 		return nil, err
 	}
+	// 分两段计时：压缩阶段是并发的、合并阶段是串行的，分开才看得出瓶颈在哪一头
+	log.Printf("[Refine] path=chunked srcLen=%d chunks=%d compressElapsed=%s synthesisElapsed=%s elapsed=%s result=ok",
+		srcLen, len(chunks),
+		chunkDoneAt.Sub(startedAt).Round(time.Millisecond),
+		time.Since(chunkDoneAt).Round(time.Millisecond),
+		time.Since(startedAt).Round(time.Millisecond))
 	return &RefineResult{Markdown: content, Model: s.model}, nil
 }
