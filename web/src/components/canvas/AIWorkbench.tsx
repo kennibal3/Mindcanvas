@@ -10,7 +10,7 @@
  *   - 最多保存 20 条，超出自动删最旧
  */
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   Sparkles,
   ChevronLeft,
@@ -50,6 +50,34 @@ import {
   exportDiagramPdf,
 } from "../../utils/diagramExport";
 import { useCanvasStore } from "../../store/canvasStore";
+
+// ─────────────────────────────────────────────────────────────
+// REQ-052：提炼必要性判断（纯本地正则，刻意不调 AI）
+// ─────────────────────────────────────────────────────────────
+// 背景：「智能提炼」与「生成图形」两个按钮并排，最自然的操作是从左到右挨个点，
+// 于是本来就有标题层级的 Word 课件也要白等一次 AI 调用（2026-07-29 实测 36s）。
+// 提炼的真正价值是给散乱长文本降噪归类；已有结构的文本提炼收益很小。
+// 判定只看结构特征，故意不调 AI —— 为了省一次 AI 调用再花一次 AI 调用是荒谬的。
+type RefineAdvice = "skip" | "suggest" | null;
+
+const mdHeadingRe = /^#{1,6}[ \t]+\S/gm;
+const mdBulletRe = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/gm;
+
+function assessRefineNeed(text: string): RefineAdvice {
+  const t = text.trim();
+  if (t.length < 120) return null; // 太短，两种提示都没意义
+
+  const headings = (t.match(mdHeadingRe) ?? []).length;
+  const bullets = (t.match(mdBulletRe) ?? []).length;
+
+  // 已有两级以上标题、或标题配成规模的列表 → diagram 提示词本身就能消化，直接生成
+  if (headings >= 2 || (headings >= 1 && bullets >= 3)) return "skip";
+
+  // 长文本且几乎没有结构标记 → 提炼收益明显，值得那次等待
+  if (t.length > 600 && headings === 0 && bullets < 3) return "suggest";
+
+  return null; // 介于两者之间：不引导，交给老师自己判断
+}
 
 // ─────────────────────────────────────────────────────────────
 // 类型定义
@@ -190,6 +218,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   // REQ-028：文本→Markdown 智能提炼（生成图形前的可选预处理）
   const [refining, setRefining] = useState(false);
   const [refineErr, setRefineErr] = useState("");
+  // REQ-052：是否建议提炼，随输入框内容实时重算（纯正则，无网络开销）
+  const refineAdvice = useMemo(() => assessRefineNeed(inputText), [inputText]);
 
   // REQ-038：文件上传 → MarkItDown 解析为 Markdown
   const [parsingFile, setParsingFile] = useState(false);
@@ -734,11 +764,30 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                              border border-amber-300 text-amber-700 text-xs font-medium
                              rounded-xl hover:bg-amber-50 transition-colors
                              disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="用 AI 把杂乱文本整理成结构化 Markdown，再生成图形效果更好"
+                  title="可选步骤：用 AI 把杂乱文本整理成结构化 Markdown。输入本身已有标题层级时可直接生成图形"
                 >
                   {refining ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-                  {refining ? "提炼中…" : "智能提炼为 Markdown"}
+                  {refining ? "提炼中…" : "智能提炼为 Markdown（可选）"}
                 </button>
+                {/* REQ-052：提炼中给出耗时预期。刻意不做百分比进度条 ——
+                    当前提炼是非流式调用，服务端拿到完整响应前没有任何可上报的中间状态，
+                    假进度条走到 100% 还没结束比没有进度条更让人焦虑。 */}
+                {refining && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    正在提炼，文本较长时可能需要半分钟以上，请保持面板打开
+                  </p>
+                )}
+                {/* REQ-052：该不该提炼的引导。最好的等待优化是不需要等待。 */}
+                {!refining && refineAdvice === "skip" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    文本结构已清晰，可跳过提炼，直接点下方「生成图形」
+                  </p>
+                )}
+                {!refining && refineAdvice === "suggest" && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    文本结构较松散，先提炼一次，生成的图会更整齐
+                  </p>
+                )}
                 {refineErr && (
                   <p className="text-xs text-red-500 mt-1">{refineErr}</p>
                 )}
