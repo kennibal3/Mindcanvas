@@ -52,7 +52,7 @@ import {
 import { useCanvasStore } from "../../store/canvasStore";
 
 // ─────────────────────────────────────────────────────────────
-// REQ-052：提炼必要性判断（纯本地正则，刻意不调 AI）
+// REQ-056：提炼必要性判断（纯本地正则，刻意不调 AI）
 // ─────────────────────────────────────────────────────────────
 // 背景：「智能提炼」与「生成图形」两个按钮并排，最自然的操作是从左到右挨个点，
 // 于是本来就有标题层级的 Word 课件也要白等一次 AI 调用（2026-07-29 实测 36s）。
@@ -218,7 +218,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   // REQ-028：文本→Markdown 智能提炼（生成图形前的可选预处理）
   const [refining, setRefining] = useState(false);
   const [refineErr, setRefineErr] = useState("");
-  // REQ-052：是否建议提炼，随输入框内容实时重算（纯正则，无网络开销）
+  // REQ-056：是否建议提炼，随输入框内容实时重算（纯正则，无网络开销）
   const refineAdvice = useMemo(() => assessRefineNeed(inputText), [inputText]);
 
   // REQ-038：文件上传 → MarkItDown 解析为 Markdown
@@ -769,7 +769,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                   {refining ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
                   {refining ? "提炼中…" : "智能提炼为 Markdown（可选）"}
                 </button>
-                {/* REQ-052：提炼中给出耗时预期。刻意不做百分比进度条 ——
+                {/* REQ-056：提炼中给出耗时预期。刻意不做百分比进度条 ——
                     当前提炼是非流式调用，服务端拿到完整响应前没有任何可上报的中间状态，
                     假进度条走到 100% 还没结束比没有进度条更让人焦虑。 */}
                 {refining && (
@@ -777,7 +777,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                     正在提炼，文本较长时可能需要半分钟以上，请保持面板打开
                   </p>
                 )}
-                {/* REQ-052：该不该提炼的引导。最好的等待优化是不需要等待。 */}
+                {/* REQ-056：该不该提炼的引导。最好的等待优化是不需要等待。 */}
                 {!refining && refineAdvice === "skip" && (
                   <p className="text-xs text-gray-500 mt-1">
                     文本结构已清晰，可跳过提炼，直接点下方「生成图形」
