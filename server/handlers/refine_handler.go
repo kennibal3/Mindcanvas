@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 	"unicode/utf8"
@@ -60,11 +61,33 @@ func (h *RefineHandler) Refine(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	resp := gin.H{
 		"markdown": result.Markdown,
 		"model":    result.Model,
 		"provider": "doubao",
-	})
+	}
+	// REQ-057：被上游 max_tokens 截断时如实告知。
+	// 此前截断结果一路以 200 + 完整外观返回，老师拿到少一截的内容毫不知情——
+	// 看得见的截断他会反馈，看不见的只会被归因成「AI 不好使」。
+	if result.Truncated {
+		resp["truncated"] = true
+		resp["warning"] = refineTruncationWarning(result)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// refineTruncationWarning 按截断发生的阶段给不同的用户可读提示。
+// 分阶段是有必要的：合并阶段截断＝结尾断掉，老师看一眼末尾就能确认；
+// 压缩阶段截断＝中间少了内容但成文通顺，必须明说「可能缺细节」他才会去核对原文。
+func refineTruncationWarning(r *services.RefineResult) string {
+	switch r.TruncatedStage {
+	case "direct", "synthesis":
+		return "内容较多，提炼结果的结尾可能被截断，请检查末尾是否完整；必要时缩短原文后重试"
+	case "compress":
+		return fmt.Sprintf("原文较长，分段处理时有 %d 段未能完整保留，提炼结果可能缺少部分细节，建议对照原文核对", r.TruncatedChunks)
+	default: // compress+synthesis
+		return fmt.Sprintf("原文较长，有 %d 段未能完整保留且结尾可能被截断，建议把原文分成两三批分别提炼", r.TruncatedChunks)
+	}
 }
 
 // mapRefineError 把 services.RefineError 映射为对外 HTTP 状态码与用户可读文案，
