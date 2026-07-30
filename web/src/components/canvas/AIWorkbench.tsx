@@ -218,6 +218,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   // REQ-028：文本→Markdown 智能提炼（生成图形前的可选预处理）
   const [refining, setRefining] = useState(false);
   const [refineErr, setRefineErr] = useState("");
+  const [refineWarn, setRefineWarn] = useState(""); // REQ-057：提炼结果被截断的黄色警告
   // REQ-056：是否建议提炼，随输入框内容实时重算（纯正则，无网络开销）
   const refineAdvice = useMemo(() => assessRefineNeed(inputText), [inputText]);
 
@@ -307,11 +308,15 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     if (!text) return;
     setRefining(true);
     setRefineErr("");
+    setRefineWarn("");
     try {
       const result = await refineText({ text });
       setInputText(result.markdown);
       if (textareaRef.current) textareaRef.current.value = result.markdown;
       saveDraft(roomId, selType, result.markdown); // 提炼结果立即落草稿，防止提炼完还没点生成就误关丢失
+      // REQ-057：内容被截断时留在界面上，不自动消失——与 REQ-050 体检提示同一取舍，
+      // 一闪而过的提示等于没提示，而这里少掉的内容老师根本看不出来。
+      if (result.truncated && result.warning) setRefineWarn(result.warning);
     } catch (e: any) {
       setRefineErr(e.message ?? "提炼失败，请稍后重试");
     } finally {
@@ -442,6 +447,7 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     setRegenItem(null);
     setInputText("");
     setRefineErr("");
+    setRefineWarn(""); // REQ-057：截断警告同样不跨次残留
     setRefining(false);
     setParseFileErr("");
     setParseFileHint("");
@@ -790,6 +796,14 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                 )}
                 {refineErr && (
                   <p className="text-xs text-red-500 mt-1">{refineErr}</p>
+                )}
+                {/* REQ-057：提炼结果被上游 max_tokens 截断的警告。
+                    与 parseFileWarn 同一视觉档位（黄色＝成功但有损），
+                    区别于 refineErr（红色＝失败）。 */}
+                {!refining && refineWarn && (
+                  <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+                    ⚠ {refineWarn}
+                  </p>
                 )}
                 <button
                   onClick={handleGenerate}

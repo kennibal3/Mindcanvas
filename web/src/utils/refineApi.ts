@@ -12,6 +12,10 @@ export interface RefineTextResult {
   markdown: string;
   model: string;
   provider: string;
+  // REQ-057：输出被上游 max_tokens 截断。截断仍返回 200 且内容通顺，
+  // 不显式提示的话老师无从察觉少了东西，只会归因成「AI 不好使」。
+  truncated?: boolean;
+  warning?: string;
 }
 
 export interface RefineTextError {
