@@ -53,6 +53,13 @@ export interface DiagramData {
   issues?: DiagramIssue[];
   regenerated?: boolean;
   generation_id?: string; // REQ-050 B：采集记录 id，前端据此回报老师后续动作
+  /**
+   * 这份结构是怎么来的：
+   *   "direct" ＝ 结构化 Markdown 本地确定性直转（markdownToDiagram.ts，无损、无 AI）
+   *   "ai" / undefined ＝ 后端调 AI 生成（后端不下发该字段，故 undefined 视为 ai）
+   * 直转结果没有 generation_id，因此 reportDiagramOutcome 会自动跳过埋点。
+   */
+  source?: "direct" | "ai";
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -294,10 +301,69 @@ function wrapInFrame(
 // 仍是显式坐标、不涉及绑定，遵守 REQ-027 PR#6 定下的「严禁 skeleton
 // start/end:{id} 绑定式箭头」铁律。
 // ────────────────────────────────────────────────────────────────
-const MM_NODE_W = 180;
-const MM_NODE_H = 52;
+const MM_NODE_W = 180;     // 节点最小宽度
+const MM_NODE_W_MAX = 300; // 节点最大宽度（再宽就该折行了）
+const MM_NODE_H = 52;      // 节点最小高度
 const MM_H_GAP = 80;   // 水平间距
 const MM_V_GAP = 22;   // 垂直间距
+
+// ── 长标签的容纳（REQ-058，2026-07-30）────────────────────────
+// 结构化 Markdown 直转通道（markdownToDiagram.ts）是**无损**的，代价是标签
+// 可能长达几十字（实测一份会议纪要最长 61 字）——这是内容本来的样子，不该
+// 靠改写压缩掉，只能靠盒子装下。原版 mindmap 写死 MM_NODE_W/MM_NODE_H，
+// 且纵向布局按「行数 × 固定行高」算位置；Excalidraw 的容器绑定文字在装不下
+// 时会**自动把容器撑高**，于是撑高后的节点会压到下方兄弟节点身上（重叠）。
+// 因此这里改成：宽度按列取最长标签所需、高度按实际折行数算，布局用真实像素。
+// 短标签（AI 路径的 ≤18 字）算下来仍是 180×52，对既有效果无影响。
+const MM_TEXT_PAD = 5;      // Excalidraw 绑定文字左右内边距（BOUND_TEXT_PADDING）
+const MM_LINE_HEIGHT = 1.25; // fontFamily 2 的默认行高倍数
+const MM_TARGET_LINES = 3;   // 加宽的目标：让文字尽量不超过 3 行
+
+/**
+ * 单字宽度（px）。CJK 实际约 1.0 个字号、ASCII 约 0.6，这里**刻意放大到
+ * 1.12 / 0.66** 并且宽度选择与高度计算共用这一个系数。
+ *
+ * 为什么宁可估宽：真实折行由 Excalidraw 用 canvas 字体度量决定，与估算总有
+ * 差异。估窄了，渲染时容器会被自动撑高，而布局早就按估算值排好了纵向位置
+ * → 压到下方兄弟节点身上；估宽了，只是盒子里多一点留白（文字垂直居中，看
+ * 起来就是内边距宽松些）。两种错法的代价完全不对称，所以往宽的一边错。
+ */
+function charWidth(ch: string, fontSize: number): number {
+  return fontSize * (/[⺀-￿]/.test(ch) ? 1.12 : 0.66);
+}
+
+/**
+ * 模拟折行，返回行数。
+ * 必须逐字累加而不是「总宽 ÷ 行宽」：后者会漏掉每行行末装不下一个字所浪费
+ * 的那段余量，实测 41 个节点里有 7 个被算少一行（2026-07-30 验证时踩到）。
+ */
+function wrapLineCount(text: string, fontSize: number, boxW: number): number {
+  const inner = Math.max(1, boxW - MM_TEXT_PAD * 2);
+  let lines = 1;
+  let cur = 0;
+  for (const ch of text) {
+    if (ch === "\n") { lines++; cur = 0; continue; }
+    const w = charWidth(ch, fontSize);
+    if (cur + w > inner) { lines++; cur = w; } else { cur += w; }
+  }
+  // 含空格的西文按「词」折行，可能比逐字折行更早换行，留一行余量
+  if (lines > 1 && /\s/.test(text)) lines += 1;
+  return lines;
+}
+
+/** 该标签希望的盒宽：能让文字不超过 MM_TARGET_LINES 行的最小宽度，夹在 [180, 300] */
+function preferredWidth(text: string, fontSize: number): number {
+  for (let w = MM_NODE_W; w < MM_NODE_W_MAX; w += 8) {
+    if (wrapLineCount(text, fontSize, w) <= MM_TARGET_LINES) return w;
+  }
+  return MM_NODE_W_MAX; // 再宽也放不下 3 行内，就让它多占几行（高度会照实算）
+}
+
+/** 标签在宽 w 的盒子里实际需要的高度 */
+function nodeHeight(text: string, fontSize: number, w: number): number {
+  const lines = wrapLineCount(text, fontSize, w);
+  return Math.max(MM_NODE_H, Math.ceil(lines * fontSize * MM_LINE_HEIGHT) + MM_TEXT_PAD * 2);
+}
 
 // REQ-049：分支/根配色改由当前主题提供（见 DIAGRAM_THEME_TABLE）。
 // 原固定的 MM_BRANCH_PALETTE / MM_ROOT_COLOR 已并入主题表，按 branch / anchor 取。
@@ -345,7 +411,6 @@ function mindmapEdge(
 
 function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawElement[] {
   const T = getActiveTheme();
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
   // 构建子节点列表
   const children = new Map<string, string[]>();
@@ -361,33 +426,67 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
   const root = nodes.find(n => !n.parent);
   if (!root) return [];
 
-  // 计算每个节点的子树高度（单位：行）
-  const treeHeight = new Map<string, number>();
-  function calcHeight(id: string): number {
+  // ── 真实树深度（不依赖 AI 返回的 level 字段是否可靠）──
+  // 单独先算一遍：后面的列宽要按「同一列里最长的标签」来定，必须在布局前知道深度。
+  const depthOf = new Map<string, number>();
+  (function walkDepth(id: string, d: number) {
+    if (depthOf.has(id)) return; // 兼带防御：万一有环也不会死循环
+    depthOf.set(id, d);
+    for (const kid of children.get(id) ?? []) walkDepth(kid, d + 1);
+  })(root.id, 0);
+
+  const fontOf = (id: string) => (id === root.id ? 16 : 14);
+
+  // ── 每列宽度 ＝ 该列最长标签所需宽度（列内统一，保持纵向对齐）──
+  const colW: number[] = [];
+  for (const n of nodes) {
+    const d = depthOf.get(n.id);
+    if (d === undefined) continue;
+    const w = preferredWidth(n.label, fontOf(n.id)) + (n.id === root.id ? 20 : 0);
+    colW[d] = Math.max(colW[d] ?? MM_NODE_W, w);
+  }
+  const colX: number[] = [];
+  for (let d = 0; d < colW.length; d++) {
+    colX[d] = d === 0 ? ox : colX[d - 1] + (colW[d - 1] ?? MM_NODE_W) + MM_H_GAP;
+  }
+  const widthOf = (id: string) => colW[depthOf.get(id) ?? 0] ?? MM_NODE_W;
+
+  // ── 每个节点的实际高度（按折行数）──
+  const heightOf = new Map<string, number>();
+  for (const n of nodes) {
+    if (!depthOf.has(n.id)) continue;
+    heightOf.set(n.id, nodeHeight(n.label, fontOf(n.id), widthOf(n.id)));
+  }
+
+  // ── 子树高度改用「像素」而非「行数」：节点高度不再统一，按行数算会重叠 ──
+  const subH = new Map<string, number>();
+  function calcSubH(id: string): number {
+    const own = heightOf.get(id) ?? MM_NODE_H;
     const kids = children.get(id) ?? [];
-    if (kids.length === 0) { treeHeight.set(id, 1); return 1; }
-    const h = kids.reduce((sum, kid) => sum + calcHeight(kid), 0);
-    treeHeight.set(id, h);
+    if (kids.length === 0) { subH.set(id, own); return own; }
+    let sum = 0;
+    for (const kid of kids) sum += calcSubH(kid);
+    sum += (kids.length - 1) * MM_V_GAP;
+    const h = Math.max(own, sum);
+    subH.set(id, h);
     return h;
   }
-  calcHeight(root.id);
+  calcSubH(root.id);
 
-  // 分配坐标（同时记录真实树深度，不依赖 AI 返回的 level 字段是否可靠）
+  // 分配坐标：每个节点在自己子树的纵向中点上
   const coords = new Map<string, { x: number; y: number }>();
-  const depthOf = new Map<string, number>();
-  function layout(id: string, depth: number, topY: number) {
-    const h = treeHeight.get(id) ?? 1;
-    const centerY = topY + (h * (MM_NODE_H + MM_V_GAP)) / 2 - MM_NODE_H / 2;
-    coords.set(id, { x: ox + depth * (MM_NODE_W + MM_H_GAP), y: oy + centerY });
-    depthOf.set(id, depth);
+  function layout(id: string, topY: number) {
+    const d = depthOf.get(id) ?? 0;
+    const own = heightOf.get(id) ?? MM_NODE_H;
+    const h = subH.get(id) ?? own;
+    coords.set(id, { x: colX[d] ?? ox, y: oy + topY + h / 2 - own / 2 });
     let cursor = topY;
     for (const kid of children.get(id) ?? []) {
-      const kidH = treeHeight.get(kid) ?? 1;
-      layout(kid, depth + 1, cursor);
-      cursor += kidH * (MM_NODE_H + MM_V_GAP);
+      layout(kid, cursor);
+      cursor += (subH.get(kid) ?? MM_NODE_H) + MM_V_GAP;
     }
   }
-  layout(root.id, 0, 0);
+  layout(root.id, 0);
 
   // REQ-031：按一级分支分配颜色，向下传给该分支全部后代（不再按深度统一配色）
   const branchColorOf = new Map<string, { bg: string; stroke: string; text: string }>();
@@ -429,15 +528,15 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
       id: nodeElemId(n.id),
       x: pos.x,
       y: pos.y,
-      width: isRoot ? MM_NODE_W + 20 : MM_NODE_W,
-      height: MM_NODE_H,
+      width: widthOf(n.id),
+      height: heightOf.get(n.id) ?? MM_NODE_H,
       backgroundColor: color.bg,
       strokeColor: color.stroke,
       strokeWidth: isRoot ? 2 : 1.5,
       roundness: { type: 3 },
       label: {
         text: n.label,
-        fontSize: isRoot ? 16 : 14,
+        fontSize: fontOf(n.id),
         fontFamily: 2,
         color: color.text,
       },
@@ -448,13 +547,14 @@ function buildMindmap(nodes: DiagramNode[], ox: number, oy: number): ExcalidrawE
     // 与参考图「每条主干一个颜色贯穿到底」的效果一致。
     if (n.parent && coords.has(n.parent)) {
       const pPos = coords.get(n.parent)!;
-      const pNode = nodeMap.get(n.parent);
-      const pW = pNode && !pNode.parent ? MM_NODE_W + 20 : MM_NODE_W;
+      const pW = widthOf(n.parent);
+      const pH = heightOf.get(n.parent) ?? MM_NODE_H;
+      const ownH = heightOf.get(n.id) ?? MM_NODE_H;
       const edgeColor = branchColorOf.get(n.id) ?? T.branch[0];
       skeletons.push(mindmapEdge(
         edgeElemId(n.parent, n.id),
-        pPos.x + pW, pPos.y + MM_NODE_H / 2,
-        pos.x, pos.y + MM_NODE_H / 2,
+        pPos.x + pW, pPos.y + pH / 2,
+        pos.x, pos.y + ownH / 2,
         { strokeColor: edgeColor.stroke, strokeWidth: depth <= 1 ? 2.5 : 1.5 }
       ));
     }

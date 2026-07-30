@@ -27,6 +27,11 @@ import {
 } from "lucide-react";
 import { generateDiagram, type DiagramType } from "../../utils/diagramApi";
 import { buildDiagramElements, type DiagramData } from "../../utils/diagramBuilder";
+import {
+  analyzeMarkdown,
+  markdownToDiagram,
+  isDirectConvertibleType,
+} from "../../utils/markdownToDiagram";
 import { useCanvasStore } from "../../store/canvasStore";
 
 // ─────────────────────────────────────────────────────────
@@ -94,16 +99,45 @@ export default function DiagramModal({ onClose }: DiagramModalProps) {
   const [mdText, setMdText] = useState("");
   const [diagramData, setDiagramData] = useState<DiagramData | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  // 直转时记下「源文档有多少个要点」，用于在预览里坐实「一个都没少」
+  const [sourceItemCount, setSourceItemCount] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const excalidrawAPI = useCanvasStore(s => s.excalidrawAPI);
 
+  const currentText = () => textareaRef.current?.value.trim() ?? mdText.trim();
+
+  // 这段输入能不能走本地无损直转（决定按钮文案与提示语）
+  const directPreview = (() => {
+    if (!isDirectConvertibleType(selectedType)) return null;
+    const text = mdText.trim();
+    if (!text) return null;
+    const a = analyzeMarkdown(text);
+    return a.structured ? a : null;
+  })();
+
   // ── 生成 ──────────────────────────────────────────────
-  const handleGenerate = useCallback(async () => {
-    const text = textareaRef.current?.value.trim() ?? mdText.trim();
+  // REQ-058 优先本地确定性直转：输入本身已有层级时，Markdown 的 #/##/- 就是一棵树，
+  // 解析它不需要语言模型。让 AI 再「理解」一遍只会触发它自己的节点数/层数/
+  // 标签字数上限，把老师精炼好的稿子二次压缩掉（2026-07-30 实测 41→29）。
+  // 散文、无结构的笔记仍然走 AI —— 那才是 AI 该干的事。
+  const handleGenerate = useCallback(async (forceAI = false) => {
+    const text = currentText();
     if (!text) return;
-    setStep("generating");
     setErrorMsg("");
+
+    if (!forceAI) {
+      const direct = markdownToDiagram(text, selectedType);
+      if (direct) {
+        setDiagramData(direct.data);
+        setSourceItemCount(direct.sourceItemCount);
+        setStep("done");
+        return;
+      }
+    }
+
+    setStep("generating");
+    setSourceItemCount(0);
     try {
       const data = await generateDiagram({ markdown: text, diagram_type: selectedType });
       setDiagramData(data);
@@ -143,8 +177,20 @@ export default function DiagramModal({ onClose }: DiagramModalProps) {
     if (!diagramData) return null;
     const root = diagramData.nodes.find(n => !n.parent);
     const level1 = diagramData.nodes.filter(n => n.parent === root?.id);
+    const isDirect = diagramData.source === "direct";
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 max-h-40 overflow-y-auto">
+        {isDirect && (
+          <div className="mb-2 bg-green-50 border border-green-200 rounded-md px-2 py-1.5 text-xs text-green-800">
+            ✅ 已按你自己的层级<strong>无损转换</strong>，没有调用 AI
+            {sourceItemCount > 0 && (
+              <>：原文 {sourceItemCount} 个要点，图上 {diagramData.nodes.length} 个节点
+                {diagramData.nodes.length >= sourceItemCount ? "，一条没少" : ""}
+              </>
+            )}
+            。文字与数字保持原样，未被改写或压缩。
+          </div>
+        )}
         <div className="font-medium mb-1">
           📊 已生成 {diagramData.nodes.length} 个节点
           {diagramData.edges.length > 0 && `，${diagramData.edges.length} 条连线`}
@@ -250,9 +296,18 @@ export default function DiagramModal({ onClose }: DiagramModalProps) {
                 placeholder="# 课件主题&#10;## 第一章&#10;- 要点一&#10;- 要点二"
                 spellCheck={false}
               />
-              <p className="text-xs text-gray-400 mt-1">
-                💡 直接粘贴任意文字、大纲或 Markdown，AI 会自动提炼结构
-              </p>
+              {directPreview ? (
+                <p className="text-xs text-green-600 mt-1">
+                  ✅ 检测到你的内容已经有层级（{directPreview.items.length} 个要点、
+                  {directPreview.maxDepth + 1} 层）
+                  ，将<strong>按原样无损转换</strong>、不经过 AI 改写，一条都不会少。
+                </p>
+              ) : (
+                <p className="text-xs text-gray-400 mt-1">
+                  💡 已经排好层级的 Markdown（#、##、缩进的 -）会按原样无损转换；
+                  没有结构的整段文字才交给 AI 提炼
+                </p>
+              )}
             </div>
           )}
 
@@ -310,14 +365,14 @@ export default function DiagramModal({ onClose }: DiagramModalProps) {
                 取消
               </button>
               <button
-                onClick={handleGenerate}
+                onClick={() => handleGenerate()}
                 disabled={!mdText.trim() && !textareaRef.current?.value.trim()}
                 className="flex items-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-700
                            text-white text-sm font-medium rounded-xl transition-colors
                            disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Sparkles size={14} />
-                生成图形
+                {directPreview ? "转成图形" : "生成图形"}
               </button>
             </>
           )}
@@ -325,13 +380,26 @@ export default function DiagramModal({ onClose }: DiagramModalProps) {
           {step === "done" && (
             <>
               <button
-                onClick={() => { setStep("input"); setDiagramData(null); }}
+                onClick={() => { setStep("input"); setDiagramData(null); setSourceItemCount(0); }}
                 className="flex items-center gap-1 px-4 py-2 text-sm text-gray-600
                            hover:text-gray-800 transition-colors"
               >
                 <RotateCcw size={14} />
-                重新生成
+                改内容
               </button>
+              {/* 直转结果若嫌太细太长，可主动让 AI 归纳一遍——把选择权交回老师，
+                  而不是像以前那样默认就替他压缩掉一半内容 */}
+              {diagramData?.source === "direct" && (
+                <button
+                  onClick={() => handleGenerate(true)}
+                  className="flex items-center gap-1 px-4 py-2 text-sm text-amber-600
+                             hover:text-amber-700 transition-colors"
+                  title="让 AI 重新归纳层级（会精简合并内容）"
+                >
+                  <Sparkles size={14} />
+                  改用 AI 归纳
+                </button>
+              )}
               <button
                 onClick={handleInsert}
                 className="flex items-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-700
