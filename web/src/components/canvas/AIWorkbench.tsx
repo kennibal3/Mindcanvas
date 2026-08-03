@@ -32,6 +32,7 @@ import {
   Upload,
 } from "lucide-react";
 import { generateDiagram, reportDiagramOutcome, type DiagramType } from "../../utils/diagramApi";
+import { analyzeMarkdown, markdownToDiagram, isDirectConvertibleType } from "../../utils/markdownToDiagram";
 import { refineText } from "../../utils/refineApi";
 import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
 import {
@@ -211,6 +212,8 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
     repairs: DiagramRepair[];
     issues: DiagramIssue[];
     regenerated: boolean;
+    // REQ-058：本次是本地无损直转（没走 AI）时的回执
+    direct?: { sourceItems: number; nodes: number; levels: number };
   } | null>(null);
   // REQ-049：AI 图形配色风格（全局，存 localStorage，插入画布时生效）
   const [themeKey, setThemeKey] = useState<string>(() => getDiagramThemeKey());
@@ -221,6 +224,16 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   const [refineWarn, setRefineWarn] = useState(""); // REQ-057：提炼结果被截断的黄色警告
   // REQ-056：是否建议提炼，随输入框内容实时重算（纯正则，无网络开销）
   const refineAdvice = useMemo(() => assessRefineNeed(inputText), [inputText]);
+
+  // REQ-058：这段输入能不能本地无损直转（有层级的 Markdown 无需过 AI）。
+  // 与 refineAdvice 同样是纯本地判断，随输入实时重算。
+  const directPreview = useMemo(() => {
+    if (!isDirectConvertibleType(selType)) return null;
+    const t = inputText.trim();
+    if (!t) return null;
+    const a = analyzeMarkdown(t);
+    return a.structured ? a : null;
+  }, [inputText, selType]);
 
   // REQ-038：文件上传 → MarkItDown 解析为 Markdown
   const [parsingFile, setParsingFile] = useState(false);
@@ -251,10 +264,9 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
   }, [history, roomId]);
 
   // ── 生成 ───────────────────────────────────────────────────
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(async (forceAI = false) => {
     const text = textareaRef.current?.value.trim() ?? inputText.trim();
     if (!text) return;
-    setGenStep("generating");
     setErrorMsg("");
     setGenNotice(null);
     // REQ-050 B：这次生成是不是在「对上一张不满意」之后发生的？
@@ -266,6 +278,41 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
       );
     }
 
+    // ── REQ-058：本地确定性直转优先 ──
+    // 输入本身已有层级时，Markdown 的 #／##／缩进就是一棵树，解析它不需要语言模型。
+    // 交给 AI 只会触发它自己的节点数/层数/标签字数上限，把老师精炼好的稿子二次压缩
+    // （2026-07-30 实测 41 个要点被压到 29 个节点，决策关键数字整条消失）。
+    if (!forceAI) {
+      const direct = markdownToDiagram(text, selType);
+      if (direct) {
+        const rootNode = direct.data.nodes.find(n => !n.parent);
+        const item: WorkbenchItem = {
+          id: `wb_${Date.now()}`,
+          type: selType,
+          title: rootNode?.label ?? "未命名图形",
+          data: direct.data,
+          inputText: text,
+          createdAt: new Date().toISOString(),
+          genId: undefined, // 没走 AI，无采集记录；reportDiagramOutcome 会自动跳过
+        };
+        setHistory(prev => [item, ...prev].slice(0, MAX_HISTORY));
+        setGenStep("done");
+        clearDraft(roomId);
+        // 停住不自动收起：这条回执是「你的内容一条没少」的凭据，
+        // 一闪而过等于没提示（与 REQ-050 体检提示同一取舍）
+        setGenNotice({
+          repairs: [], issues: [], regenerated: false,
+          direct: {
+            sourceItems: direct.sourceItemCount,
+            nodes: direct.data.nodes.length,
+            levels: direct.maxDepth + 1,
+          },
+        });
+        return;
+      }
+    }
+
+    setGenStep("generating");
     try {
       const data = await generateDiagram({ markdown: text, diagram_type: selType, room_id: roomId });
       const rootNode = data.nodes.find(n => !n.parent);
@@ -783,8 +830,16 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                     正在提炼，文本较长时可能需要半分钟以上，请保持面板打开
                   </p>
                 )}
+                {/* REQ-058：已有层级 → 本地无损直转，连提炼带生成两次 AI 都省了。
+                    这条比 REQ-056 的「可跳过提炼」更强，故覆盖它，避免两条提示打架。 */}
+                {!refining && directPreview && (
+                  <p className="text-xs text-green-600 mt-1 leading-relaxed">
+                    ✅ 内容已有层级（{directPreview.items.length} 个要点、{directPreview.maxDepth + 1} 层），
+                    将<strong>按原样无损转换</strong>、不经过 AI 改写，一条都不会少
+                  </p>
+                )}
                 {/* REQ-056：该不该提炼的引导。最好的等待优化是不需要等待。 */}
-                {!refining && refineAdvice === "skip" && (
+                {!refining && !directPreview && refineAdvice === "skip" && (
                   <p className="text-xs text-gray-500 mt-1">
                     文本结构已清晰，可跳过提炼，直接点下方「生成图形」
                   </p>
@@ -806,14 +861,16 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                   </p>
                 )}
                 <button
-                  onClick={handleGenerate}
+                  /* 必须写成箭头函数：直接传 handleGenerate 会把 MouseEvent 当成
+                     forceAI 参数，事件对象恒为真 → 永远走 AI，直转形同虚设 */
+                  onClick={() => handleGenerate()}
                   disabled={!inputText.trim() && !textareaRef.current?.value.trim()}
                   className="w-full mt-2 flex items-center justify-center gap-1.5 py-2
                              bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium
                              rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Sparkles size={14} />
-                  生成图形
+                  {directPreview ? "转成图形" : "生成图形"}
                 </button>
               </div>
             )}
@@ -852,6 +909,28 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                   <CheckCircle2 size={15} className="text-green-500 shrink-0" />
                   <span className="text-xs font-medium text-gray-700">生成成功，已加入历史</span>
                 </div>
+
+                {/* REQ-058：无损直转回执 */}
+                {genNotice.direct && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-2.5 mb-2">
+                    <div className="text-xs font-medium text-green-800 mb-1">
+                      已按你自己的层级无损转换，没有调用 AI
+                    </div>
+                    <div className="text-xs text-green-700 leading-snug">
+                      原文 {genNotice.direct.sourceItems} 个要点 → 图上 {genNotice.direct.nodes} 个节点、
+                      {genNotice.direct.levels} 层
+                      {genNotice.direct.nodes >= genNotice.direct.sourceItems && "，一条没少"}
+                      。文字与数字保持原样，未被改写或压缩。
+                    </div>
+                    <button
+                      onClick={() => handleGenerate(true)}
+                      className="mt-2 text-xs text-amber-600 hover:text-amber-700 underline"
+                      title="让 AI 重新归纳层级（会精简合并内容）"
+                    >
+                      嫌太细？改用 AI 归纳一次
+                    </button>
+                  </div>
+                )}
 
                 {genNotice.regenerated && (
                   <div className="text-xs text-gray-500 mb-2">
