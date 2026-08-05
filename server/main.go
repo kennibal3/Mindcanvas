@@ -147,6 +147,8 @@ func main() {
 	widgetService  := services.NewWidgetService(db, profanityService)
 	exportService  := services.NewExportService(db, rdb)
 	flowService    := services.NewFlowService(db)
+	// REQ-059：zip 课件包（解压落 /opt/mindcanvas/courseware/，不进 nginx 直出的 uploads/）
+	coursewareService := services.NewCoursewareService(db)
 
 	// Phase6 互评服务
 	reviewService := services.NewReviewService(db)
@@ -183,6 +185,7 @@ func main() {
 	guestHandler      := handlers.NewGuestHandler(sessionService)
 	wsHandler         := handlers.NewWSHandler(db, rdb, hub, widgetService, sessionService, profanityService)
 	uploadHandler     := handlers.NewUploadHandler(db, rdb)
+	coursewareHandler := handlers.NewCoursewareHandler(roomService, widgetService, coursewareService, hub)
 	flowHandler       := handlers.NewFlowHandler(flowService, roomService, hub)
 	insightHandler    := handlers.NewInsightHandler(insightService)
 	reviewHandler     := handlers.NewReviewHandler(reviewService)
@@ -269,6 +272,12 @@ func main() {
 	r.POST("/api/rooms/:id/elements/:eid/shelf-cards", middleware.OptionalAuth(), shelfHandler.CreateShelfCard)
 	// REQ-041 HTML 展示组件源码拉取：学生也需渲染，走 OptionalAuth 公共路由（同 shelf-cards 模式）
 	r.GET("/api/rooms/:id/elements/:eid/html", middleware.OptionalAuth(), roomHandler.GetHtmlWidgetContent)
+	// REQ-059 zip 课件：元信息 + 文件下发。鉴权口径与上面那条 html 完全一致
+	// （OptionalAuth + 校验 element 属于该 room），学生可能是无 JWT 的访客，必须能读。
+	// 文件**经 Go 下发不走 nginx**：nginx 的 /uploads/ 是直出零鉴权的，
+	// 课件放那里会让二期的密码与有效期被「知道路径就能访问」绕过。
+	r.GET("/api/rooms/:id/elements/:eid/courseware", middleware.OptionalAuth(), coursewareHandler.GetCoursewareMeta)
+	r.GET("/api/rooms/:id/elements/:eid/courseware/files/*filepath", middleware.OptionalAuth(), coursewareHandler.ServeCoursewareFile)
 
 	// Phase7 公开分享页接口（无需认证）
 	sharePublic := r.Group("/api/share")
@@ -397,6 +406,9 @@ func main() {
 		// REQ-041 HTML 展示组件（教师：创建 / 替换源码）
 		rooms.POST("/:id/html-widget", roomHandler.CreateHtmlWidget)
 		rooms.PUT("/:id/elements/:eid/html", roomHandler.UpdateHtmlWidgetContent)
+
+		// REQ-059 zip 课件导入（教师）：上传即解压、建组件、挂接、广播
+		rooms.POST("/:id/courseware", coursewareHandler.UploadCourseware)
 
 		// Phase6 互评
 		rooms.POST("/:id/elements/:eid/reviews", reviewHandler.CreateReview)

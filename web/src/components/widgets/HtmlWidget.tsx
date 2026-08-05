@@ -39,11 +39,17 @@ export const HtmlWidget: React.FC<Props> = ({
   const inner = extractInner(rawPayload);
   const title = (inner.title as string) ?? 'HTML 展示';
   const htmlVersion = (inner.htmlVersion as number) ?? 0;
+  // REQ-059：组件有两种来源。
+  //   inline（默认，兼容全部存量组件）＝老师粘贴的单文件源码，srcDoc 渲染
+  //   zip                              ＝导入的多文件课件包，iframe src 指向后端下发
+  // 存量组件 payload 里没有 source 字段，?? 'inline' 保证零回归。
+  const isZip = (inner.source as string) === 'zip';
 
   const { currentRoom } = useRoomStore();
   const roomID = currentRoom?.id ?? '';
 
   const [html, setHtml] = useState('');
+  const [entryUrl, setEntryUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showEdit, setShowEdit] = useState(false);
@@ -86,24 +92,56 @@ export const HtmlWidget: React.FC<Props> = ({
     }
   };
 
-  // 拉取源码：id/房间/版本变化时重取（htmlVersion 变化 = 老师改了代码）
+  // 拉取内容：id/房间/版本变化时重取（htmlVersion 变化 = 老师改了代码）
+  //
+  // zip 课件走另一条路：不拉源码，只问后端要入口文件名，然后让 iframe 直接 src 过去。
+  // 为什么必须是 src 而不是 srcDoc——srcDoc 的文档没有 base URL，
+  // 课件里的 <img src="assets/x.jpg"> 与 CSS url('assets/y.png') 全部解析不了。
+  // 而 sandbox 不带 allow-same-origin 时，即便 src 指向本站路径，
+  // 文档仍处于 opaque 源，拿不到 Cookie/localStorage，安全模型与 srcDoc 时代一致。
   useEffect(() => {
     if (!id || !roomID) return;
     let cancelled = false;
     setLoading(true);
     setError('');
+
+    if (isZip) {
+      fetch(`/api/rooms/${roomID}/elements/${id}/courseware`, { credentials: 'include' })
+        .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then(data => {
+          if (cancelled) return;
+          if (!data.is_courseware) { setError('课件内容缺失'); return; }
+          const entry = ((data.entry_file as string) || 'index.html')
+            .split('/').map(encodeURIComponent).join('/');
+          setEntryUrl(`/api/rooms/${roomID}/elements/${id}/courseware/files/${entry}`);
+        })
+        .catch(() => { if (!cancelled) setError('课件加载失败'); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+      return () => { cancelled = true; };
+    }
+
     fetch(`/api/rooms/${roomID}/elements/${id}/html`, { credentials: 'include' })
       .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
       .then(data => { if (!cancelled) setHtml((data.html as string) ?? ''); })
       .catch(() => { if (!cancelled) setError('内容加载失败'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [id, roomID, htmlVersion]);
+  }, [id, roomID, htmlVersion, isZip]);
 
   // REQ-043：接收课件 iframe 通过 postMessage 上报的互动事件。
   // 沙箱 iframe（allow-scripts 无 same-origin）为 opaque 源，event.origin 恒为 "null"，
   // 故以 event.source === 本 iframe.contentWindow 作为来源校验，只收自己这个课件的事件；
   // 多个 HTML 组件并存时，每个实例只认自己的 iframe，天然互不串。
+  //
+  // ⚠️ REQ-059 已知限制（2026-08-05 拆真实课件包时发现，一期不修但必须记着）：
+  // 真实 zip 课件自己内部还套了一层 iframe（index.html 里是
+  // <iframe id="cw-frame" src="p1.html">，翻页靠改这个 frame 的 src）。
+  // 此时事件从**孙子窗口**发出，e.source 不等于本 iframe 的 contentWindow，
+  // 会被下面这行**静默丢弃**。目前这些外部 AI 工具产出的课件本来也不按
+  // mc_event_v1 契约发消息，所以一期无人受影响——但正因为无人察觉，
+  // 它与 REQ-050 丢节点 / REQ-057 丢文字 / REQ-058 丢要点是同一类结构。
+  // 将来要从 zip 课件收互动数据时，这里要放宽成「遍历本 iframe 的后代窗口」，
+  // 或改用带课件包 id 的消息签名，不能只是把校验删掉。
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
@@ -176,13 +214,18 @@ export const HtmlWidget: React.FC<Props> = ({
           </button>
           {isTeacher && !isLocked && !isFullscreen && (
             <>
-              <button
-                onClick={() => setShowEdit(true)}
-                title="编辑代码"
-                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
-              >
-                <Code2 size={13} />
-              </button>
+              {/* zip 课件没有「一段源码」可编辑（是一整个目录树），故不给编辑按钮。
+                  要换内容就删掉重新导入——一期刻意不做「替换包」，
+                  因为替换涉及旧目录清理与并发访问，值得单独想清楚再做。 */}
+              {!isZip && (
+                <button
+                  onClick={() => setShowEdit(true)}
+                  title="编辑代码"
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
+                >
+                  <Code2 size={13} />
+                </button>
+              )}
               <button
                 onClick={handleDelete}
                 title="删除组件"
@@ -210,9 +253,12 @@ export const HtmlWidget: React.FC<Props> = ({
           <iframe
             ref={iframeRef}
             title={title}
-            // 安全核心：只给 allow-scripts，不给 allow-same-origin
+            // 安全核心：只给 allow-scripts，不给 allow-same-origin。
+            // 对 zip 课件同样成立——src 指向本站路径不代表同源，
+            // 没有 allow-same-origin 时文档一律是 opaque 源。
+            // sandbox 标志还会被课件内部那层 iframe 继承，孙子拿不到更多权限。
             sandbox="allow-scripts"
-            srcDoc={html}
+            {...(isZip ? { src: entryUrl } : { srcDoc: html })}
             className="w-full h-full border-0 block"
           />
         )}

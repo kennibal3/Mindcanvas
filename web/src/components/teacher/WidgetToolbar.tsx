@@ -184,6 +184,36 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
     }
   }, [roomId, calcNonOverlapPosition]);
 
+  // REQ-059：zip 课件导入。走 multipart 到 /courseware，后端解压 + 建元素 + 挂接 + 广播，
+  // 与 handleCreateHtml 是同一套「后端建元素再广播」的模式，只是载荷从 JSON 换成文件。
+  //
+  // 刻意**不在这里 catch**：错误要抛回弹窗，由它就地显示后端给的具体原因
+  // （没有 index.html / 含越界条目 / 超限）。用 alert 弹一句「导入失败」
+  // 等于把后端辛苦区分出来的原因全丢掉。
+  const handleCreateHtmlZip = useCallback(async (title: string, file: File) => {
+    const { w, h } = WIDGET_SIZES.html_widget;
+    const { x, y } = calcNonOverlapPosition('html_widget');
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('title', title);
+    fd.append('x', String(x));
+    fd.append('y', String(y));
+    // 课件多为整页 16:9，比粘贴源码的默认尺寸给大一些，省得老师每次手动拉
+    fd.append('width', String(Math.max(w, 720)));
+    fd.append('height', String(Math.max(h, 460)));
+
+    const res = await fetch(`/api/rooms/${roomId}/courseware`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd, // 不要手写 Content-Type，浏览器要自己带 multipart boundary
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error((e as { error?: string }).error || '导入失败');
+    }
+    setShowHtmlModal(false);
+  }, [roomId, calcNonOverlapPosition]);
+
   const handleCreatePolling = useCallback((config: PollingConfig) => {
     createWidget('polling_widget', {
       question:     config.question,
@@ -313,6 +343,7 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
       {showHtmlModal && (
         <HtmlCreateModal
           onConfirm={handleCreateHtml}
+          onConfirmZip={handleCreateHtmlZip}
           onClose={() => setShowHtmlModal(false)}
         />
       )}
