@@ -24,6 +24,10 @@ backup_*.sql
 configs/backup_*
 mindcanvas-server
 uploads/
+# REQ-059：zip 课件解压目录。必须忽略——它就在仓库目录里，
+# 不忽略的话 deploy.sh 第 1 步的「工作区干净」检查会永远失败，
+# 且报错是「工作区有未提交改动」，看着像有人在服务器上改了代码，极易误判。
+courseware/
 *.broken*
 bin/
 *.bak.*
