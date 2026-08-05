@@ -2,8 +2,9 @@
 // MindCanvas - REQ-059 一期：zip 课件上传与下发
 //
 // 两个接口：
-//   POST /api/rooms/:id/courseware                      教师上传 zip，建 html_widget 组件并挂接
-//   GET  /api/rooms/:id/elements/:eid/courseware/*path  下发课件里的单个文件（学生也可读）
+//
+//	POST /api/rooms/:id/courseware                      教师上传 zip，建 html_widget 组件并挂接
+//	GET  /api/rooms/:id/elements/:eid/courseware/*path  下发课件里的单个文件（学生也可读）
 //
 // 下发侧刻意**不走 nginx**：nginx 的 /uploads/ 是直出零鉴权的，
 // 课件放那里则二期的密码与有效期会被「知道路径就能访问」绕过。
@@ -62,41 +63,43 @@ func NewCoursewareHandler(
 // 不给它在浏览器里被当成可执行文档的机会。
 // video/mp4 是必须的——实测真实课件里有 14.6MB 的 mp4。
 var coursewareMIME = map[string]string{
-	".html": "text/html; charset=utf-8",
-	".htm":  "text/html; charset=utf-8",
-	".css":  "text/css; charset=utf-8",
-	".js":   "text/javascript; charset=utf-8",
-	".mjs":  "text/javascript; charset=utf-8",
-	".json": "application/json; charset=utf-8",
-	".txt":  "text/plain; charset=utf-8",
-	".svg":  "image/svg+xml",
-	".png":  "image/png",
-	".jpg":  "image/jpeg",
-	".jpeg": "image/jpeg",
-	".gif":  "image/gif",
-	".webp": "image/webp",
-	".ico":  "image/x-icon",
-	".bmp":  "image/bmp",
-	".woff": "font/woff",
+	".html":  "text/html; charset=utf-8",
+	".htm":   "text/html; charset=utf-8",
+	".css":   "text/css; charset=utf-8",
+	".js":    "text/javascript; charset=utf-8",
+	".mjs":   "text/javascript; charset=utf-8",
+	".json":  "application/json; charset=utf-8",
+	".txt":   "text/plain; charset=utf-8",
+	".svg":   "image/svg+xml",
+	".png":   "image/png",
+	".jpg":   "image/jpeg",
+	".jpeg":  "image/jpeg",
+	".gif":   "image/gif",
+	".webp":  "image/webp",
+	".ico":   "image/x-icon",
+	".bmp":   "image/bmp",
+	".woff":  "font/woff",
 	".woff2": "font/woff2",
-	".ttf":  "font/ttf",
-	".otf":  "font/otf",
-	".eot":  "application/vnd.ms-fontobject",
-	".mp4":  "video/mp4",
-	".webm": "video/webm",
-	".ogv":  "video/ogg",
-	".mp3":  "audio/mpeg",
-	".wav":  "audio/wav",
-	".m4a":  "audio/mp4",
-	".ogg":  "audio/ogg",
-	".xml":  "application/xml; charset=utf-8",
-	".csv":  "text/csv; charset=utf-8",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+	".eot":   "application/vnd.ms-fontobject",
+	".mp4":   "video/mp4",
+	".webm":  "video/webm",
+	".ogv":   "video/ogg",
+	".mp3":   "audio/mpeg",
+	".wav":   "audio/wav",
+	".m4a":   "audio/mp4",
+	".ogg":   "audio/ogg",
+	".xml":   "application/xml; charset=utf-8",
+	".csv":   "text/csv; charset=utf-8",
 }
 
 // UploadCourseware POST /api/rooms/:id/courseware （教师）
 //
 // 流程：校验归属 → 收 zip → 先插库拿 id（id 即目录名）→ 解压 →
-//       建 html_widget 元素 → 挂接 → 广播 element_create。
+//
+//	建 html_widget 元素 → 挂接 → 广播 element_create。
+//
 // 任一步失败都回滚（删库删盘），不留半成品——一个指向空目录的课件组件
 // 点开是白屏，老师只会以为「这功能坏了」。
 func (h *CoursewareHandler) UploadCourseware(c *gin.Context) {

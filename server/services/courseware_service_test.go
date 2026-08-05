@@ -96,7 +96,7 @@ func TestCoursewareSafeJoinAcceptsNormal(t *testing.T) {
 func TestCoursewareExtractRejectsSlipEnd2End(t *testing.T) {
 	dir := t.TempDir()
 	zr := buildZip(t, map[string]string{
-		"index.html":            "<html></html>",
+		"index.html":             "<html></html>",
 		"../../../tmp/pwned.txt": "boom",
 	}, []string{"index.html", "../../../tmp/pwned.txt"})
 
@@ -209,9 +209,9 @@ func TestCoursewareCommonTopDir(t *testing.T) {
 func TestCoursewareExtractStripsWrapperDir(t *testing.T) {
 	dir := t.TempDir()
 	zr := buildZip(t, map[string]string{
-		"九年级 化学 — 第四单元第三课时/index.html":       `<iframe src="p1.html"></iframe>`,
-		"九年级 化学 — 第四单元第三课时/p1.html":          `<img src="assets/图片.jpg">`,
-		"九年级 化学 — 第四单元第三课时/assets/图片.jpg":    "JPEGDATA",
+		"九年级 化学 — 第四单元第三课时/index.html":    `<iframe src="p1.html"></iframe>`,
+		"九年级 化学 — 第四单元第三课时/p1.html":       `<img src="assets/图片.jpg">`,
+		"九年级 化学 — 第四单元第三课时/assets/图片.jpg": "JPEGDATA",
 	}, []string{
 		"九年级 化学 — 第四单元第三课时/index.html",
 		"九年级 化学 — 第四单元第三课时/p1.html",
@@ -294,8 +294,8 @@ func TestCoursewareExtractSkipsJunkButKeepsRest(t *testing.T) {
 func TestCoursewareExtractNormalPackageIntact(t *testing.T) {
 	dir := t.TempDir()
 	content := map[string]string{
-		"index.html":   `<iframe id="cw-frame" src="p1.html"></iframe>`,
-		"p1.html":      `<div style="background:url('assets/bg.png')"></div>`,
+		"index.html":    `<iframe id="cw-frame" src="p1.html"></iframe>`,
+		"p1.html":       `<div style="background:url('assets/bg.png')"></div>`,
 		"assets/bg.png": "PNGDATA",
 	}
 	zr := buildZip(t, content, []string{"index.html", "p1.html", "assets/bg.png"})

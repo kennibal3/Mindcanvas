@@ -20,6 +20,19 @@ jobs:
           go build ./...
           go vet ./...
 
+      # REQ-054 的一小片：此前 CI 只编译不跑测试，而项目里已有 3 个测试文件
+      # 约 26 个用例（handlers/diagram_validate_test.go 7 组脏数据、
+      # services/diagram_survival_test.go 存活分档、
+      # services/courseware_service_test.go 11 组 zip 安全），
+      # 从写完那天起就只在本地手工跑过——等于「写了但没人盯」。
+      # 这些测试全是纯函数、不依赖数据库与网络，CI 里跑没有额外成本。
+      # 2026-08-05 加之前先在本地 go test ./... 确认全绿，
+      # 免得把一个本来就红的检查塞进 CI、从此卡住所有 PR。
+      - name: go test
+        run: |
+          cd server
+          go test ./...
+
   frontend:
     name: 前端构建检查
     runs-on: ubuntu-latest
