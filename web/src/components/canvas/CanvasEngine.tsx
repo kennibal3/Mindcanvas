@@ -10,7 +10,7 @@
 //   - isApplyingRemote=true 时 onChange 直接 return
 // =============================================================
 import { useCallback, useRef, useEffect } from 'react';
-import { Excalidraw } from '@excalidraw/excalidraw';
+import { Excalidraw, CaptureUpdateAction } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useRoomStore } from '@/store/roomStore';
@@ -289,7 +289,15 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
 
       if (changed) {
         const merged = Array.from(map.values());
-        api.updateScene({ elements: merged });
+        // ⚠️ BUG-023（2026-08-11 两次画布被清空的真凶）：这一行必须显式传
+        // captureUpdate: NEVER。updateScene 的默认值是 EVENTUALLY，含义是
+        // 「这次更新暂不进撤销栈，但会被下一次 IMMEDIATELY 操作一并捕获进去」。
+        // 于是「服务器同步过来的 287 个元素」会被老师随手画的下一笔打包进同一条
+        // 撤销记录，一次 Ctrl+Z 就把整个画布撤掉，再经 handleChange 广播成
+        // 真实删除落库。Excalidraw 自己的类型注释写得很清楚：
+        //   `CaptureUpdateAction.NEVER` — Use for remote updates or scene initialization.
+        // 这里正是 remote update，别拿掉。
+        api.updateScene({ elements: merged, captureUpdate: CaptureUpdateAction.NEVER });
         const nv = new Map<string, number>();
         for (const el of merged) nv.set(el.id, el.version);
         prevVersionsRef.current = nv;
@@ -433,7 +441,9 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
           c = true;
         }
       }
-      if (c) api.updateScene({ elements: Array.from(m.values()) });
+      // BUG-023 同款：这是服务端驳回越权删除后推回来的恢复指令，属 remote update，
+      // 不能进本地撤销栈——否则学生一按 Ctrl+Z 就能把服务端的恢复再撤销掉。
+      if (c) api.updateScene({ elements: Array.from(m.values()), captureUpdate: CaptureUpdateAction.NEVER });
       setTimeout(() => { isApplyingRemoteRef.current = false; }, 100);
     };
     window.addEventListener('excalidraw-scene-restore', h);
