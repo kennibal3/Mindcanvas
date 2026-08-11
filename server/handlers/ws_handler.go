@@ -435,6 +435,16 @@ func (h *WSHandler) SetupMessageHandler() {
 					log.Printf("[删除校验] 团队 room:%s sender:%s 放行 %d 个跨人删除", roomID, senderUUID, len(illegalIDs))
 				}
 			}
+			// BUG-020 一期：删除审计。2026-08-11 事故当天完全查不到「谁在什么时候
+			// 删了什么」——validateDeletePermissions 对教师第一行就 return nil，
+			// 而上面那条 [删除校验] 只在判定越权时才打。这里不分师生、不管多少，
+			// 只要这条消息携带 isDeleted 就留一行。详见 scene_snapshot.go。
+			delCount := countDeletedElements(payload)
+			if delCount > 0 {
+				log.Printf("[删除审计] room:%s sender:%s role:%s 本次声明删除 %d 个元素",
+					roomID, senderUUID, client.Role, delCount)
+			}
+
 			broadcastBytes, _ := json.Marshal(map[string]interface{}{
 				"type": ws.MsgSceneUpdate,
 				"data": payload,
@@ -443,12 +453,24 @@ func (h *WSHandler) SetupMessageHandler() {
 			room.BroadcastRawToOthers(senderUUID, broadcastBytes)
 
 			sceneBytes, _ := json.Marshal(payload)
-			go func(scene []byte, saver string, rid string) {
+			go func(scene []byte, saver string, rid string, dels int, role string) {
 				if h.rdb == nil {
 					return
 				}
 				ctx := context.Background()
 				existing, _ := h.rdb.Get(ctx, sceneKey(rid)).Bytes()
+
+				// BUG-020 一期：留档必须发生在 merge 之前。
+				// merge 之后删除已经生效，再留档只是把删空的结果存一遍。
+				if dels > 0 {
+					liveBefore := countLiveElements(existing)
+					if shouldSnapshot(dels, liveBefore) {
+						log.Printf("[删除熔断] ⚠️ room:%s sender:%s role:%s 本次删除 %d 个（合并前存活 %d），触发留档",
+							rid, saver, role, dels, liveBefore)
+						h.snapshotScene(rid, existing, dels, liveBefore, saver, role)
+					}
+				}
+
 				merged := mergeSceneElements(existing, scene)
 				mergedSize := len(merged)
 
@@ -479,7 +501,7 @@ func (h *WSHandler) SetupMessageHandler() {
 				}
 				h.rdb.Set(ctx, sceneKey(rid), string(merged), 7*24*time.Hour)
 				h.throttledPersistSceneDB(rid, merged, saver)
-			}(sceneBytes, senderUUID, roomID)
+			}(sceneBytes, senderUUID, roomID, delCount, client.Role)
 
 		case ws.MsgElementCreate:
 			result := h.persistElementCreate(roomID, client, msg)
