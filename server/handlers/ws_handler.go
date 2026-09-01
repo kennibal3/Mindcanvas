@@ -57,9 +57,19 @@ func NewWSHandler(
 	}
 }
 
-// mergeSceneElements 合并增量元素到现有场景
+// mergeSceneElements 合并两份场景的元素。
+//
+// BUG-022：原实现用 map 存元素、最后 for range map 拼回数组——Go 的 map
+// 迭代顺序是随机的，而 Excalidraw 里数组顺序就是图层前后顺序，于是每次落库
+// 全房间元素的遮挡关系都会被重新洗牌一次。现在额外维护一份 existingOrder，
+// 以 existing 的原始数组顺序为基准，新增元素追加到尾部，拼回时按这份顺序
+// 取值而不是遍历 map，图层顺序从此稳定。
+//
+// appState（滚动位置/缩放比例等）刻意不持久化——多人协作下"谁的视角算数"
+// 语义本身就没定义清楚，与其半持久化制造新的不一致，不如明确不存。
 func mergeSceneElements(existing []byte, incoming []byte) []byte {
 	existingElements := make(map[string]map[string]interface{})
+	var existingOrder []string // BUG-022：保留原始数组顺序
 	var existingFiles map[string]interface{}
 
 	if len(existing) > 2 {
@@ -69,6 +79,9 @@ func mergeSceneElements(existing []byte, incoming []byte) []byte {
 				for _, e := range elems {
 					if elem, ok := e.(map[string]interface{}); ok {
 						if id, ok := elem["id"].(string); ok {
+							if _, dup := existingElements[id]; !dup {
+								existingOrder = append(existingOrder, id)
+							}
 							existingElements[id] = elem
 						}
 					}
@@ -98,6 +111,7 @@ func mergeSceneElements(existing []byte, incoming []byte) []byte {
 		existingElem, exists := existingElements[id]
 		if !exists {
 			existingElements[id] = elem
+			existingOrder = append(existingOrder, id) // 新元素追加到尾部
 			continue
 		}
 		existingVersion, _ := existingElem["version"].(float64)
@@ -106,7 +120,7 @@ func mergeSceneElements(existing []byte, incoming []byte) []byte {
 		incomingDeleted, _ := elem["isDeleted"].(bool)
 
 		if incomingVersion > existingVersion {
-			existingElements[id] = elem
+			existingElements[id] = elem // 原地更新，顺序不变
 		} else if existingDeleted && !incomingDeleted {
 			// 删除保护
 		} else if incomingVersion == existingVersion && incomingDeleted {
@@ -123,9 +137,12 @@ func mergeSceneElements(existing []byte, incoming []byte) []byte {
 		}
 	}
 
-	mergedList := make([]interface{}, 0, len(existingElements))
-	for _, elem := range existingElements {
-		mergedList = append(mergedList, elem)
+	// BUG-022：按 existingOrder 拼数组，不再遍历 map——图层顺序不再每次落库随机洗牌
+	mergedList := make([]interface{}, 0, len(existingOrder))
+	for _, id := range existingOrder {
+		if elem, ok := existingElements[id]; ok {
+			mergedList = append(mergedList, elem)
+		}
 	}
 	mergedScene := map[string]interface{}{"elements": mergedList}
 	if len(existingFiles) > 0 {
