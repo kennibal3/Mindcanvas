@@ -205,6 +205,25 @@ func main() {
 	diagramSampleService := services.NewDiagramSampleService(db)
 	diagramHandler := handlers.NewDiagramHandler(aiSvc, diagramSampleService)
 	refineHandler := handlers.NewRefineHandler(aiSvc) // REQ-028：文本→Markdown AI 提炼
+
+	// REQ-062：房间内智能体（头脑风暴伙伴）
+	// **独立的 key 与模型，既有 AI 功能一行不动。**
+	// 2026-09-01 实测：新 key 所在的方舟账号未开通 doubao-seed-2-1-turbo-260628
+	//（图形生成/讲评分析/提炼/养成对话现在共用的那个模型），
+	// 若把它设成全局 ARK_API_KEY，这四个已验证的功能会同时挂掉。
+	// 故智能体单独配一把；AGENT_ARK_API_KEY 不填则回落到全局 key。
+	agentKey := os.Getenv("AGENT_ARK_API_KEY")
+	if agentKey == "" {
+		agentKey = cfg.AI.APIKey
+	}
+	agentModel := os.Getenv("AGENT_ARK_MODEL")
+	if agentModel == "" {
+		agentModel = "doubao-seed-2-0-lite-260215"
+	}
+	agentAI := services.NewAIService(agentKey, cfg.AI.BaseURL, agentModel)
+	agentService := services.NewAgentService(db, agentAI, rdb)
+	agentHandler := handlers.NewAgentHandler(agentService, roomService, agentAI)
+	log.Printf("[启动] 智能体就绪，模型: %s，独立key: %v", agentModel, os.Getenv("AGENT_ARK_API_KEY") != "")
 	parseFileHandler := handlers.NewParseFileHandler(assignmentService, aiSvc) // REQ-038：AI 工作台文件→Markdown 解析；REQ-040：图片走豆包 OCR
 
 	// ========== 7. 注册 WebSocket 消息处理器 ==========
@@ -347,6 +366,7 @@ func main() {
 		admin.GET("/users", adminHandler.ListUsers)
 		admin.PUT("/users/:id/status", adminHandler.UpdateUserStatus)
 			admin.PATCH("/users/:id/chat", adminHandler.UpdateUserChat)
+		admin.PATCH("/users/:id/agent", adminHandler.UpdateUserAgent) // REQ-062
 		// 需求5：房间统计（superadmin 看全部，admin 看本租户）
 		admin.GET("/room-stats", adminHandler.GetRoomStats)
 		admin.GET("/room-stats/export", adminHandler.ExportRoomStatsCSV)
@@ -536,6 +556,10 @@ func main() {
 		ai.POST("/diagram/:gid/outcome", diagramHandler.RecordOutcome) // REQ-050 B：老师后续动作回报
 		ai.POST("/refine", refineHandler.Refine) // REQ-028：文本→Markdown AI 提炼
 		ai.POST("/parse-file", parseFileHandler.ParseFile) // REQ-038：文件→Markdown（MarkItDown）
+		// REQ-062：房间内智能体。挂在既有 /api/ai 组下，天然继承 AuthRequired；
+		// 另外两道权限（agent_enabled、房间归属）在 handler 的 guard() 里。
+		ai.POST("/agent/chat", agentHandler.Chat)
+		ai.GET("/agent/history", agentHandler.History)
 	}
 
 	// 教学模块扩展路由预留

@@ -221,14 +221,14 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	if currentRole == "superadmin" {
 		rows, err = h.db.Query(
 			`SELECT u.id, u.tenant_id, u.username, u.display_name, u.role, u.is_active, u.created_at,
-                                COALESCE(t.name, '') as tenant_name, COALESCE(u.chat_enabled, false) as chat_enabled
+                                COALESCE(t.name, '') as tenant_name, COALESCE(u.chat_enabled, false) as chat_enabled, COALESCE(u.agent_enabled, false) as agent_enabled
                          FROM users u LEFT JOIN tenants t ON u.tenant_id = t.id
                          ORDER BY u.created_at DESC`,
 		)
 	} else {
 		rows, err = h.db.Query(
 			`SELECT u.id, u.tenant_id, u.username, u.display_name, u.role, u.is_active, u.created_at,
-                                COALESCE(t.name, '') as tenant_name, COALESCE(u.chat_enabled, false) as chat_enabled
+                                COALESCE(t.name, '') as tenant_name, COALESCE(u.chat_enabled, false) as chat_enabled, COALESCE(u.agent_enabled, false) as agent_enabled
                          FROM users u LEFT JOIN tenants t ON u.tenant_id = t.id
                          WHERE u.tenant_id = $1
                          ORDER BY u.created_at DESC`,
@@ -246,13 +246,14 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 		models.User
 		TenantName string `json:"tenant_name"`
                 ChatEnabled bool   `json:"chat_enabled"`
+		AgentEnabled bool  `json:"agent_enabled"`
 	}
 
 	var users []UserWithTenant
 	for rows.Next() {
 		var u UserWithTenant
 		var tenantID sql.NullString
-		rows.Scan(&u.ID, &tenantID, &u.Username, &u.DisplayName, &u.Role, &u.IsActive, &u.CreatedAt, &u.TenantName, &u.ChatEnabled)
+		rows.Scan(&u.ID, &tenantID, &u.Username, &u.DisplayName, &u.Role, &u.IsActive, &u.CreatedAt, &u.TenantName, &u.ChatEnabled, &u.AgentEnabled)
 		if tenantID.Valid {
 			u.TenantID = &tenantID.String
 		}
@@ -315,6 +316,34 @@ func (h *AdminHandler) UpdateUserChat(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Chat权限更新成功"})
+}
+
+// UpdateUserAgent 开启/关闭用户的智能体权限（REQ-062）
+// PATCH /api/admin/users/:id/agent
+//
+// 刻意与 UpdateUserChat 分开：chat_enabled 挂的是「养成类对话 Victoria Chat」，
+// 与本功能是两件事。合成一个开关等于「开助手顺带开了养成对话」，
+// 而且以后没法分别停用其中一个。
+func (h *AdminHandler) UpdateUserAgent(c *gin.Context) {
+	userID := c.Param("id")
+	var req struct {
+		AgentEnabled bool `json:"agent_enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	_, err := h.db.Exec(
+		"UPDATE users SET agent_enabled = $1, updated_at = NOW() WHERE id = $2",
+		req.AgentEnabled, userID,
+	)
+	if err != nil {
+		log.Printf("[管理] 智能体权限更新失败 user:%s err:%v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	log.Printf("[管理] 智能体权限更新 user:%s enabled:%v", userID, req.AgentEnabled)
+	c.JSON(http.StatusOK, gin.H{"message": "智能体权限更新成功"})
 }
 // =============================================================
 // 需求5：房间统计接口
