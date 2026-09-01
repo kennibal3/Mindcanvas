@@ -14,6 +14,7 @@ type Hub struct {
 	rooms      map[string]*Room // roomID → Room 映射
 	mu         sync.RWMutex     // 读写锁保护 rooms map
 	onMessage  func(*Room, *ClientMessage) // 全局消息处理回调
+	onEmpty    func(string)                // 房间清空回调（BUG-021②）
 }
 
 // NewHub 创建 Hub 实例
@@ -27,6 +28,11 @@ func NewHub() *Hub {
 // 所有房间收到的消息都会回调此函数
 func (h *Hub) SetMessageHandler(handler func(*Room, *ClientMessage)) {
 	h.onMessage = handler
+}
+
+// SetEmptyHandler 设置房间清空回调（BUG-021②：最后一个客户端离开时触发）
+func (h *Hub) SetEmptyHandler(handler func(string)) {
+	h.onEmpty = handler
 }
 
 // GetOrCreateRoom 获取或创建房间
@@ -51,6 +57,7 @@ func (h *Hub) GetOrCreateRoom(roomID string) *Room {
 
 	room = NewRoom(roomID)
 	room.OnMessage = h.onMessage // 注入消息处理回调
+	room.OnEmpty = h.onEmpty     // 注入房间清空回调（BUG-021②）
 	h.rooms[roomID] = room
 
 	// 启动房间主循环

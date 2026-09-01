@@ -170,6 +170,22 @@ func (h *WSHandler) persistSceneDB(roomID string, sceneJSON []byte, savedBy stri
 	}
 }
 
+// onRoomEmpty BUG-021②：房间最后一个客户端离开时强制落库一次，不经过
+// throttledPersistSceneDB 的 30 秒窗口。教师下课离开前的最后一次编辑，
+// 此刻被无条件补写——不依赖"之后是否还有人编辑"来触发节流窗口到期。
+func (h *WSHandler) onRoomEmpty(roomID string) {
+	if h.rdb == nil {
+		return
+	}
+	ctx := context.Background()
+	latest, err := h.rdb.Get(ctx, sceneKey(roomID)).Bytes()
+	if err != nil || len(latest) == 0 {
+		return
+	}
+	h.persistSceneDB(roomID, latest, "room-empty-flush")
+	log.Printf("[场景持久化] 房间清空补写 room:%s size:%d", roomID, len(latest))
+}
+
 func (h *WSHandler) loadSceneFromDB(roomID string) ([]byte, error) {
 	var sceneData []byte
 	err := h.db.QueryRow(`
@@ -401,6 +417,7 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 
 // SetupMessageHandler 设置消息处理回调
 func (h *WSHandler) SetupMessageHandler() {
+	h.hub.SetEmptyHandler(h.onRoomEmpty) // BUG-021②
 	h.hub.SetMessageHandler(func(room *ws.Room, clientMsg *ws.ClientMessage) {
 		client := clientMsg.Client
 		msg := clientMsg.Message
@@ -680,6 +697,13 @@ func (h *WSHandler) SetupMessageHandler() {
 }
 
 // throttledPersistSceneDB 节流写入DB（30秒最多写一次）
+//
+// BUG-021①：窗口内被跳过的写入不再直接丢弃。原逻辑是 SetNX 失败就 return，
+// 如果那次编辑之后 30 秒内再没人编辑，这份内容就永远停在 Redis、不进库——
+// 这正是 2026-08-11 事故里"节流窗口冻结分叉"的根因，2026-09-01 全库普查
+// 又确认了 3 个生产房间存在同类小幅分叉。现在改为：跳过时安排一次窗口
+// 到期后的补写，补写时读 Redis 里最新的内容（而不是这次被跳过时的内容），
+// 确保收敛到真正的最新状态。
 func (h *WSHandler) throttledPersistSceneDB(roomID string, sceneJSON []byte, savedBy string) {
 	if len(sceneJSON) >= sceneSizeRejectBytes {
 		return
@@ -691,11 +715,36 @@ func (h *WSHandler) throttledPersistSceneDB(roomID string, sceneJSON []byte, sav
 	ctx := context.Background()
 	throttleKey := "scene:throttle:" + roomID
 	set, err := h.rdb.SetNX(ctx, throttleKey, "1", 30*time.Second).Result()
-	if err != nil || !set {
+	if err != nil {
 		return
 	}
-	h.persistSceneDB(roomID, sceneJSON, savedBy)
-	log.Printf("[场景持久化] DB写入成功 room:%s size:%d savedBy:%s", roomID, len(sceneJSON), savedBy)
+	if set {
+		h.persistSceneDB(roomID, sceneJSON, savedBy)
+		log.Printf("[场景持久化] DB写入成功 room:%s size:%d savedBy:%s", roomID, len(sceneJSON), savedBy)
+		return
+	}
+
+	// 本窗口内已经写过一次，这次被跳过。用独立的 pending key（SetNX）确保
+	// 同一个窗口内无论跳过多少次，只安排一次补写 goroutine。
+	pendingKey := "scene:pending:" + roomID
+	scheduled, err := h.rdb.SetNX(ctx, pendingKey, "1", 35*time.Second).Result()
+	if err != nil || !scheduled {
+		return
+	}
+	go func() {
+		// 略长于 30 秒节流窗口，确保 throttleKey 已过期、补写不会又被跳过。
+		// 已知残余风险：这 31 秒内如果进程重启，这次补写会跟着丢——
+		// 比"永不落库"好得多，但不是绝对保证；真正的强保证需要持久化队列，
+		// 超出本次修复范围。
+		time.Sleep(31 * time.Second)
+		defer h.rdb.Del(context.Background(), pendingKey)
+		latest, err := h.rdb.Get(context.Background(), sceneKey(roomID)).Bytes()
+		if err != nil || len(latest) == 0 {
+			return
+		}
+		h.persistSceneDB(roomID, latest, savedBy+"(补写)")
+		log.Printf("[场景持久化] 补写成功 room:%s size:%d", roomID, len(latest))
+	}()
 }
 
 // =============================================================
