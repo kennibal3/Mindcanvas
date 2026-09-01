@@ -29,6 +29,7 @@ type Room struct {
 	Incoming   chan *ClientMessage
 	mu         sync.RWMutex
 	OnMessage  func(*Room, *ClientMessage)
+	OnEmpty    func(roomID string) // BUG-021②：最后一个客户端离开时触发
 }
 
 // NewRoom 创建房间实例
@@ -83,6 +84,13 @@ func (r *Room) Run() {
 				"name": client.Nickname,
 			})
 			r.BroadcastRaw(leaveBytes)
+
+			// BUG-021②：最后一个客户端离开时强制落库一次，不等 30 秒节流窗口。
+			// 这是"最后一次编辑可能永不落库"的收口点——教师下课离开前的那次编辑，
+			// 此刻被无条件补写，不依赖之后是否还有人再编辑触发节流窗口到期。
+			if clientCount == 0 && r.OnEmpty != nil {
+				go r.OnEmpty(r.ID)
+			}
 
 		case clientMsg := <-r.Incoming:
 			if r.OnMessage != nil {
