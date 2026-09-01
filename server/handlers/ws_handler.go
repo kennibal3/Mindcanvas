@@ -57,7 +57,6 @@ func NewWSHandler(
 	}
 }
 
-// mergeSceneElements 合并增量元素到现有场景
 // mergeSceneElements 合并两份场景的元素。
 //
 // BUG-022：原实现用 map 存元素、最后 for range map 拼回数组——Go 的 map
