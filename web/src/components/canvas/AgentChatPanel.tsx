@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Bot, Send, Loader2, AlertCircle, Sparkles } from "lucide-react";
+import { Bot, Send, Loader2, AlertCircle, Sparkles, Network } from "lucide-react";
 import {
   streamAgentChat,
   fetchAgentHistory,
@@ -16,6 +16,7 @@ import {
   type AgentMeta,
   type AgentPrimeResult,
 } from "../../utils/agentApi";
+import { analyzeMarkdown } from "../../utils/markdownToDiagram";
 
 interface DisplayMessage {
   id: string;
@@ -28,13 +29,16 @@ interface DisplayMessage {
 
 interface AgentChatPanelProps {
   roomId: string;
+  /** REQ-062 二期：把一段结构化 Markdown 转成图形插入画布，成功返回 true。
+   *  不传时（理论上不会，AIWorkbench 总会传）「生成图形」按钮不出现。 */
+  onInsertFromMarkdown?: (markdown: string) => boolean;
 }
 
 function uid() {
   return `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
+export default function AgentChatPanel({ roomId, onInsertFromMarkdown }: AgentChatPanelProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [conversationId, setConversationId] = useState("");
   const [input, setInput] = useState("");
@@ -45,6 +49,9 @@ export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
   // REQ-062 Slice-3：冷启动欢迎卡片（画布摘要 + 建议问题），只在这个房间还没有对话历史时拉一次
   const [primeCard, setPrimeCard] = useState<AgentPrimeResult | null>(null);
   const [primeLoading, setPrimeLoading] = useState(false);
+  // REQ-062 二期：「生成图形」点击后短暂显示「已插入」反馈，不禁用按钮——
+  // 跟 AIWorkbench 历史列表里的「插入画布」一致，允许老师对同一条回复多插几次
+  const [justInserted, setJustInserted] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -158,6 +165,16 @@ export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
     if (lastUserTextRef.current) doSend(lastUserTextRef.current);
   };
 
+  // REQ-062 二期：老师说「画出来」，智能体按提示词会回一段结构化 Markdown——
+  // 点这个按钮直接转图插进画布，复用 AIWorkbench 现成的直转+插入逻辑，这边不重写。
+  const handleInsertClick = useCallback((id: string, content: string) => {
+    if (!onInsertFromMarkdown) return;
+    const ok = onInsertFromMarkdown(content);
+    if (!ok) return; // 理论上不该发生（下面渲染前已经用 analyzeMarkdown 判过一次），静默即可
+    setJustInserted(id);
+    setTimeout(() => setJustInserted(prev => (prev === id ? null : prev)), 1800);
+  }, [onInsertFromMarkdown]);
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* 消息列表 */}
@@ -232,6 +249,21 @@ export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
                       className="text-[11px] text-amber-600 underline hover:text-amber-700"
                     >
                       重试
+                    </button>
+                  </div>
+                )}
+                {/* REQ-062 二期：只在这段回复真的是结构化 Markdown（有标题层级）时才出现，
+                    不是每条回复都硬加一个大概率没用的按钮 */}
+                {!m.pending && !m.errored && m.role === "assistant" && onInsertFromMarkdown &&
+                  analyzeMarkdown(m.content).structured && (
+                  <div className="mt-1.5 pt-1.5 border-t border-gray-200">
+                    <button
+                      onClick={() => handleInsertClick(m.id, m.content)}
+                      className="text-[11px] text-amber-700 bg-white border border-amber-300 rounded-md
+                                 px-2 py-1 hover:bg-amber-50 transition-colors flex items-center gap-1"
+                    >
+                      <Network size={11} />
+                      {justInserted === m.id ? "已插入画布 ✓" : "生成图形"}
                     </button>
                   </div>
                 )}
