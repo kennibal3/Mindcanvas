@@ -130,6 +130,29 @@ export async function streamAgentChat(args: StreamAgentChatArgs): Promise<void> 
   }
 }
 
+export interface AgentPrimeResult {
+  summary: string;
+  questions: string[];
+  canvas_elements: number;
+}
+
+/**
+ * fetchAgentPrime（REQ-062 Slice-3）
+ * 冷启动欢迎卡片：只在这个房间还没有任何对话历史时调用一次。
+ * 失败静默返回 null——摘要卡片是锦上添花，拿不到就退回普通空状态，不能因为它拦住老师提问。
+ */
+export async function fetchAgentPrime(roomId: string): Promise<AgentPrimeResult | null> {
+  try {
+    const res = await fetch(`/api/ai/agent/prime?room_id=${encodeURIComponent(roomId)}`, {
+      credentials: "include",
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * fetchAgentHistory
  * 恢复房间内上次对话（供刷新页面/重新展开面板时调用）。

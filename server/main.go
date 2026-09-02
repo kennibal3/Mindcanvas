@@ -560,6 +560,7 @@ func main() {
 		// 另外两道权限（agent_enabled、房间归属）在 handler 的 guard() 里。
 		ai.POST("/agent/chat", agentHandler.Chat)
 		ai.GET("/agent/history", agentHandler.History)
+		ai.GET("/agent/prime", agentHandler.Prime) // REQ-062 Slice-3：冷启动摘要+建议问题
 	}
 
 	// 教学模块扩展路由预留
