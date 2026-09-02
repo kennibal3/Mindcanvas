@@ -4,8 +4,10 @@
 // 职责：读画布内容、取提示词、管会话与消息、写调用日志。
 // 不负责 HTTP 与流式输出，那在 handlers/agent_handler.go。
 //
-// 与既有 AI 功能的关系：本文件不碰 doChat / Chat / Analyze 任何一条既有路径，
-// 只调用新增的 AIService.StreamChatEx。理由见 ai_service.go 文件末尾的说明。
+// 与既有 AI 功能的关系：主对话路径（Chat）只调用新增的 AIService.StreamChatEx，
+// 不碰 doChat / Chat / Analyze 任何一条既有路径，理由见 ai_service.go 文件末尾的说明。
+// Slice-3（冷启动摘要 + 会话自动命名）是新增的两个短平快调用，非流式、结构化输出，
+// 复用既有的 AIService.Chat（refine_service.go 等既有功能同样在用），不新开路径。
 // =============================================================
 package services
 
@@ -17,6 +19,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -463,4 +466,129 @@ func (s *AgentService) MessagesFor(convID string, limit int) []AgentMessageView 
 		out = append(out, m)
 	}
 	return out
+}
+
+// =============================================================
+// 四、Slice-3：冷启动摘要 + 建议问题、会话自动命名
+//
+// 两个都是短平快的一次性结构化调用，不走 SSE，复用 AIService.Chat（非流式）。
+// 提示词 key（summarize_room / name_room）见迁移 026，025 建表时就已预留好命名。
+// =============================================================
+
+// agentPrimeMaxQuestions 建议问题最多展示几条——AI 有时会多给，截到位不深究
+const agentPrimeMaxQuestions = 3
+
+// PrimeResult 冷启动欢迎卡片：画布摘要 + 建议问题
+type PrimeResult struct {
+	Summary        string   `json:"summary"`
+	Questions      []string `json:"questions"`
+	CanvasElements int      `json:"canvas_elements"`
+}
+
+// primeJSONShape AI 返回体的 JSON 结构（内部用，见 summarize_room 提示词的输出约定）
+type primeJSONShape struct {
+	Summary   string   `json:"summary"`
+	Questions []string `json:"questions"`
+}
+
+// Prime 生成冷启动欢迎卡片：老师第一次展开「问一问」且这个房间还没有任何对话历史时调用。
+//
+// 画布为空时不调用 AI——没有内容可摘要，硬调只会让模型编，纯浪费一次调用还可能编造内容。
+// 直接返回静态引导文案，与「宁可说少，不要编」的项目原则一致。
+func (s *AgentService) Prime(ctx context.Context, roomID string) (PrimeResult, error) {
+	cc := s.BuildCanvasContext(roomID)
+	if cc.ElementCount == 0 {
+		return PrimeResult{
+			Summary: "这块白板上还没有内容。",
+			Questions: []string{
+				"帮我理一下这节课准备讲哪几块内容",
+				"这节课的重点应该放在哪",
+				"学生在这块内容上容易卡在哪里",
+			},
+			CanvasElements: 0,
+		}, nil
+	}
+
+	sys := s.ActivePrompt("summarize_room")
+	msgs := []AIMessage{
+		{Role: "system", Content: sys},
+		{Role: "user", Content: "===== 白板此刻的全部内容 =====\n" + cc.Text},
+	}
+
+	ctx2, cancel := context.WithTimeout(WithFastMode(ctx), 30*time.Second)
+	defer cancel()
+	reply, usage, err := s.ai.Chat(ctx2, msgs)
+	if err != nil {
+		log.Printf("[智能体] Prime 调用失败 room:%s err:%v", roomID, err)
+		return PrimeResult{}, err
+	}
+
+	var parsed primeJSONShape
+	jsonErr := json.Unmarshal([]byte(extractJSON(reply)), &parsed)
+	if jsonErr != nil || strings.TrimSpace(parsed.Summary) == "" {
+		log.Printf("[智能体] Prime 返回体解析失败 room:%s err:%v raw:%s", roomID, jsonErr, truncateStr(reply, 200))
+		return PrimeResult{}, fmt.Errorf("摘要生成失败，请稍后重试")
+	}
+
+	questions := parsed.Questions
+	if len(questions) > agentPrimeMaxQuestions {
+		questions = questions[:agentPrimeMaxQuestions]
+	}
+	log.Printf("[智能体] Prime room:%s canvasEl:%d promptTokens:%d completionTokens:%d",
+		roomID, cc.ElementCount, usage.PromptTokens, usage.CompletionTokens)
+
+	return PrimeResult{
+		Summary:        strings.TrimSpace(parsed.Summary),
+		Questions:      questions,
+		CanvasElements: cc.ElementCount,
+	}, nil
+}
+
+// MaybeNameConversation 若该会话还没有标题，用第一轮问答后台异步生成一个短标题写回。
+//
+// 本期（Slice-3）仅落库，前端暂不展示——迁移 026 文件头已写明理由：现在还没有
+// 「历史对话列表」这类需要标题的界面，先把数据面补齐，以后真做列表页时直接有数据可用。
+//
+// 不阻塞主响应：调用方在 SSE "done" 发送完之后 fire-and-forget 调用。
+// 同 SaveAssistantMessage 的既有做法——用 context.Background() 而非请求 context，
+// 请求一结束原 context 就会被取消，这类收尾工作不该跟着请求生命周期走。
+func (s *AgentService) MaybeNameConversation(convID, firstUserMsg, firstAssistantMsg string) {
+	go func() {
+		var title string
+		if err := s.db.QueryRow(`SELECT title FROM agent_conversations WHERE id = $1`, convID).Scan(&title); err != nil {
+			log.Printf("[智能体] 自动命名：读会话失败 conv:%s err:%v", convID, err)
+			return
+		}
+		if strings.TrimSpace(title) != "" {
+			return // 已有标题（比如并发命中两次），不重复生成
+		}
+
+		sys := s.ActivePrompt("name_room")
+		msgs := []AIMessage{
+			{Role: "system", Content: sys},
+			{Role: "user", Content: fmt.Sprintf("老师问：%s\n\n你答：%s",
+				truncateStr(firstUserMsg, 500), truncateStr(firstAssistantMsg, 800))},
+		}
+		ctx, cancel := context.WithTimeout(WithFastMode(context.Background()), 20*time.Second)
+		defer cancel()
+		reply, _, err := s.ai.Chat(ctx, msgs)
+		if err != nil {
+			log.Printf("[智能体] 自动命名调用失败 conv:%s err:%v", convID, err)
+			return
+		}
+		name := strings.Trim(strings.TrimSpace(reply), "\"“”「」 \n\t")
+		if name == "" {
+			return
+		}
+		runes := []rune(name)
+		if len(runes) > 16 {
+			name = string(runes[:16])
+		}
+		if _, err := s.db.Exec(
+			`UPDATE agent_conversations SET title = $1 WHERE id = $2 AND title = ''`,
+			name, convID,
+		); err != nil {
+			log.Printf("[智能体] 自动命名写回失败 conv:%s err:%v", convID, err)
+		}
+	}()
 }

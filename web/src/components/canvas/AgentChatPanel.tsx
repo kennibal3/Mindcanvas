@@ -12,7 +12,9 @@ import { Bot, Send, Loader2, AlertCircle, Sparkles } from "lucide-react";
 import {
   streamAgentChat,
   fetchAgentHistory,
+  fetchAgentPrime,
   type AgentMeta,
+  type AgentPrimeResult,
 } from "../../utils/agentApi";
 
 interface DisplayMessage {
@@ -40,6 +42,9 @@ export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [lastMeta, setLastMeta] = useState<AgentMeta | null>(null);
   const [lastErr, setLastErr] = useState("");
+  // REQ-062 Slice-3：冷启动欢迎卡片（画布摘要 + 建议问题），只在这个房间还没有对话历史时拉一次
+  const [primeCard, setPrimeCard] = useState<AgentPrimeResult | null>(null);
+  const [primeLoading, setPrimeLoading] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -53,15 +58,24 @@ export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
     fetchAgentHistory(roomId).then(res => {
       if (cancelled) return;
       setConversationId(res.conversation_id || "");
-      setMessages(
-        (res.messages || []).map(m => ({
-          id: uid(),
-          role: m.role,
-          content: m.content,
-          truncated: m.truncated,
-        }))
-      );
+      const restored = (res.messages || []).map(m => ({
+        id: uid(),
+        role: m.role,
+        content: m.content,
+        truncated: m.truncated,
+      }));
+      setMessages(restored);
       setLoadingHistory(false);
+
+      // 只在这个房间/这个人还没聊过时拉欢迎卡片，避免每次展开面板都多打一次 AI
+      if (restored.length === 0) {
+        setPrimeLoading(true);
+        fetchAgentPrime(roomId).then(card => {
+          if (cancelled) return;
+          setPrimeLoading(false);
+          if (card) setPrimeCard(card);
+        });
+      }
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,11 +167,41 @@ export default function AgentChatPanel({ roomId }: AgentChatPanelProps) {
             <Loader2 size={13} className="animate-spin" /> 正在恢复对话…
           </div>
         ) : messages.length === 0 ? (
-          <div className="text-center text-gray-400 text-xs py-8">
-            <Bot size={24} className="mx-auto mb-2 text-amber-200" />
-            我能看到这块白板上的内容
-            <br />
-            问我"现在都有什么"，或者哪里没想清楚
+          <div className="py-6 px-1">
+            <div className="text-center text-gray-400 text-xs pb-4">
+              <Bot size={24} className="mx-auto mb-2 text-amber-200" />
+              我能看到这块白板上的内容
+            </div>
+            {/* REQ-062 Slice-3：冷启动欢迎卡片——摘要 + 可直接点击发送的建议问题 */}
+            {primeLoading && (
+              <div className="flex items-center justify-center gap-1.5 text-gray-400 text-xs pb-2">
+                <Loader2 size={12} className="animate-spin" /> 正在看一眼画布…
+              </div>
+            )}
+            {!primeLoading && primeCard && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 space-y-2">
+                <div className="text-xs text-gray-700 leading-relaxed">{primeCard.summary}</div>
+                {primeCard.questions.length > 0 && (
+                  <div className="space-y-1.5 pt-0.5">
+                    {primeCard.questions.map((q, i) => (
+                      <button
+                        key={i}
+                        onClick={() => doSend(q)}
+                        className="w-full text-left text-xs text-amber-800 bg-white border border-amber-200
+                                   rounded-lg px-2 py-1.5 hover:bg-amber-100 hover:border-amber-300 transition-colors"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {!primeLoading && !primeCard && (
+              <div className="text-center text-gray-400 text-xs">
+                问我"现在都有什么"，或者哪里没想清楚
+              </div>
+            )}
           </div>
         ) : (
           messages.map(m => (

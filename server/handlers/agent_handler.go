@@ -112,7 +112,11 @@ func (h *AgentHandler) Chat(c *gin.Context) {
 		Role:    "system",
 		Content: sys + "\n\n===== 以下是这块白板此刻的全部内容 =====\n" + cc.Text,
 	}}
-	msgs = append(msgs, h.agentSvc.History(convID, 0)...)
+	// REQ-062 Slice-3：History 是「这一轮之前」的记录，空的话说明这是本会话第一轮问答，
+	// 用来决定要不要在下面触发一次自动命名
+	history := h.agentSvc.History(convID, 0)
+	isFirstTurn := len(history) == 0
+	msgs = append(msgs, history...)
 	msgs = append(msgs, services.AIMessage{Role: "user", Content: msg})
 
 	// ── SSE ──（写法照抄 chat_handler_patch.streamResponse，保持项目内一致）
@@ -173,6 +177,39 @@ func (h *AgentHandler) Chat(c *gin.Context) {
 	sendEvent("done", done)
 
 	h.agentSvc.SaveAssistantMessage(convID, res, latencyMs, cc, false, "")
+
+	// REQ-062 Slice-3：首轮问答落库后台异步生成会话标题；自测数据不占用这次调用
+	if isFirstTurn && !req.IsTest {
+		h.agentSvc.MaybeNameConversation(convID, msg, res.Content)
+	}
+}
+
+// Prime 冷启动欢迎卡片：画布摘要 + 建议问题（REQ-062 Slice-3）
+// GET /api/ai/agent/prime?room_id=xxx
+// 前端只在这个房间还没有任何对话历史时调用一次，不在每次展开面板时重复调用。
+func (h *AgentHandler) Prime(c *gin.Context) {
+	roomID := c.Query("room_id")
+	if roomID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数缺失：需要 room_id"})
+		return
+	}
+	_, ok := h.guard(c, roomID)
+	if !ok {
+		return
+	}
+	if !h.aiSvc.IsConfigured() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "智能体尚未配置",
+			"message": "服务器未配置 AGENT_ARK_API_KEY",
+		})
+		return
+	}
+	result, err := h.agentSvc.Prime(c.Request.Context(), roomID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "摘要生成失败，请稍后重试"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // History 恢复上次对话
