@@ -297,6 +297,22 @@ const AdminPage = () => {
       }
     } catch (err) { console.error('切换Chat权限失败:', err); alert('切换失败（网络错误）: ' + err); }
   };
+  // ========== 智能体权限（REQ-062，与 Chat 权限刻意分开，见后端 UpdateUserAgent 注释）==========
+  const toggleUserAgent = async (userId: string, currentEnabled: boolean) => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${userId}/agent`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ agent_enabled: !currentEnabled }),
+      });
+      if (res.ok) {
+        setUsers((prev: any[]) => prev.map(u => u.id === userId ? { ...u, agent_enabled: !currentEnabled } : u));
+      } else {
+        alert('智能体权限更新失败，状态码: ' + res.status);
+      }
+    } catch (err) { console.error('切换智能体权限失败:', err); alert('切换失败（网络错误）: ' + err); }
+  };
   // ========== 启禁用户 ==========
   const toggleUser = async (userId: string, currentActive: boolean) => {
     try {
@@ -659,6 +675,7 @@ const AdminPage = () => {
                     <th className="text-left py-2 font-medium text-gray-500">状态</th>
                     <th className="text-left py-2 font-medium text-gray-500">创建时间</th>
                     <th className="text-left py-2 font-medium text-gray-500">AI对话</th>
+                    <th className="text-left py-2 font-medium text-gray-500">智能体</th>
                     <th className="text-right py-2 font-medium text-gray-500">操作</th>
                   </tr>
                 </thead>
@@ -689,6 +706,19 @@ const AdminPage = () => {
                           </button>
                           <span className={`text-xs ${u.chat_enabled ? "text-green-600" : "text-gray-400"}`}>
                             {u.chat_enabled ? "已开通" : "未开通"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            onClick={() => toggleUserAgent(u.id, !!u.agent_enabled)}
+                            className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${u.agent_enabled ? "bg-green-500" : "bg-gray-300"}`}
+                          >
+                            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ease-in-out ${u.agent_enabled ? "translate-x-4" : "translate-x-0"}`} />
+                          </button>
+                          <span className={`text-xs ${u.agent_enabled ? "text-green-600" : "text-gray-400"}`}>
+                            {u.agent_enabled ? "已开通" : "未开通"}
                           </span>
                         </div>
                       </td>

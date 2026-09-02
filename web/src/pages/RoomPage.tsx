@@ -867,7 +867,7 @@ const RoomPage = () => {
           className="fixed z-[45] flex items-center pointer-events-none"
           style={{ top: '44px', left: 0, bottom: 0 }}
         >
-          <AIWorkbench roomId={roomId} isTeacher={isTeacher} />
+          <AIWorkbench roomId={roomId} isTeacher={isTeacher} agentEnabled={user?.agent_enabled} />
         </div>
       )}
 
