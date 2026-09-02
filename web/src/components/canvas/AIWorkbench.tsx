@@ -449,6 +449,30 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
     }, 100);
   }, [excalidrawAPI]);
 
+  // ── 「问一问」里点「生成图形」（REQ-062 二期）────────────────
+  // 智能体说「画出来」时按提示词要求会输出结构化 Markdown，这里走本地无损直转
+  // （REQ-058 的 markdownToDiagram，零 AI 调用）+ 复用上面的 handleInsert，不新开一条生成逻辑。
+  // 固定用 mindmap：一期提示词本身就是照「# 一级/## 二级/- 要点」的思维导图结构写的。
+  // 转不出来时（理论上不该发生，AgentChatPanel 已经用 analyzeMarkdown 预判过一次）
+  // 返回 false，交给调用方自己决定怎么提示。
+  const handleInsertFromAgent = useCallback((markdown: string): boolean => {
+    const direct = markdownToDiagram(markdown, "mindmap");
+    if (!direct) return false;
+    const rootNode = direct.data.nodes.find(n => !n.parent);
+    const item: WorkbenchItem = {
+      id: `wb_${Date.now()}`,
+      type: "mindmap",
+      title: rootNode?.label ?? "未命名图形",
+      data: direct.data,
+      inputText: markdown,
+      createdAt: new Date().toISOString(),
+      genId: undefined, // 没走 AI 生成接口，无采集记录
+    };
+    setHistory(prev => [item, ...prev].slice(0, MAX_HISTORY));
+    handleInsert(item);
+    return true;
+  }, [handleInsert]);
+
   // ── 重新生成 ────────────────────────────────────────────────
   const handleRegen = useCallback((item: WorkbenchItem) => {
     setRegenItem(item);
@@ -601,7 +625,7 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
           {/* 内容区：生成图形模式自带滚动；问一问模式交给 AgentChatPanel 自己管理滚动与输入栏 */}
           <div className={mode === "chat" ? "flex-1 min-h-0" : "flex-1 overflow-y-auto min-h-0"}>
           {mode === "chat" ? (
-            <AgentChatPanel roomId={roomId} />
+            <AgentChatPanel roomId={roomId} onInsertFromMarkdown={handleInsertFromAgent} />
           ) : (
           <>
 

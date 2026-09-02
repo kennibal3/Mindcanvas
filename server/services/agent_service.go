@@ -148,7 +148,13 @@ func (s *AgentService) BuildCanvasContext(roomID string) CanvasContext {
 		log.Printf("[智能体] 读取场景失败 room:%s err:%v", roomID, err)
 	}
 
+	// opaqueImageCount / opaqueShapeCount：读不到内容、只知道「有这么个东西」的元素。
+	// 之前这类元素直接被静默跳过——智能体会说漏了内容也不知道自己漏了。
+	// 「宁可说少，不要编」的反面同样重要：**明确说出「这部分我看不到」，
+	// 好过对着看不见的内容装作它不存在。**
 	var items []canvasTextItem
+	opaqueImageCount := 0
+	opaqueShapeCount := 0
 	if scene != nil {
 		els, _ := scene["elements"].([]interface{})
 		for _, e := range els {
@@ -173,6 +179,13 @@ func (s *AgentService) BuildCanvasContext(roomID string) CanvasContext {
 				}
 			}
 			if txt == "" {
+				switch etype, _ := m["type"].(string); etype {
+				case "image":
+					opaqueImageCount++
+				case "rectangle", "ellipse", "diamond", "arrow", "line", "freedraw":
+					// frame（容器）故意不计入——它本身不是内容，只是给别的元素分组
+					opaqueShapeCount++
+				}
 				continue
 			}
 			items = append(items, canvasTextItem{x: floatOf(m, "x"), y: floatOf(m, "y"), text: txt})
@@ -203,6 +216,22 @@ func (s *AgentService) BuildCanvasContext(roomID string) CanvasContext {
 		}
 		sb.WriteString("【白板上的互动组件】\n")
 		sb.WriteString(widgets)
+	}
+
+	// 低成本盲区披露（不调用任何 AI，纯粹把已经在读的元素类型信息多输出几行）：
+	// 图片、以及没有文字标注的图形/手绘线条，智能体读不到具体内容，只知道数量。
+	// 让模型自己在合适时机说出来，比在这里悄悄丢掉这些信息更符合「不要编」的原则。
+	if opaqueImageCount > 0 || opaqueShapeCount > 0 {
+		if sb.Len() > 0 {
+			sb.WriteString("\n")
+		}
+		sb.WriteString("【看不到内容的部分】（不是白板上没有，是我读不出来）\n")
+		if opaqueImageCount > 0 {
+			sb.WriteString(fmt.Sprintf("- %d 张图片，我无法识别图片里的内容\n", opaqueImageCount))
+		}
+		if opaqueShapeCount > 0 {
+			sb.WriteString(fmt.Sprintf("- %d 个没有文字标注的图形或手绘线条（比如纯箭头、纯线条、没写字的方框）\n", opaqueShapeCount))
+		}
 	}
 
 	text := sb.String()
@@ -296,6 +325,7 @@ func (s *AgentService) buildWidgetLines(roomID string) string {
 const agentBrainstormFallback = `你是一位陪老师在电子白板上一起备课、一起想问题的搭档。
 你能看到白板上的全部文字内容。你提到的每一个概念、每一个数字，都必须在白板内容里能找到出处；
 白板上没有的东西，可以建议加进去，但不能说得像它已经在上面。宁可说少，不要编。
+如果内容里出现「看不到内容的部分」，主动告诉老师这部分你读不到，不要装作没看见。
 面对的是中小学老师，说人话，一次说一件事，三五句话就够。`
 
 // ActivePrompt 取当前生效的提示词
