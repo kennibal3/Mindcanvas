@@ -110,7 +110,9 @@ func (h *AgentHandler) Chat(c *gin.Context) {
 	sys := h.agentSvc.ActivePrompt(services.AgentPromptBrainstorm)
 	msgs := []services.AIMessage{{
 		Role:    "system",
-		Content: sys + "\n\n===== 以下是这块白板此刻的全部内容 =====\n" + cc.Text,
+		// REQ-062 收尾：画布内容含学生互动组件填写的内容，用 WrapUntrustedCanvasText
+		// 包一层边界，避免学生借互动组件里的文字冒充给模型的新指令（见 agent_service.go）。
+		Content: sys + "\n\n" + services.WrapUntrustedCanvasText("这块白板此刻的全部内容", cc.Text),
 	}}
 	// REQ-062 Slice-3：History 是「这一轮之前」的记录，空的话说明这是本会话第一轮问答，
 	// 用来决定要不要在下面触发一次自动命名
