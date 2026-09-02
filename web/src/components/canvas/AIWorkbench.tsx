@@ -30,6 +30,7 @@ import {
   X,
   Wand2,
   Upload,
+  Bot,
 } from "lucide-react";
 import { generateDiagram, reportDiagramOutcome, type DiagramType } from "../../utils/diagramApi";
 import { analyzeMarkdown, markdownToDiagram, isDirectConvertibleType } from "../../utils/markdownToDiagram";
@@ -51,6 +52,7 @@ import {
   exportDiagramPdf,
 } from "../../utils/diagramExport";
 import { useCanvasStore } from "../../store/canvasStore";
+import AgentChatPanel from "./AgentChatPanel"; // REQ-062 Slice-2：房间内智能体「问一问」
 
 // ─────────────────────────────────────────────────────────────
 // REQ-056：提炼必要性判断（纯本地正则，刻意不调 AI）
@@ -192,13 +194,16 @@ function clearDraft(roomId: string) {
 interface AIWorkbenchProps {
   roomId: string;
   isTeacher: boolean;
+  agentEnabled?: boolean; // REQ-062：管理员逐个开通，未开通时「问一问」Tab 整个不渲染（同 chat_enabled 先例）
 }
 
 // ─────────────────────────────────────────────────────────────
 // 主组件
 // ─────────────────────────────────────────────────────────────
-export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
+export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkbenchProps) {
   const [expanded, setExpanded] = useState(false);
+  // REQ-062 Slice-2：两条独立路径的切换，不影响下面任何既有生成流程状态
+  const [mode, setMode] = useState<"diagram" | "chat">("diagram");
   const [history, setHistory] = useState<WorkbenchItem[]>(() => loadHistory(roomId));
 
   // 生成流程状态
@@ -569,8 +574,36 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
             </button>
           </div>
 
-          {/* 内容区（可滚动）*/}
-          <div className="flex-1 overflow-y-auto min-h-0">
+          {/* REQ-062 Slice-2：生成图形 / 问一问 两个 Tab，未开通智能体的老师看不到第二个（同 chat_enabled 先例） */}
+          {agentEnabled && (
+            <div className="flex px-2 pt-2 gap-1 shrink-0">
+              <button
+                onClick={() => setMode("diagram")}
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  mode === "diagram" ? "bg-amber-100 text-amber-700" : "text-gray-400 hover:bg-gray-50"
+                }`}
+              >
+                <Sparkles size={12} />
+                生成图形
+              </button>
+              <button
+                onClick={() => setMode("chat")}
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                  mode === "chat" ? "bg-amber-100 text-amber-700" : "text-gray-400 hover:bg-gray-50"
+                }`}
+              >
+                <Bot size={12} />
+                问一问
+              </button>
+            </div>
+          )}
+
+          {/* 内容区：生成图形模式自带滚动；问一问模式交给 AgentChatPanel 自己管理滚动与输入栏 */}
+          <div className={mode === "chat" ? "flex-1 min-h-0" : "flex-1 overflow-y-auto min-h-0"}>
+          {mode === "chat" ? (
+            <AgentChatPanel roomId={roomId} />
+          ) : (
+          <>
 
             {/* ── 空闲/历史列表 ── */}
             {genStep === "idle" && (
@@ -1028,10 +1061,12 @@ export default function AIWorkbench({ roomId, isTeacher }: AIWorkbenchProps) {
                 </div>
               </div>
             )}
+          </>
+          )}
           </div>
 
-          {/* 底部提示 */}
-          {genStep === "idle" && history.length > 0 && (
+          {/* 底部提示（仅生成图形模式）*/}
+          {mode === "diagram" && genStep === "idle" && history.length > 0 && (
             <div className="px-3 py-2 border-t border-gray-100 text-xs text-gray-400 text-center shrink-0">
               历史记录仅保存在本浏览器
             </div>

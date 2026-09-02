@@ -15,6 +15,7 @@ export interface AuthUser {
   permissions?: string[]; // 权限列表
   avatar_url?: string;
   chat_enabled?: boolean; // Chat功能开关    // 需求3：自定义头像URL
+  agent_enabled?: boolean; // REQ-062：房间内智能体权限（管理员逐个开通）
 }
 
 /** 登录请求 */

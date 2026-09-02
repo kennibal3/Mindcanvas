@@ -46,12 +46,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var tenantID sql.NullString
 	var avatarURL sql.NullString
 	var chatEnabled bool
+	var agentEnabled bool
 	err := h.db.QueryRow(
-		`SELECT id, tenant_id, username, password, display_name, role, is_active, avatar_url, COALESCE(chat_enabled, false) FROM users WHERE username = $1`,
+		`SELECT id, tenant_id, username, password, display_name, role, is_active, avatar_url, COALESCE(chat_enabled, false), COALESCE(agent_enabled, false) FROM users WHERE username = $1`,
 		req.Username,
 	).Scan(
 		&user.ID, &tenantID, &user.Username, &user.Password,
-		&user.DisplayName, &user.Role, &user.IsActive, &avatarURL, &chatEnabled,
+		&user.DisplayName, &user.Role, &user.IsActive, &avatarURL, &chatEnabled, &agentEnabled,
 	)
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -124,8 +125,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"display_name": user.DisplayName,
 			"role":         user.Role,
 			"tenant_id":    tenantIDStr,
-			"avatar_url":   avatarURLStr,
-			"chat_enabled": chatEnabled,
+			"avatar_url":    avatarURLStr,
+			"chat_enabled":  chatEnabled,
+			"agent_enabled": agentEnabled,
 		},
 	})
 }
@@ -142,25 +144,31 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 // GetCurrentUser 获取当前登录用户信息
 // GET /api/auth/me
 // 需求3：从数据库读取最新 avatar_url
+// REQ-062：补 chat_enabled / agent_enabled——此前这两个开关只在登录响应里返回，
+// 刷新页面后 /me 拿不到，前端功能入口会在刷新后错误消失。同一个字段缺口，一并补上。
 func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	role, _ := c.Get("role")
 	tenantID, _ := c.Get("tenant_id")
 	displayName, _ := c.Get("display_name")
 	avatarURL := ""
+	chatEnabled := false
+	agentEnabled := false
 	if userID != nil {
 		h.db.QueryRow(
-			"SELECT COALESCE(avatar_url, '') FROM users WHERE id = $1",
+			"SELECT COALESCE(avatar_url, ''), COALESCE(chat_enabled, false), COALESCE(agent_enabled, false) FROM users WHERE id = $1",
 			fmt.Sprintf("%v", userID),
-		).Scan(&avatarURL)
+		).Scan(&avatarURL, &chatEnabled, &agentEnabled)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"user": gin.H{
-			"id":           userID,
-			"role":         role,
-			"tenant_id":    tenantID,
-			"display_name": displayName,
-			"avatar_url":   avatarURL,
+			"id":            userID,
+			"role":          role,
+			"tenant_id":     tenantID,
+			"display_name":  displayName,
+			"avatar_url":    avatarURL,
+			"chat_enabled":  chatEnabled,
+			"agent_enabled": agentEnabled,
 		},
 	})
 }
