@@ -9,12 +9,13 @@
 // 同步规则：
 //   - isApplyingRemote=true 时 onChange 直接 return
 // =============================================================
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { Excalidraw, CaptureUpdateAction } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useRoomStore } from '@/store/roomStore';
 import { useImageUpload } from '@/hooks/useImageUpload';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import type { RoomMode } from '@/types/room';
 
 interface Props {
@@ -36,6 +37,12 @@ function dataURLtoBlob(dataURL: string): Blob | null {
     return new Blob([ab], { type: mime });
   } catch { return null; }
 }
+
+// BUG-020 二期：批量删除二次确认的阈值。口径与后端 scene_snapshot.go 的
+// snapshotDeleteThreshold(20) / snapshotDeleteRatio(0.5) 保持一致，两边判的
+// 都是「这算不算一次批量删除」，数值对不上以后排查会很容易懵。
+const BULK_DELETE_THRESHOLD = 20;
+const BULK_DELETE_RATIO = 0.5;
 
 const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whiteboard' }) => {
   const setExcalidrawAPI = useCanvasStore((s) => s.setExcalidrawAPI);
@@ -64,6 +71,15 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
   const knownIdsRef         = useRef<Set<string>>(new Set());
   const sendMessageRef      = useRef(sendMessage);
   sendMessageRef.current    = sendMessage;
+  // BUG-020 二期：上一次 handleChange 结束时，哪些 id 处于已删除状态——
+  // 用来判断这一批 elements 里哪些是「这一轮新删的」，而不是历史上早就删过、
+  // 因为别的字段变化被一起捎带进 changed 的。
+  const prevDeletedIdsRef   = useRef<Set<string>>(new Set());
+  // 用户在弹窗里点了「确认删除」后，重放删除的这批 id 临时放进这里，
+  // 让 handleChange 下一次处理它们时跳过弹窗判定，直接当正常改动发出去。
+  const bypassDeleteConfirmIdsRef = useRef<Set<string>>(new Set());
+  // 等待用户确认/取消的批量删除；非空时渲染 DeleteConfirmModal。
+  const [pendingBulkDelete, setPendingBulkDelete] = useState<{ ids: string[]; count: number } | null>(null);
 
   // =============================================================
   // 需求1修复：监听 theme 变化，实时更新 Excalidraw 主题
@@ -301,6 +317,12 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
         const nv = new Map<string, number>();
         for (const el of merged) nv.set(el.id, el.version);
         prevVersionsRef.current = nv;
+        // BUG-020 二期：同步维护，否则远端带进来的已删除元素不会被记进
+        // prevDeletedIdsRef，下一次本地随便一个改动就会把它们误判成
+        // 「这一轮新删的」，弹出不该出现的批量删除确认框。
+        const ndel = new Set<string>();
+        for (const el of merged) if (el.isDeleted) ndel.add(el.id);
+        prevDeletedIdsRef.current = ndel;
       }
     } catch (err) {
       console.warn('[Canvas] 合并失败:', err);
@@ -353,6 +375,46 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
     if (isApplyingRemoteRef.current) return;
 
     const prev = prevVersionsRef.current;
+
+    // =============================================================
+    // BUG-020 二期：批量删除二次确认
+    //
+    // 只挑「这一轮新删除」的 id：上一次记录里不是删除状态、这次变成了删除状态。
+    // 不用这个判定的话，一次编辑里混了别的改动也会被误判、或者早就删过的元素
+    // 因为某些原因又被带进 elements 也会被重复计入。
+    //
+    // 旁路设计（同 scene_snapshot.go 的原则）：apiRef 不可用等异常情况一律
+    // 放行，不阻断正常删除——这层只是加一道确认，不能变成新的故障源。
+    // =============================================================
+    const prevDeleted = prevDeletedIdsRef.current;
+    const liveBefore = prev.size - prevDeleted.size;
+    const newlyDeletedIds: string[] = [];
+    for (const el of elements) {
+      if (el.isDeleted && !prevDeleted.has(el.id) && !bypassDeleteConfirmIdsRef.current.has(el.id)) {
+        newlyDeletedIds.push(el.id);
+      }
+    }
+    const isBulkDelete =
+      newlyDeletedIds.length > 0 &&
+      (newlyDeletedIds.length >= BULK_DELETE_THRESHOLD ||
+        (liveBefore > 0 && newlyDeletedIds.length >= liveBefore * BULK_DELETE_RATIO));
+
+    if (isBulkDelete && apiRef.current) {
+      // 就地把这批元素恢复成未删除——画面上「假装没删过」，等用户在弹窗里做决定。
+      // 不经 isApplyingRemoteRef：让这次 updateScene 触发的下一轮 handleChange
+      // 走正常流程，自然把 prevVersionsRef/prevDeletedIdsRef 记录更新对，不用
+      // 在这里手动模拟一遍状态。
+      const idSet = new Set(newlyDeletedIds);
+      const all: any[] =
+        (apiRef.current.getSceneElementsIncludingDeleted?.() ?? apiRef.current.getSceneElements()) || [];
+      const restored = all.map((el: any) =>
+        idSet.has(el.id) ? { ...el, isDeleted: false, version: el.version + 1 } : el
+      );
+      apiRef.current.updateScene({ elements: restored, captureUpdate: CaptureUpdateAction.NEVER });
+      setPendingBulkDelete({ ids: newlyDeletedIds, count: newlyDeletedIds.length });
+      return; // 这一批改动先不发；确认或取消之后由后续的 handleChange 调用接管
+    }
+
     const changed: any[] = [];
 
     for (const el of elements) {
@@ -388,6 +450,10 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
     for (const el of elements) nv.set(el.id, el.version);
     prevVersionsRef.current = nv;
 
+    const ndel = new Set<string>();
+    for (const el of elements) if (el.isDeleted) ndel.add(el.id);
+    prevDeletedIdsRef.current = ndel;
+
     // 删除权限判定统一交给服务端（单一权威，见 ws_handler validateDeletePermissions + isTeamRoom）：
     // 客户端一律把改动（含删除）发出去，服务端按房间形态决定放行(团队)或恢复(其它)。
     // 被恢复时服务端会向本人回发 scene_restore，由下方监听器即时回弹（不再本地预判，避免 owner 追踪时序漏判）。
@@ -403,6 +469,33 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
       }
     }
   }, [sendMessage, isTeacher, currentUserUUID, getMyName, ensurePollerRunning]);
+
+  // =============================================================
+  // BUG-020 二期：批量删除确认弹窗的确认/取消
+  // =============================================================
+  const handleBulkDeleteConfirm = useCallback(() => {
+    const pending = pendingBulkDelete;
+    setPendingBulkDelete(null);
+    const api = apiRef.current;
+    if (!pending || !api) return;
+    // 有意不给这次重放的删除加撤销栈能力（captureUpdate: NEVER）：安全网
+    // 已经是「确认弹窗 + 服务端 BUG-020 一期快照」，不依赖本地 Ctrl+Z。
+    for (const id of pending.ids) bypassDeleteConfirmIdsRef.current.add(id);
+    const idSet = new Set(pending.ids);
+    const all: any[] = (api.getSceneElementsIncludingDeleted?.() ?? api.getSceneElements()) || [];
+    const redeleted = all.map((el: any) =>
+      idSet.has(el.id) ? { ...el, isDeleted: true, version: el.version + 1 } : el
+    );
+    api.updateScene({ elements: redeleted, captureUpdate: CaptureUpdateAction.NEVER });
+    setTimeout(() => {
+      for (const id of pending.ids) bypassDeleteConfirmIdsRef.current.delete(id);
+    }, 300);
+  }, [pendingBulkDelete]);
+
+  const handleBulkDeleteCancel = useCallback(() => {
+    // 元素在检测到批量删除的当下已经就地恢复成未删除，这里只需要关掉弹窗。
+    setPendingBulkDelete(null);
+  }, []);
 
   // 监听远程场景更新
   useEffect(() => {
@@ -463,6 +556,13 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
           UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }}
         />
       </div>
+      {pendingBulkDelete && (
+        <DeleteConfirmModal
+          count={pendingBulkDelete.count}
+          onConfirm={handleBulkDeleteConfirm}
+          onCancel={handleBulkDeleteCancel}
+        />
+      )}
     </div>
   );
 };
