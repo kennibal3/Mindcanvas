@@ -292,3 +292,58 @@ export function markdownToDiagram(
     maxDepth,
   };
 }
+
+// ────────────────────────────────────────────────────────────────
+// REQ-063：层级塌陷检测（只影响提示文案，不改变任何转换行为）
+//
+// 直转是无损的 —— 它**搬运**层级，不**创造**层级。但 analyzeMarkdown 的
+// structured 判据只问「有没有出现 ≥2 种层级」，一份把小标题写成普通文字的
+// 文档（「A｜项目统筹」而不是「## A｜项目统筹」）照样满足它：普通段落挂在
+// 「当前标题下一层」，它下面顶格的 1./2./3. 列表深度 ＝ 当前标题 + 缩进层数
+// ＝ 同一层，于是伪标题和它的条目变成兄弟，全部内容一起挂到全文最后一个
+// # 标题下面。老师看到的是「✅ 内容已有层级」的绿勾，转出来是一根竖条。
+//
+// 2026-09-08 实测同一份周会纪要（59 个要点）：
+//   伪标题版：最大兄弟组 56 / 59（95%），全挂在「项目简况」下面
+//   补上 ## ：最大兄弟组 10 / 59（17%），10 个一级分支
+// 分离度足够，用「绝对值 + 占比」双条件判：只看占比会误伤 5 条要点的短清单
+// （4/5 ＝ 80%），只看绝对值会误伤真有 15 个平级分支的词汇表。
+// ────────────────────────────────────────────────────────────────
+
+/** 触发提示的最小平级节点数 */
+export const FLAT_MIN_SIBLINGS = 12;
+/** 触发提示的最小占比（最大兄弟组 / 总节点数） */
+export const FLAT_MIN_RATIO = 0.4;
+
+export interface FlatnessReport {
+  /** 同一个父节点下最多有多少个直接子节点 */
+  maxSiblings: number;
+  /** 那个父节点的标签，用于把话说具体（"都挂在「项目简况」下面"） */
+  parentLabel: string;
+  /** 是否疑似层级塌陷 */
+  flat: boolean;
+}
+
+export function assessFlatness(nodes: DiagramNode[]): FlatnessReport {
+  const childCount = new Map<string, number>();
+  for (const n of nodes) {
+    if (n.parent) childCount.set(n.parent, (childCount.get(n.parent) ?? 0) + 1);
+  }
+  let maxSiblings = 0;
+  let parentId = "";
+  childCount.forEach((c, pid) => {
+    if (c > maxSiblings) {
+      maxSiblings = c;
+      parentId = pid;
+    }
+  });
+  const parent = nodes.find(n => n.id === parentId);
+  return {
+    maxSiblings,
+    parentLabel: parent?.label ?? "",
+    flat:
+      nodes.length > 0 &&
+      maxSiblings >= FLAT_MIN_SIBLINGS &&
+      maxSiblings / nodes.length >= FLAT_MIN_RATIO,
+  };
+}

@@ -33,7 +33,13 @@ import {
   Bot,
 } from "lucide-react";
 import { generateDiagram, reportDiagramOutcome, type DiagramType } from "../../utils/diagramApi";
-import { analyzeMarkdown, markdownToDiagram, isDirectConvertibleType } from "../../utils/markdownToDiagram";
+import {
+  analyzeMarkdown,
+  markdownToDiagram,
+  isDirectConvertibleType,
+  outlineToNodes,
+  assessFlatness,
+} from "../../utils/markdownToDiagram";
 import { refineText } from "../../utils/refineApi";
 import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
 import {
@@ -218,7 +224,15 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
     issues: DiagramIssue[];
     regenerated: boolean;
     // REQ-058：本次是本地无损直转（没走 AI）时的回执
-    direct?: { sourceItems: number; nodes: number; levels: number };
+    direct?: {
+      sourceItems: number;
+      nodes: number;
+      levels: number;
+      // REQ-063：层级塌陷回执（"一条没少"是真的，但图可能是一根竖条）
+      flat: boolean;
+      maxSiblings: number;
+      parentLabel: string;
+    };
   } | null>(null);
   // REQ-049：AI 图形配色风格（全局，存 localStorage，插入画布时生效）
   const [themeKey, setThemeKey] = useState<string>(() => getDiagramThemeKey());
@@ -232,12 +246,18 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
 
   // REQ-058：这段输入能不能本地无损直转（有层级的 Markdown 无需过 AI）。
   // 与 refineAdvice 同样是纯本地判断，随输入实时重算。
+  // REQ-063：structured 只说明"出现了 ≥2 种层级"，不说明层级分布是否健康。
+  // 这里顺手把真实建树跑一遍算出最大兄弟组 —— 必须用 outlineToNodes 而不是
+  // 拿 item.depth 近似，因为建树里还有"多个顶层条目补合成根"这一步，近似算法
+  // 会把那种情况的父子关系算错。59 个条目量级的纯函数，无网络无 AI，可实时跑。
   const directPreview = useMemo(() => {
     if (!isDirectConvertibleType(selType)) return null;
     const t = inputText.trim();
     if (!t) return null;
     const a = analyzeMarkdown(t);
-    return a.structured ? a : null;
+    if (!a.structured) return null;
+    const { nodes } = outlineToNodes(a.items);
+    return { ...a, ...assessFlatness(nodes) };
   }, [inputText, selType]);
 
   // REQ-038：文件上传 → MarkItDown 解析为 Markdown
@@ -311,6 +331,7 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
             sourceItems: direct.sourceItemCount,
             nodes: direct.data.nodes.length,
             levels: direct.maxDepth + 1,
+            ...assessFlatness(direct.data.nodes),
           },
         });
         return;
@@ -889,10 +910,22 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
                 )}
                 {/* REQ-058：已有层级 → 本地无损直转，连提炼带生成两次 AI 都省了。
                     这条比 REQ-056 的「可跳过提炼」更强，故覆盖它，避免两条提示打架。 */}
-                {!refining && directPreview && (
+                {!refining && directPreview && !directPreview.flat && (
                   <p className="text-xs text-green-600 mt-1 leading-relaxed">
                     ✅ 内容已有层级（{directPreview.items.length} 个要点、{directPreview.maxDepth + 1} 层），
                     将<strong>按原样无损转换</strong>、不经过 AI 改写，一条都不会少
+                  </p>
+                )}
+                {/* REQ-063：层级"有"但"塌"。不拦截、不代改，只把绿勾换成黄字，
+                    说清后果（会转成一根竖条）与出路（补 ## 或先提炼）。 */}
+                {!refining && directPreview && directPreview.flat && (
+                  <p className="text-xs text-amber-600 mt-1 leading-relaxed">
+                    ⚠ 共 {directPreview.items.length} 个要点，其中{" "}
+                    <strong>{directPreview.maxSiblings} 个是同一层的平级条目</strong>
+                    {directPreview.parentLabel && `（都挂在「${directPreview.parentLabel}」下面）`}
+                    ，转出来会是一根很长的竖条。常见原因是小标题写成了普通文字 ——
+                    Markdown 里要写成「## 小标题」才算一层。可以先点上方「智能提炼为 Markdown」，
+                    或自己在小标题前补上 ## 再转。
                   </p>
                 )}
                 {/* REQ-056：该不该提炼的引导。最好的等待优化是不需要等待。 */}
@@ -979,6 +1012,15 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
                       {genNotice.direct.nodes >= genNotice.direct.sourceItems && "，一条没少"}
                       。文字与数字保持原样，未被改写或压缩。
                     </div>
+                    {/* REQ-063：内容确实一条没少，但层级塌了 —— 这两件事同时为真，
+                        所以不撤回上面的绿色回执，在它下面补一条黄字说明。 */}
+                    {genNotice.direct.flat && (
+                      <div className="mt-2 pt-2 border-t border-green-200 text-xs text-amber-700 leading-snug">
+                        ⚠ 不过层级偏平：{genNotice.direct.maxSiblings} 个节点挂在同一个父节点
+                        {genNotice.direct.parentLabel && `「${genNotice.direct.parentLabel}」`}下面，
+                        图会是一根竖条。多半是小标题没写成「## 小标题」。
+                      </div>
+                    )}
                     <button
                       onClick={() => handleGenerate(true)}
                       className="mt-2 text-xs text-amber-600 hover:text-amber-700 underline"
