@@ -9,6 +9,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	"mindcanvas-server/models"
 	"mindcanvas-server/utils"
@@ -262,9 +264,110 @@ func (s *RoomService) UpdateRoom(roomID string, req models.UpdateRoomRequest) er
 	return err
 }
 
-// DeleteRoom 删除房间
+// =============================================================
+// BUG-025（2026-09-08）：删除房间的影响面预检与安全删除
+//
+// 【为什么需要这一整段】
+// 原实现是裸的 `DELETE FROM rooms WHERE id = $1`，把一切交给数据库 CASCADE。
+// 但 CASCADE 有两件事做不到：
+//   ① 它跑不了应用逻辑——courseware_packages 的行被级联删掉了，
+//      /opt/mindcanvas/courseware/<包id>/ 目录却永远留在磁盘上，无人引用无从回收；
+//   ② 它分不清「这个房间自己的数据」和「另一个功能域的资产」——
+//      assignments 挂在 rooms 上也是 CASCADE，其下又有 10 张 CASCADE 表，
+//      于是老师点一下垃圾桶，关联作业 + 每个学生的提交 + 讲评报告 + 个性化补救
+//      会一起消失，而确认文案只说了一句「所有数据将被清除」。
+//
+// 【外键从 007 就在，为什么现在才炸】
+// REQ-048（2026-07-21）之前 assignments.room_id 恒为空（全站没有入口能绑），
+// 那个下拉做出来的那一刻这条链才活。**新增「把 A 绑到 B 上」的入口时，
+// 必须回头看 A→B 那条外键的 ON DELETE 是什么**——这颗雷是我们自己埋的。
+// =============================================================
+
+// RoomDeletionImpact 删除房间会波及到的、**不属于「房间自己的数据」**的资产。
+// A 类（room_elements/room_scenes/room_shares/shelf_cards/html_widget_contents 等
+// 九张）随房间消失是老师预期内的，不在这里统计，也不需要额外确认。
+type RoomDeletionImpact struct {
+	Assignments     int   `json:"assignments"`      // 关联作业数（将被解绑保留，不删）
+	Courseware      int   `json:"courseware"`       // 课件包数（将被连库带盘删除）
+	CoursewareBytes int64 `json:"courseware_bytes"` // 课件包解压后总字节
+
+	coursewareIDs []string // 内部用：磁盘目录名＝包 id，删库后就查不到了，必须先取
+}
+
+// NeedsConfirm 是否需要老师明确确认。
+// **默认安全**（吸取 BUG-015）：判定放在服务端，不指望前端记得先问；
+// 任何未来的调用方（脚本、别的前端）不带 confirm 都会被拦。
+func (i *RoomDeletionImpact) NeedsConfirm() bool {
+	return i.Assignments > 0 || i.Courseware > 0
+}
+
+// GetRoomDeletionImpact 查询删除该房间会波及的跨域资产。
+// 只读，不改任何东西；handler 用它决定要不要返 409。
+func (s *RoomService) GetRoomDeletionImpact(roomID string) (*RoomDeletionImpact, error) {
+	impact := &RoomDeletionImpact{}
+
+	if err := s.db.QueryRow(
+		`SELECT count(*) FROM assignments WHERE room_id = $1`, roomID,
+	).Scan(&impact.Assignments); err != nil {
+		return nil, fmt.Errorf("统计关联作业失败: %w", err)
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id, total_bytes FROM courseware_packages WHERE room_id = $1`, roomID)
+	if err != nil {
+		return nil, fmt.Errorf("统计关联课件包失败: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var bytes int64
+		if err := rows.Scan(&id, &bytes); err != nil {
+			return nil, fmt.Errorf("读取课件包失败: %w", err)
+		}
+		impact.coursewareIDs = append(impact.coursewareIDs, id)
+		impact.CoursewareBytes += bytes
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历课件包失败: %w", err)
+	}
+	impact.Courseware = len(impact.coursewareIDs)
+
+	return impact, nil
+}
+
+// DeleteRoom 删除房间。
+//
+// 顺序是本函数的全部要点，不要调换：
+//  1. 先取课件包 id 列表——删完库就查不到了，磁盘目录名就此失联；
+//  2. 事务内「解绑作业 + 删房间」，DB 层原子；
+//  3. **提交成功之后**才删磁盘，失败只记 WARN。
+//
+// 这样最坏情况是「库删了、盘还在」（＝一个可以事后对账清掉的孤儿目录），
+// 而绝不会出现「盘删了、库没删」——后者才是真丢数据。与 BUG-020「先留档再删」同源。
 func (s *RoomService) DeleteRoom(roomID string) error {
-	result, err := s.db.Exec("DELETE FROM rooms WHERE id = $1", roomID)
+	impact, err := s.GetRoomDeletionImpact(roomID)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("删除房间失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // 已 Commit 后再 Rollback 是 no-op
+
+	// 作业解绑保留：room_id 本就可空，置 NULL 即保住作业与全部学生提交。
+	// **刻意不提供「连作业一起删」的选项**——不把一个不可逆的危险动作
+	// 摆在删房间的路上（BUG-023 / 8-11 事故反复教训的那类设计）。
+	// 老师真要删作业，作业列表里本就有入口。
+	res, err := tx.Exec(
+		`UPDATE assignments SET room_id = NULL, updated_at = NOW() WHERE room_id = $1`, roomID)
+	if err != nil {
+		return fmt.Errorf("解绑关联作业失败: %w", err)
+	}
+	unbound, _ := res.RowsAffected()
+
+	result, err := tx.Exec("DELETE FROM rooms WHERE id = $1", roomID)
 	if err != nil {
 		return fmt.Errorf("删除房间失败: %w", err)
 	}
@@ -272,7 +375,25 @@ func (s *RoomService) DeleteRoom(roomID string) error {
 	if affected == 0 {
 		return fmt.Errorf("房间不存在")
 	}
-	log.Printf("[房间] 已删除 - ID:%s", roomID)
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("删除房间提交失败: %w", err)
+	}
+
+	log.Printf("[房间] 已删除 - ID:%s 解绑作业:%d 待清课件包:%d",
+		roomID, unbound, impact.Courseware)
+
+	// 磁盘清理放在提交之后，尽力而为。courseware_packages 的行已随 CASCADE 消失，
+	// 这里只补 CASCADE 做不到的那一半。删不掉只留 WARN，不让它把已成功的删除变成报错。
+	for _, id := range impact.coursewareIDs {
+		dir := filepath.Join(CoursewareRoot, id)
+		if err := os.RemoveAll(dir); err != nil {
+			log.Printf("[房间] ⚠️ 课件包目录删除失败（已成孤儿，需事后对账清理）%s: %v", dir, err)
+			continue
+		}
+		log.Printf("[房间] 已清课件包目录 %s", dir)
+	}
+
 	return nil
 }
 

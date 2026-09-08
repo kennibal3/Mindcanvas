@@ -201,12 +201,53 @@ const DashboardPage = () => {
   };
 
   // ===== 删除房间 =====
+  // BUG-025（2026-09-08）：删房间会连带影响两类「不属于这个房间」的东西——
+  // 关联作业（其下还挂着学生提交/讲评报告/个性化补救）与 zip 课件包。
+  // 服务端在未带 confirm=true 时会对这类房间返 409 + 影响面明细（**判定在服务端，
+  // 不指望前端记得先问**），这里负责把它翻译成老师看得懂的话再要一次确认。
+  // 无关联的房间（绝大多数）走的还是原来那条路，行为零变化。
   const handleDelete = async (e: React.MouseEvent, roomId: string) => {
     e.stopPropagation();
     if (!confirm(t('room.deleteConfirm'))) return;
-    await fetch(`${API_BASE}/rooms/${roomId}`, { method: 'DELETE', credentials: 'include' });
+
+    const del = (confirmed: boolean) =>
+      fetch(`${API_BASE}/rooms/${roomId}${confirmed ? '?confirm=true' : ''}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+    let res = await del(false);
+
+    if (res.status === 409) {
+      const body = await res.json().catch(() => null);
+      const im = body?.impact;
+      if (!im) {
+        showToast('删除失败，请重试');
+        return;
+      }
+      const lines: string[] = [];
+      if (im.assignments > 0) {
+        // 作业是「保留」不是「删除」——这句话必须说清楚，否则老师会以为点了就没了
+        lines.push(`· ${im.assignments} 份关联作业【会保留】，删除后可在「作业」列表里继续找到（含全部学生提交与讲评报告）`);
+      }
+      if (im.courseware > 0) {
+        const mb = (Number(im.courseware_bytes || 0) / 1024 / 1024).toFixed(1);
+        lines.push(`· ${im.courseware} 个课件包【会一并删除】，共约 ${mb} MB，删除后无法恢复`);
+      }
+      if (!confirm(`这个课堂还关联着：\n\n${lines.join('\n')}\n\n确定继续删除课堂吗？`)) return;
+      res = await del(true);
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      showToast(body?.error || '删除失败，请重试');
+      return;
+    }
+
+    const done = await res.json().catch(() => null);
     fetchRooms();
-    showToast('房间已删除');
+    const kept = Number(done?.assignments_kept || 0);
+    showToast(kept > 0 ? `房间已删除，${kept} 份作业已保留在作业列表` : '房间已删除');
   };
 
   // ===== 编辑房间 =====
