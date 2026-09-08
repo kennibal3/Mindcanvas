@@ -148,12 +148,37 @@ func (h *RoomHandler) DeleteRoom(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
+
+	// BUG-025：删房间会连带影响「另一个功能域的资产」——关联作业（其下还有
+	// 学生提交/讲评报告/个性化补救等 10 张 CASCADE 表）与 zip 课件包。
+	// 未明确确认时一律返 409 并把影响面交给前端去说人话。
+	// **判定放在服务端而不是前端**（吸取 BUG-015）：新调用方不带 confirm 也会被拦。
+	impact, err := h.roomService.GetRoomDeletionImpact(roomID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if impact.NeedsConfirm() && c.Query("confirm") != "true" {
+		log.Printf("[房间] 删除被拦下待确认 - ID:%s 关联作业:%d 课件包:%d",
+			roomID, impact.Assignments, impact.Courseware)
+		c.JSON(http.StatusConflict, gin.H{
+			"error":  "该课堂关联了其他内容，需要确认后才能删除",
+			"code":   "room_delete_needs_confirm",
+			"impact": impact,
+		})
+		return
+	}
+
 	if err := h.roomService.DeleteRoom(roomID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	go h.cleanupRoomRedisData(roomID)
-	c.JSON(http.StatusOK, gin.H{"message": "房间已删除"})
+	c.JSON(http.StatusOK, gin.H{
+		"message":            "房间已删除",
+		"assignments_kept":   impact.Assignments,
+		"courseware_removed": impact.Courseware,
+	})
 }
 
 // cleanupRoomRedisData 异步清理房间 Redis 数据
