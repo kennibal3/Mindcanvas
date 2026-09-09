@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  MindCanvas 异地副本拉取定时任务(REQ-053,2026-09-09)
+  用法(在 Mac 的正常终端里,不是 Cowork VM):
+    1) cp scripts/com.mindcanvas.offsitepull.plist.example \
+          ~/Library/LaunchAgents/com.mindcanvas.offsitepull.plist
+    2) 打开复制出来的文件,把下面 ProgramArguments 里的脚本路径、
+       StandardOutPath/StandardErrorPath 换成你 Mac 上的实际绝对路径
+    3) launchctl load ~/Library/LaunchAgents/com.mindcanvas.offsitepull.plist
+    4) launchctl start com.mindcanvas.offsitepull   # 立即手工跑一次,验证配置无误
+    5) 查看日志确认:cat ~/MindCanvas备份/pull_offsite.log
+  默认每天早上 7 点跑一次(服务器 03:00 备份早已完成,7 点大概率 Mac 已经开机联网);
+  如果你的作息不同或 Mac 经常这个点没开机,自行调整 Hour/Minute。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mindcanvas.offsitepull</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/kdongnmt.edu/Desktop/mind canvas/代码_mindcanvas/scripts/mac_pull_offsite_backup.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>7</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/kdongnmt.edu/MindCanvas备份/pull_offsite_launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/kdongnmt.edu/MindCanvas备份/pull_offsite_launchd_error.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
