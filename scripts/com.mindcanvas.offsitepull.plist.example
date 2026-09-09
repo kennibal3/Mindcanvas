@@ -2,16 +2,31 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   MindCanvas 异地副本拉取定时任务(REQ-053,2026-09-09)
+
+  ⚠️ 2026-09-09 真机验证踩过的坑,务必先读:如果 ProgramArguments 里的脚本路径
+  在 ~/Desktop、~/Documents 或 ~/Downloads 下,launchd 触发时会报
+  "Operation not permitted"(macOS 隐私保护 TCC 拦截,手动在终端跑没事,
+  但 launchd 启动的后台任务会被拦)。解决办法见 MindCanvas_灾备预案.md
+  第 3.2 节——最省事的是把脚本复制一份到 ~/mindcanvas-scripts/ 这类不受
+  保护的普通目录,下面的 ProgramArguments 就填这个副本的路径,不要直接填
+  仓库里 Desktop 下那份原始文件。
+
   用法(在 Mac 的正常终端里,不是 Cowork VM):
     1) cp scripts/com.mindcanvas.offsitepull.plist.example \
           ~/Library/LaunchAgents/com.mindcanvas.offsitepull.plist
-    2) 打开复制出来的文件,把下面 ProgramArguments 里的脚本路径、
-       StandardOutPath/StandardErrorPath 换成你 Mac 上的实际绝对路径
+    2) 打开复制出来的文件,把下面 ProgramArguments 里的脚本路径换成
+       ~/mindcanvas-scripts/ 下那份独立副本的绝对路径(见上面的坑),
+       StandardOutPath/StandardErrorPath 也换成你 Mac 上的实际绝对路径
     3) launchctl load ~/Library/LaunchAgents/com.mindcanvas.offsitepull.plist
     4) launchctl start com.mindcanvas.offsitepull   # 立即手工跑一次,验证配置无误
-    5) 查看日志确认:cat ~/MindCanvas备份/pull_offsite.log
+    5) launchctl list | grep mindcanvas   # 第二列是上次退出码,0 才算成功
+    6) 查看日志确认:cat ~/MindCanvas备份/pull_offsite.log
   默认每天早上 7 点跑一次(服务器 03:00 备份早已完成,7 点大概率 Mac 已经开机联网);
   如果你的作息不同或 Mac 经常这个点没开机,自行调整 Hour/Minute。
+
+  ⚠️ 长期维护:上面第 2 步复制出去的独立副本不会跟着仓库自动更新——
+  仓库里 scripts/mac_pull_offsite_backup.sh 以后如果有实质改动,记得
+  重新 cp 一次覆盖 ~/mindcanvas-scripts/ 里那份,否则 launchd 跑的是旧版本。
 -->
 <plist version="1.0">
 <dict>
