@@ -9,7 +9,6 @@ import type {
   AssignmentRoster,
   TokenVerifyResult,
   SubmitByTokenRequest,
-  StudentAssessmentResult,
   StudentRemediationPublic,
 } from '@/types/token';
 
@@ -70,17 +69,6 @@ export async function addRosterEntry(
   return req(`/api/assignments/${aid}/roster`, {
     method: 'POST',
     body: JSON.stringify({ student_name: studentName, student_uuid: studentUUID }),
-  });
-}
-
-/** JSON格式批量导入花名册 */
-export async function importRosterJSON(
-  aid: string,
-  names: string[]
-): Promise<{ imported: number; message: string }> {
-  return req(`/api/assignments/${aid}/roster/import`, {
-    method: 'POST',
-    body: JSON.stringify({ names }),
   });
 }
 
@@ -148,19 +136,6 @@ export async function submitByToken(
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || '提交失败');
-  return data;
-}
-
-/** 学生查看自己的评价结果 */
-export async function getStudentResult(
-  aid: string,
-  studentUUID: string
-): Promise<{ assessment: StudentAssessmentResult }> {
-  const res = await fetch(`/api/submit/${aid}/result?uuid=${encodeURIComponent(studentUUID)}`, {
-    headers: { 'X-Student-UUID': studentUUID },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || '暂无评价结果');
   return data;
 }
 
