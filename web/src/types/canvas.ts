@@ -65,31 +65,3 @@ export interface ExcalidrawAppState {
   /** 画布高度 */
   height: number;
 }
-
-/**
- * 视口范围信息
- * 用于计算画布可见区域，实现视口裁剪优化
- */
-export interface ViewportBounds {
-  /** 左边界 x 坐标（画布坐标系） */
-  minX: number;
-  /** 上边界 y 坐标（画布坐标系） */
-  minY: number;
-  /** 右边界 x 坐标（画布坐标系） */
-  maxX: number;
-  /** 下边界 y 坐标（画布坐标系） */
-  maxY: number;
-}
-
-/**
- * 召集视角数据
- * 教师发送 ctrl_gather 时携带的视口信息
- */
-export interface GatherViewport {
-  /** 目标视口 x */
-  viewport_x: number;
-  /** 目标视口 y */
-  viewport_y: number;
-  /** 目标缩放 */
-  zoom: number;
-}

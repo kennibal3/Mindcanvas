@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-09-10T08:04:28Z",
-  "updated_at": "2026-09-16T15:15:34Z",
+  "updated_at": "2026-09-17T00:57:26Z",
   "files": {
     ".gitattributes": {
       "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
@@ -29,9 +29,9 @@
       "normalized_sha256": "f1b990d113409a9c7abc877eb83788e99c7096058d43974219dd9ea4c6659208"
     },
     "aoci.code.txt": {
-      "sha256": "053c13f43b9c5824aa12e314e19fbbb56f64afd09efa09523b3e55ab27f8c5e4",
-      "size": 103769,
-      "normalized_sha256": "053c13f43b9c5824aa12e314e19fbbb56f64afd09efa09523b3e55ab27f8c5e4"
+      "sha256": "714d9084001b950234e8d7aee9fba74ec58666ad8a609bf4c2554c317a97f708",
+      "size": 103743,
+      "normalized_sha256": "714d9084001b950234e8d7aee9fba74ec58666ad8a609bf4c2554c317a97f708"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -1060,9 +1060,9 @@
       "normalized_sha256": "d668bea1cfc6fdd63abb7c4daf62fb4231e1f70ac985d6e24c322bb5a98b3b65"
     },
     "web/src/hooks/useWebSocket.ts": {
-      "sha256": "90c6c27b813e7fed4060e5ca3d22f86b5532a768f11c6ba41f05dd464b3dd90a",
-      "size": 16958,
-      "normalized_sha256": "90c6c27b813e7fed4060e5ca3d22f86b5532a768f11c6ba41f05dd464b3dd90a"
+      "sha256": "3941b78e4bda6181c26bb5d21d531b5f128d6e6607aeae8c3c36ffb8d3a6d1ff",
+      "size": 17411,
+      "normalized_sha256": "3941b78e4bda6181c26bb5d21d531b5f128d6e6607aeae8c3c36ffb8d3a6d1ff"
     },
     "web/src/i18n/en.json": {
       "sha256": "e2161ec6ee36fc4b8736617fb2a7810740689e7d69c158c01f5bbe7b7ed3e59b",
@@ -1328,6 +1328,11 @@
       "sha256": "90d7c130f83940cf80fdb02b8c1ab1333dd69d18dc3be466bd7df3848d7cc806",
       "size": 2433,
       "normalized_sha256": "90d7c130f83940cf80fdb02b8c1ab1333dd69d18dc3be466bd7df3848d7cc806"
+    },
+    "缺陷清单_AOCI审计.md": {
+      "sha256": "e1fb67392183b4a04ff38c115877c8fa52b1615f18cc23b409e837fbbe5b1e9a",
+      "size": 7241,
+      "normalized_sha256": "e1fb67392183b4a04ff38c115877c8fa52b1615f18cc23b409e837fbbe5b1e9a"
     }
   },
   "managed_scope": {
