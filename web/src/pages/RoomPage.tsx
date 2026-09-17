@@ -11,7 +11,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, Copy, Check, Lock, BookOpen,
-  Wifi, WifiOff, Navigation, Eye,
+  Wifi, WifiOff, Navigation, Eye, RotateCw,
   ChevronDown, ChevronUp, X, Camera, Share2,
 } from 'lucide-react';
 // REQ-051 二期：房间内分享——生成邀请链接二维码
@@ -463,7 +463,7 @@ const RoomPage = () => {
   const cursorThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastCursorRef     = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const { send, disconnect } = useWebSocket({
+  const { send, disconnect, reconnect } = useWebSocket({
     roomId:    roomId || '',
     uuid:      isTeacher ? undefined : uuid,
     isTeacher,
@@ -676,7 +676,20 @@ const RoomPage = () => {
               ? <Wifi size={14} className="text-green-500" />
               : connectionStatus === 'connecting'
                 ? <Wifi size={14} className="text-yellow-500 animate-pulse" />
-                : <WifiOff size={14} className="text-red-500" />}
+                /* BUG-036：自动重连耗尽后（error）给一个手动重连按钮，而不是永久静默断开 */
+                : connectionStatus === 'error'
+                  ? (
+                    <button
+                      onClick={reconnect}
+                      className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                      title="连接已断开，点击重新连接"
+                    >
+                      <WifiOff size={14} />
+                      <RotateCw size={12} />
+                      <span className="hidden sm:inline">重新连接</span>
+                    </button>
+                  )
+                  : <WifiOff size={14} className="text-red-500" />}
           </div>
         </div>
       </header>
@@ -877,6 +890,7 @@ const RoomPage = () => {
           roomId={roomId}
           sendMessage={send}
           connectionStatus={connectionStatus}
+          onReconnect={reconnect}
           excalidrawAPI={excalidrawAPI}
           onReadOnlyChange={handleReadOnlyChange}
           onFollowModeChange={handleFollowModeChange}

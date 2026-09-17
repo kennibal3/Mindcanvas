@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ChevronLeft, ChevronRight, Wifi, WifiOff,
+  ChevronLeft, ChevronRight, Wifi, WifiOff, RotateCw,
   Lock, Unlock, Navigation, Eye, EyeOff,
   Radio, Palette, Sun,
   Download, Loader2, BookOpen, Share2,
@@ -29,6 +29,7 @@ const RadioOff = ({ size = 16 }: { size?: number }) => (
 
 import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
+import { CONTROL_CONFIG } from '@/utils/constants';
 import MemberList from './MemberList';
 import WidgetToolbar from './WidgetToolbar';
 import SummaryPanel from './SummaryPanel';
@@ -61,6 +62,8 @@ interface ControlPanelProps {
   roomId: string;
   sendMessage: (type: string, payload: Record<string, any>) => void;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
+  // BUG-036：重试耗尽（error）后，手动重连按钮调用的重连函数
+  onReconnect?: () => void;
   excalidrawAPI?: any;
   onReadOnlyChange?: (readonly: boolean) => void;
   onFollowModeChange?: (follow: boolean) => void;
@@ -296,7 +299,7 @@ const SaveTemplateModal = ({ roomId, onClose, onSaved }: SaveTemplateModalProps)
 
 // ===== 主面板 =====
 const ControlPanel = ({
-  roomId, sendMessage, connectionStatus, excalidrawAPI,
+  roomId, sendMessage, connectionStatus, onReconnect, excalidrawAPI,
   onReadOnlyChange, onFollowModeChange,
 }: ControlPanelProps) => {
   const { t } = useTranslation();
@@ -364,7 +367,7 @@ const ControlPanel = ({
           scrollY: appState.scrollY,
           zoom:    appState.zoom,
         });
-      }, 500);
+      }, CONTROL_CONFIG.FOLLOW_BROADCAST_INTERVAL); // BUG-034：接入 constants.ts（原硬编码 500，数值相同）
     } else {
       if (followTimerRef.current) {
         clearInterval(followTimerRef.current);
@@ -604,7 +607,19 @@ const ControlPanel = ({
           <h3 className="font-semibold text-sm">{t('control.panel')}</h3>
           {connectionStatus === 'connected'
             ? <Wifi size={14} className="text-green-500" />
-            : <WifiOff size={14} className="text-red-500" />}
+            /* BUG-036：自动重连耗尽后（error）给一个手动重连按钮 */
+            : connectionStatus === 'error'
+              ? (
+                <button
+                  onClick={onReconnect}
+                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                  title="连接已断开，点击重新连接"
+                >
+                  <WifiOff size={14} />
+                  <RotateCw size={11} />
+                </button>
+              )
+              : <WifiOff size={14} className="text-red-500" />}
         </div>
         <button
           onClick={() => { setCollapsed(true); window.dispatchEvent(new CustomEvent('ctrl_panel_collapsed', { detail: { collapsed: true } })); }}

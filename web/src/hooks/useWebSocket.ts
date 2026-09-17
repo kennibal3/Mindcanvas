@@ -7,7 +7,7 @@ import { useRef, useCallback, useEffect } from 'react';
 import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useWidgetStore } from '@/store/widgetStore';
-import { WS_CONFIG } from '@/utils/constants';
+import { WS_CONFIG, WS_BASE } from '@/utils/constants';
 import type { WSMessage } from '@/types/message';
 
 interface UseWebSocketOptions {
@@ -20,6 +20,8 @@ interface UseWebSocketOptions {
 interface UseWebSocketReturn {
   send: (type: string, payload: Record<string, any>) => void;
   disconnect: () => void;
+  // BUG-036：手动重连——重置重试计数并重新发起连接，供「重新连接」按钮调用
+  reconnect: () => void;
 }
 
 export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn => {
@@ -379,7 +381,8 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
     store.setConnectionStatus('connecting');
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let url = `${protocol}//${window.location.host}/ws/room/${roomId}`;
+    // BUG-034：接入 constants.ts 的 WS_BASE，取代裸字符串 '/ws'
+    let url = `${protocol}//${window.location.host}${WS_BASE}/room/${roomId}`;
     if (uuid && !isTeacher) url += `?uuid=${encodeURIComponent(uuid)}`;
 
     const socket = new WebSocket(url);
@@ -444,6 +447,16 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
     getStore().setConnectionStatus('disconnected');
   }, [stopHeartbeat, getStore]);
 
+  // BUG-036：手动重连按钮调用——重试耗尽后 connect() 里的自动重试已经停止，
+  // 这里清零计数、清掉可能还在排队的自动重试定时器，再复用 connect() 本身重新连接。
+  const reconnect = useCallback(() => {
+    retryCount.current = 0;
+    manualClose.current = false;
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+    if (ws.current) { try { ws.current.close(); } catch { /* 忽略 */ } ws.current = null; }
+    connectRef.current();
+  }, []);
+
   useEffect(() => {
     manualClose.current = false;
     pendingQueue.current = [];
@@ -452,5 +465,5 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId, uuid, isTeacher]);
 
-  return { send, disconnect };
+  return { send, disconnect, reconnect };
 };

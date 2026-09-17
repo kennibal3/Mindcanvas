@@ -163,3 +163,46 @@ html, body, #root {
 }
 
 /* ── 护眼模式 ───────────────────────────────────────────── */
+/* BUG-035：暖色、低对比度、低蓝光的阅读模式。<html> 上加/去 .eye-care-mode
+ * 类即开关（见 web/src/utils/eyeCareMode.ts，DashboardPage「个人设置」里的
+ * 开关调用它，localStorage 持久化，纯前端 UI 偏好，不经后端）。
+ * 沿用暖木主题同一套 --color-* 设计令牌，只替换令牌取值，再额外覆盖几个
+ * 最高频的 Tailwind 白底/深灰字面量类——因为多数页面直接写字面 Tailwind
+ * 类而非引用这些令牌，只换令牌本身在这些页面上看不出效果。
+ * 不改变任何交互逻辑，只影响视觉，不涉及画布/组件本身。 */
+:root.eye-care-mode {
+  --color-bg:            #F3ECD8;
+  --color-surface:       #FBF4E4;
+  --color-border:        #E1D5B4;
+  --color-border-strong: #CDBE93;
+
+  --color-text:          #4A4032;
+  --color-text-muted:    #756A57;
+  --color-text-hint:     #9A8F79;
+
+  --color-success-bg: #E3EFE2; --color-success: #2E6E4C;
+  --color-warning-bg: #F5E7C8; --color-warning: #855A0B;
+  --color-danger-bg:  #F3DEDA; --color-danger:  #9B3D2D;
+  --color-info-bg:    #E2EAE9; --color-info:    #34586E;
+}
+
+.eye-care-mode body,
+.eye-care-mode #root {
+  background-color: var(--color-bg);
+}
+
+/* 覆盖最常用的白底/浅灰底、深灰字 Tailwind 工具类，让暖色主题铺到实际页面
+ * （只动颜色/背景/边框，不动布局、不加 filter，避免影响 fixed 定位元素） */
+.eye-care-mode .bg-white    { background-color: var(--color-surface) !important; }
+.eye-care-mode .bg-gray-50  { background-color: #EFE6CE !important; }
+.eye-care-mode .bg-gray-100 { background-color: #E9DFC3 !important; }
+
+.eye-care-mode .text-gray-900,
+.eye-care-mode .text-gray-800 { color: var(--color-text) !important; }
+.eye-care-mode .text-gray-700,
+.eye-care-mode .text-gray-600 { color: var(--color-text-muted) !important; }
+.eye-care-mode .text-gray-500,
+.eye-care-mode .text-gray-400 { color: var(--color-text-hint) !important; }
+
+.eye-care-mode .border-gray-200,
+.eye-care-mode .border-gray-100 { border-color: var(--color-border) !important; }

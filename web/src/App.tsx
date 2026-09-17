@@ -20,6 +20,8 @@ import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/store/authStore';
+// BUG-035：护眼模式——应用启动时按已保存的偏好应用一次
+import { getEyeCareMode, applyEyeCareModeClass } from '@/utils/eyeCareMode';
 
 // 页面组件
 import LoginPage            from '@/pages/LoginPage';
@@ -83,6 +85,11 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
 const App = () => {
   const { checkAuth } = useAuth();
   const [initialized, setInitialized] = useState(false);
+
+  // BUG-035：应用启动时按已保存的护眼模式偏好应用一次（跨页面/刷新保持一致）
+  useEffect(() => {
+    applyEyeCareModeClass(getEyeCareMode());
+  }, []);
 
   useEffect(() => {
     const init = async () => {

@@ -40,8 +40,9 @@ export const WS_CONFIG = {
 };
 
 /** 文件上传限制 */
+// BUG-033：图片上限统一为 10MB，对齐 DropZoneWidget 原有硬编码值
 export const FILE_LIMITS = {
-  IMAGE_MAX_SIZE: 5 * 1024 * 1024,
+  IMAGE_MAX_SIZE: 10 * 1024 * 1024,
   DOC_MAX_SIZE: 20 * 1024 * 1024,
 };
 
