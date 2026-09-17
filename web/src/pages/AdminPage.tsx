@@ -534,7 +534,7 @@ const AdminPage = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     密码 <span className="text-red-500">*</span>
                   </label>
-                  <input type="text" value={userForm.password}
+                  <input type="password" value={userForm.password}
                     onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
                     className="input" placeholder="至少8位" />
                 </div>

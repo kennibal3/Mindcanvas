@@ -231,9 +231,12 @@ func (h *ShareHandler) SaveTemplate(c *gin.Context) {
 }
 
 // DeleteTemplate 删除模板
-// DELETE /api/rooms/:id/templates/:tid
+// DELETE /api/rooms/:id/templates/:tid 或 DELETE /api/templates/:id（BUG-027：两条路由共用同一 handler）
 func (h *ShareHandler) DeleteTemplate(c *gin.Context) {
 	templateID := c.Param("tid")
+	if templateID == "" {
+		templateID = c.Param("id")
+	}
 	userID, _ := c.Get("user_id")
 
 	if err := h.shareSvc.DeleteTemplate(templateID, userID.(string)); err != nil {

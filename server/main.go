@@ -467,6 +467,7 @@ func main() {
 	{
 		tmpl.GET("", shareHandler.ListTemplates)
 		tmpl.POST("/:id/use", shareHandler.UseTemplate)
+		tmpl.DELETE("/:id", shareHandler.DeleteTemplate) // BUG-027: 修复模板中心删除按钮 404（原路由只在 rooms 分组下）
 	}
 
 	// Phase8 作业评价中心（教师端，需认证）
