@@ -7,45 +7,39 @@
 
 ## 一、会直接影响上课的功能缺陷
 
-### 1. 一人投票，全班变成「已投票」
-- 位置：`web/src/hooks/useWebSocket.ts` 的 `widget_update` 分支 + `web/src/components/widgets/PollingWidget.tsx`
-- 服务端 `ws_handler.go` 用 `room.BroadcastRaw` 把 `widget_update` 广播给全房，消息里带 `from`；但 `useWebSocket` 不看 `from`，无条件给所有客户端派发 `ws_widget_vote_result{confirmed:true}`，`PollingWidget` 的监听器收到即 `markSubmitted(id)`。
-- 后果：任意一人投完票，房间里其他学生的投票组件全部切到「已提交」，再也投不了。
-- 修法：派发前比对 `msg.from` 与本人 uuid。
-
-### 2. 模板中心「删除模板」按钮必然失败
+### 1. 模板中心「删除模板」按钮必然失败
 - 位置：`web/src/pages/DashboardPage.tsx` `handleDeleteTemplate`
 - 前端打 `DELETE /api/templates/{id}`；`server/main.go` 的 `/api/templates` 组只注册了 `GET ""` 与 `POST /:id/use`，删除路由在 `/api/rooms/:id/templates/:tid`。
 - 后果：404，前端只弹「删除失败」。
 
-### 3. 协作墙学生留言全部显示「匿名」
+### 2. 协作墙学生留言全部显示「匿名」
 - 位置：`web/src/components/canvas/FloatingWidgets.tsx` 渲染 `ShelfWidget` 处
 - 传了 `elementId/roomId/payload/isTeacher/studentUUID/onUpdate/onDelete`，唯独漏传 `studentName`，每条回复以空 `author_name` 入库。
 
-### 4. 学生端房间标题恒为「课堂」
+### 3. 学生端房间标题恒为「课堂」
 - 位置：`web/src/pages/RoomPage.tsx` 学生分支
 - 不请求房间接口，本地伪造 room 对象，`title` 读 `localStorage.getItem('mc_room_title')`，而全仓没有任何地方写过这个 key。锁定/只读也先给 `false`，真值要等 `room_sync`。
 
-### 5. 学生改昵称/头像是纯本地的
+### 4. 学生改昵称/头像是纯本地的
 - 位置：`web/src/pages/RoomPage.tsx` `EditProfileModal.handleSave`
 - 只写 `localStorage` 再回调，不发接口也不走 WebSocket。学生自己看到新名字，老师和同学看到的还是入场时那个。
 
-### 6. 问答组件的提交确认方向与投票相反
+### 5. 问答组件的提交确认方向与投票相反
 - 位置：`web/src/components/widgets/QAWidget.tsx`
 - 点击即本地 `markSubmitted`，不监听 `ws_widget_vote_result`。服务端 `widget_error` 拒绝后学生卡在「已提交」无法重试。
 - 另：`selected` 只在内存，刷新后 `room_sync` 能补回「已提交」标记却补不回选了哪项，此时教师公布结果，该学生一律显示「回答错误」。
 
-### 7. InsightPanel 前后端字段名全线对不上
+### 6. InsightPanel 前后端字段名全线对不上
 - 位置：`web/src/components/teacher/InsightPanel.tsx` vs `server/services/insight_service.go`
 - 组件读 `type` / 后端发 `widget_type`；读 `title/total_answers/correct_count/correct_rate` / 后端发 `question/total/correct/rate`；小组与 Top5 读 `action_count` / 后端发 `count`；未提交按扁平学生数组读而后端按组件分组。
 - 因为处处 `??` 兜底所以不报错，只是正确率恒 0%、次数恒 0、姓名恒空。
 
-### 8. ControlPanel 的「编辑流程」其实是创建模式
+### 7. ControlPanel 的「编辑流程」其实是创建模式
 - 位置：`web/src/components/teacher/ControlPanel.tsx`
 - `currentFlow` 只在保存回调里赋值，初始恒为 `null`，保存会走 `createFlow`，把房间原有流程一并归档成 finished。
 - 另：`MemberList` 只收到 `members/onKick/kickLoading`，没传 `onGatherOne` 与 `onBan`，成员菜单里那两项永远不渲染。
 
-### 9. 教师带 `?uuid=` 打开房间会被降权成学生
+### 8. 教师带 `?uuid=` 打开房间会被降权成学生
 - 位置：`web/src/pages/RoomPage.tsx`，`isTeacher = !!user && !urlUuid`
 
 ---
@@ -90,11 +84,3 @@
 3. **`useAuth.checkAuth` 只要非 200 或抛异常就 `clearUser`**，网络抖动会被当成未登录。
 4. **`roomStore.updateElement` 只在 `payload` 顶层浅合并**，嵌套对象整块替换；`removeElement` 直接从数组剔除而非置 `is_deleted`。
 5. **`widgetStore` 无持久化**，刷新或断线重连后已提交状态全清，靠 `room_sync` 的 `my_submissions` / `my_word_submissions` 补回。
-
----
-
-## 六、索引自身的遗留项
-
-需要一次 `cognition_optimization` 维护通道处理（CLI：`aoci maintain --intent cognition_optimization`）：
-- `scripts/backup.sh` 的 S 含演进叙述（「改为……原设计……」），应改写成描述当前状态。
-- `lecture_handler.go` 的 R 有一处重复前缀 `code:code:`。
