@@ -222,7 +222,12 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
             // 三层嵌套，导致组件 extractInner() 读错层级、业务字段全部丢失
             store.updateElement(elemId, widgetPayload);
           }
-          if (elemId) {
+          // BUG修复：widget_update 是 room.BroadcastRaw 广播给全房间的，
+          // 消息里带 from（提交者 uuid）；只有提交者本人才该收到
+          // ws_widget_vote_result 已提交确认，否则任意一人投票会让全房间
+          // 学生的投票/问答组件一起被 markSubmitted，别人再也提交不了
+          const fromUuid = msg.from || msg.sender_uuid || '';
+          if (elemId && fromUuid && fromUuid === uuid) {
             window.dispatchEvent(new CustomEvent('ws_widget_vote_result', {
               detail: { element_id: elemId, confirmed: true, payload: widgetPayload },
             }));
