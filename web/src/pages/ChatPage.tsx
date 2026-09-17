@@ -9,7 +9,7 @@ import {
   Settings, Plus, Trash2, Upload, FileText,
   ChevronLeft, X, Brain, Sparkles,
   MessageSquare, ToggleLeft, ToggleRight, Loader2,
-  BookOpen, User, Menu, Key, Palette,
+  BookOpen, User, Menu, Palette,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
@@ -198,11 +198,6 @@ const ChatPage: React.FC = () => {
     setShowThemePicker(false);
   };
 
-  // API Key
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('victoria_api_key') || '');
-  const [showKeyInput, setShowKeyInput] = useState(false);
-  const [tempKey, setTempKey] = useState('');
-
   // 人设
   const [persona, setPersona] = useState<Persona | null>(null);
   const [showPersona, setShowPersona] = useState(false);
@@ -284,7 +279,6 @@ const ChatPage: React.FC = () => {
 
   const sendMessage = async () => {
     if (!input.trim() || sending) return;
-    if (!apiKey) { setShowKeyInput(true); return; }
     if (!currentSid) {
       try {
         const data = await api('POST', '/sessions', {});
@@ -311,7 +305,7 @@ const ChatPage: React.FC = () => {
     setMessages(prev => [...prev, tempUserMsg]);
     try {
       const data = await api('POST', `/sessions/${sid}/send`, {
-        content: userContent, api_key: apiKey,
+        content: userContent,
       });
       const aiMsg: Message = {
         id: data.reply_id || 'temp-ai-' + Date.now(),
@@ -371,15 +365,6 @@ const ChatPage: React.FC = () => {
     if (!confirm('从记忆库删除此文件？')) return;
     try { await api('DELETE', `/memory/files/${fid}`); await loadMemFiles(); } catch {}
   };
-  const saveAPIKey = () => {
-    if (tempKey.trim()) {
-      localStorage.setItem('victoria_api_key', tempKey.trim());
-      setApiKey(tempKey.trim());
-    }
-    setShowKeyInput(false);
-    setTempKey('');
-  };
-
   const fmtSize = (bytes: number) => {
     if (bytes < 1024) return bytes + 'B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
@@ -465,8 +450,6 @@ const ChatPage: React.FC = () => {
             <SideBtn t={t} icon={<Brain size={15} />} label="记忆文件库"
               extra={activeFileCount > 0 ? <span style={{ background: t.accent, color: t.accentInk, fontSize: 11, padding: '1px 7px', borderRadius: 10, fontWeight: 700 }}>{activeFileCount}</span> : null}
               onClick={() => { setShowMemory(true); loadMemFiles(); }} />
-            <SideBtn t={t} icon={<Key size={15} />} label={apiKey ? `API Key ••••${apiKey.slice(-4)}` : 'API Key 未设置'}
-              onClick={() => { setTempKey(apiKey); setShowKeyInput(true); }} />
           </div>
         </div>
       )}
@@ -653,30 +636,6 @@ const ChatPage: React.FC = () => {
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
             <ModalBtn t={t} variant="ghost" onClick={() => setShowPersona(false)}>取消</ModalBtn>
             <ModalBtn t={t} variant="solid" onClick={savePersona}>保存人设</ModalBtn>
-          </div>
-        </Modal>
-      )}
-
-      {/* ===== API Key 弹窗 ===== */}
-      {showKeyInput && (
-        <Modal t={t} onClose={() => setShowKeyInput(false)} title="设置 API Key 🔑" maxW={380}>
-          <p style={{ fontSize: 12, color: t.inkSoft, marginBottom: 16 }}>
-            API Key 仅存储在本地浏览器，不会上传到服务器，安全可放心使用。
-          </p>
-          <input type="password" value={tempKey} placeholder="sk-..." autoFocus
-            onChange={e => setTempKey(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && saveAPIKey()}
-            style={{ width: '100%', border: `2px dashed ${t.border}`, borderRadius: 12, padding: '11px 12px', fontSize: 14, background: t.bg, color: t.ink, outline: 'none', marginBottom: 16, boxSizing: 'border-box' }} />
-          {apiKey && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, padding: 10, background: t.accentSoft, borderRadius: 12 }}>
-              <span style={{ fontSize: 12, color: t.accentInk }}>当前Key: ••••{apiKey.slice(-8)}</span>
-              <button onClick={() => { localStorage.removeItem('victoria_api_key'); setApiKey(''); setShowKeyInput(false); }}
-                style={{ marginLeft: 'auto', fontSize: 12, color: '#c0524a', border: 'none', background: 'transparent', cursor: 'pointer' }}>清除</button>
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <ModalBtn t={t} variant="ghost" onClick={() => setShowKeyInput(false)}>取消</ModalBtn>
-            <ModalBtn t={t} variant="solid" onClick={saveAPIKey} disabled={!tempKey.trim()}>保存</ModalBtn>
           </div>
         </Modal>
       )}

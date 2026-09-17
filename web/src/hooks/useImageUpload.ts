@@ -6,6 +6,7 @@
 import { useState, useCallback } from 'react';
 import { useRoomStore } from '@/store/roomStore';
 import { useAuthStore } from '@/store/authStore';
+import { FILE_LIMITS, IMAGE_MIMES } from '@/utils/constants';
 
 export interface UploadResult {
   id: string;
@@ -23,8 +24,9 @@ interface UseImageUploadReturn {
   reset: () => void;
 }
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
-const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+// BUG-033/BUG-034：接入 constants.ts 的共享上限，与 DropZoneWidget 统一为 10MB
+const MAX_IMAGE_SIZE = FILE_LIMITS.IMAGE_MAX_SIZE;
+const ALLOWED_MIMES = IMAGE_MIMES;
 
 export function useImageUpload(): UseImageUploadReturn {
   const [uploading, setUploading] = useState(false);
@@ -46,7 +48,7 @@ export function useImageUpload(): UseImageUploadReturn {
       return null;
     }
     if (file.size > MAX_IMAGE_SIZE) {
-      setError('图片大小不能超过 5MB');
+      setError(`图片大小不能超过 ${MAX_IMAGE_SIZE / 1024 / 1024}MB`);
       return null;
     }
 

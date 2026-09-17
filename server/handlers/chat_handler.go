@@ -306,7 +306,8 @@ type claudeMessage struct {
 }
 
 // callClaude 调用AI - 已切换至豆包Doubao
-func callClaude(apiKey, systemPrompt string, messages []claudeMessage, maxTokens int) (string, error) {
+// BUG-032：不再接受调用方传入的 API Key，统一读服务器端 ARK_API_KEY
+func callClaude(systemPrompt string, messages []claudeMessage, maxTokens int) (string, error) {
 	if maxTokens <= 0 {
 		maxTokens = 1024
 	}
@@ -437,13 +438,12 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 
 	var req struct {
 		Content string `json:"content" binding:"required"`
-		APIKey  string `json:"api_key"` // 前端传入，不存库
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Content) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "消息内容不能为空"})
 		return
 	}
-	// API Key 由服务器端统一管理
+	// BUG-032：API Key 由服务器端统一管理（ARK_API_KEY），不再接受客户端传入
 
 	// 验证会话归属
 	var ownerID string
@@ -485,7 +485,7 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 
 	// 调用Claude
 	_chatStartAt := time.Now()
-	aiReply, err := callClaude(req.APIKey, systemPrompt, contextMsgs, 2048)
+	aiReply, err := callClaude(systemPrompt, contextMsgs, 2048)
 	if err != nil {
 		log.Printf("[Chat] Claude调用失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("AI回复失败: %v", err)})
@@ -529,7 +529,7 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	// 检查是否需要压缩记忆
 	shouldCompress := newTurn > 0 && newTurn%compressEvery == 0
 	if shouldCompress {
-		go h.compressMemory(sid, userID, req.APIKey, personaName)
+		go h.compressMemory(sid, userID, personaName)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -603,7 +603,7 @@ func buildSystemPrompt(personaName, personaDesc, memorySummary, fileMemory strin
 }
 
 // compressMemory 压缩历史记忆（异步执行）
-func (h *ChatHandler) compressMemory(sid, userID, apiKey, personaName string) {
+func (h *ChatHandler) compressMemory(sid, userID, personaName string) {
 	log.Printf("[Chat] 开始压缩记忆 session:%s", sid)
 
 	// 获取所有未压缩消息
@@ -659,7 +659,7 @@ func (h *ChatHandler) compressMemory(sid, userID, apiKey, personaName string) {
 		{Role: "user", Content: convText.String()},
 	}
 
-	newSummary, err := callClaude(apiKey, compressPrompt, compressMsgs, 512)
+	newSummary, err := callClaude(compressPrompt, compressMsgs, 512)
 	if err != nil {
 		log.Printf("[Chat] 压缩：Claude调用失败: %v", err)
 		return

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useRoomStore } from '@/store/roomStore';
 import type { DropzonePayload, Submission } from '@/types/widget';
+import { FILE_LIMITS } from '@/utils/constants';
 
 const PRESET_TAGS = ['优秀', '有创意', '待改进', '需讨论'] as const;
 
@@ -190,7 +191,11 @@ export const DropZoneWidget: React.FC<Props> = ({
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !canSubmitMore) return;
-    if (file.size > 10 * 1024 * 1024) { setSubmitError('图片不能超过 10MB'); return; }
+    // BUG-033：与 useImageUpload 统一接入 constants.ts 的共享上限
+    if (file.size > FILE_LIMITS.IMAGE_MAX_SIZE) {
+      setSubmitError(`图片不能超过 ${FILE_LIMITS.IMAGE_MAX_SIZE / 1024 / 1024}MB`);
+      return;
+    }
     setUploading(true); setSubmitError('');
     const formData = new FormData();
     formData.append('image', file);

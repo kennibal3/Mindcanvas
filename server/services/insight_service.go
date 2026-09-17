@@ -43,11 +43,12 @@ func NewInsightService(db *sql.DB, rdb *redis.Client, hub interface {
 // ---- 数据结构 ------------------------------------------------
 
 // ComponentInsight 单个互动组件的参与统计
+// BUG-031：json 标签对齐前端 InsightPanel.tsx 的 ComponentStat（type 而非 widget_type）
 type ComponentInsight struct {
 	ElementID   string  `json:"element_id"`
-	Title       string  `json:"title"`       // 组件标题（问题/提示语）
-	WidgetType  string  `json:"widget_type"` // polling_widget / wordcloud_widget / qa_widget / dropzone_widget
-	Status      string  `json:"status"`      // draft/open/paused/closed
+	Title       string  `json:"title"`  // 组件标题（问题/提示语）
+	WidgetType  string  `json:"type"`   // polling_widget / wordcloud_widget / qa_widget / dropzone_widget
+	Status      string  `json:"status"` // draft/open/paused/closed
 	Submitted   int     `json:"submitted"`   // 已提交人数
 	Total       int     `json:"total"`       // 在线人数（作为分母）
 	Rate        float64 `json:"rate"`        // 参与率 0~1
@@ -59,21 +60,14 @@ type UnsubmittedStudent struct {
 	Nickname string `json:"nickname"`
 }
 
-// UnsubmittedInfo 某组件的未提交信息
-type UnsubmittedInfo struct {
-	ElementID  string               `json:"element_id"`
-	Title      string               `json:"title"`
-	WidgetType string               `json:"widget_type"`
-	Students   []UnsubmittedStudent `json:"students"`
-}
-
 // QAStat 问答组件正确率统计
+// BUG-031：json 标签对齐前端 InsightPanel.tsx 的 QAStat
 type QAStat struct {
 	ElementID string  `json:"element_id"`
-	Question  string  `json:"question"`
-	Total     int     `json:"total"`
-	Correct   int     `json:"correct"`
-	Rate      float64 `json:"rate"`
+	Question  string  `json:"title"`
+	Total     int     `json:"total_answers"`
+	Correct   int     `json:"correct_count"`
+	Rate      float64 `json:"correct_rate"`
 }
 
 // WordFreq 词频统计
@@ -83,17 +77,19 @@ type WordFreq struct {
 }
 
 // GroupActivity 小组活跃度
+// BUG-031：json 标签对齐前端 InsightPanel.tsx 的 GroupActivity（action_count 而非 count）
 type GroupActivity struct {
 	GroupID   string `json:"group_id"`
 	GroupName string `json:"group_name"`
-	Count     int    `json:"count"` // 互动次数
+	Count     int    `json:"action_count"` // 互动次数
 }
 
 // TopStudent Top5学生
+// BUG-031：json 标签对齐前端 InsightPanel.tsx 的 TopStudent（action_count 而非 count）
 type TopStudent struct {
 	UUID     string `json:"uuid"`
 	Nickname string `json:"nickname"`
-	Count    int    `json:"count"` // 互动次数
+	Count    int    `json:"action_count"` // 互动次数
 }
 
 // ---- REQ-043 Slice-3：HTML 课件互动统计 ----
@@ -143,7 +139,8 @@ type InsightData struct {
 	OnlineClients []map[string]interface{} `json:"online_clients"`
 	TotalJoined   int                  `json:"total_joined"`   // 历史累计进入人数
 	Components    []ComponentInsight   `json:"components"`
-	Unsubmitted   []UnsubmittedInfo    `json:"unsubmitted"`
+	// BUG-031：改为跨开放组件去重后的扁平学生数组，对齐前端 InsightPanel.tsx 的 UnsubmittedStudent[]
+	Unsubmitted   []UnsubmittedStudent `json:"unsubmitted"`
 	QAStats       []QAStat             `json:"qa_stats"`
 	TopWords      []WordFreq           `json:"top_words"`
 	GroupActivity []GroupActivity      `json:"group_activity"`
@@ -335,7 +332,9 @@ func (s *InsightService) buildComponentInsights(roomID string, onlineCount int) 
 
 // buildUnsubmitted 找出开放中组件的未提交学生
 // ⭐ 基于当前在线学生列表（排除教师）
-func (s *InsightService) buildUnsubmitted(roomID string, onlineClients []map[string]interface{}) ([]UnsubmittedInfo, error) {
+// BUG-031：前端 InsightPanel.tsx 按扁平学生数组渲染（不区分组件），这里改为
+// 跨所有「开放中」组件取并集去重后返回，只要有一个开放组件未提交就算入名单。
+func (s *InsightService) buildUnsubmitted(roomID string, onlineClients []map[string]interface{}) ([]UnsubmittedStudent, error) {
 	// 收集在线学生（排除教师角色）
 	type onlineStudent struct {
 		uuid     string
@@ -354,12 +353,12 @@ func (s *InsightService) buildUnsubmitted(roomID string, onlineClients []map[str
 		}
 	}
 	if len(students) == 0 {
-		return []UnsubmittedInfo{}, nil
+		return []UnsubmittedStudent{}, nil
 	}
 
 	// 查询状态为 open 的互动组件
 	rows, err := s.db.Query(`
-		SELECT id, type, payload
+		SELECT id, type
 		FROM room_elements
 		WHERE room_id = $1
 		  AND type IN ('polling_widget','wordcloud_widget','qa_widget','dropzone_widget')
@@ -370,24 +369,14 @@ func (s *InsightService) buildUnsubmitted(roomID string, onlineClients []map[str
 	}
 	defer rows.Close()
 
-	var result []UnsubmittedInfo
+	// 跨组件去重的未提交学生集合（保留首次出现顺序）
+	unsubmittedSet := make(map[string]UnsubmittedStudent)
+	var order []string
+
 	for rows.Next() {
 		var elemID, elemType string
-		var payloadBytes []byte
-		if err := rows.Scan(&elemID, &elemType, &payloadBytes); err != nil {
+		if err := rows.Scan(&elemID, &elemType); err != nil {
 			continue
-		}
-
-		// 获取标题
-		title := ""
-		var p map[string]interface{}
-		if json.Unmarshal(payloadBytes, &p) == nil {
-			for _, key := range []string{"question", "prompt", "title"} {
-				if v, ok := p[key].(string); ok && v != "" {
-					title = v
-					break
-				}
-			}
 		}
 
 		// 查询已提交的学生 UUID 集合
@@ -406,25 +395,21 @@ func (s *InsightService) buildUnsubmitted(roomID string, onlineClients []map[str
 		}
 		submittedRows.Close()
 
-		// 找出在线但未提交的学生
-		var unsubStudents []UnsubmittedStudent
-		for _, s := range students {
-			if !submitted[s.uuid] {
-				unsubStudents = append(unsubStudents, UnsubmittedStudent{
-					UUID:     s.uuid,
-					Nickname: s.nickname,
-				})
+		// 找出在线但未提交的学生，并入总集合
+		for _, st := range students {
+			if submitted[st.uuid] {
+				continue
+			}
+			if _, ok := unsubmittedSet[st.uuid]; !ok {
+				unsubmittedSet[st.uuid] = UnsubmittedStudent{UUID: st.uuid, Nickname: st.nickname}
+				order = append(order, st.uuid)
 			}
 		}
+	}
 
-		if len(unsubStudents) > 0 {
-			result = append(result, UnsubmittedInfo{
-				ElementID:  elemID,
-				Title:      title,
-				WidgetType: elemType,
-				Students:   unsubStudents,
-			})
-		}
+	result := make([]UnsubmittedStudent, 0, len(order))
+	for _, uuid := range order {
+		result = append(result, unsubmittedSet[uuid])
 	}
 	return result, nil
 }

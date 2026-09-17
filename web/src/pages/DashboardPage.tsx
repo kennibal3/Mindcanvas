@@ -14,10 +14,13 @@ import {
   Plus, Copy, Trash2, Lock, Users, LogOut, Settings,
   Check, Pencil, Calendar, UserCircle, Eye, EyeOff,
   LayoutTemplate, BookOpen, Globe, Star, MessageSquare, GraduationCap, Link2,
+  ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import type { Room, CollabMode } from '@/types/room';
 import { ROOM_MODE_LABELS, COLLAB_MODE_OPTIONS } from '@/types/room';
 import { listClasses, type Class } from '@/utils/classApi';
+// BUG-035：护眼模式开关
+import { getEyeCareMode, setEyeCareMode } from '@/utils/eyeCareMode';
 
 const API_BASE = '/api';
 
@@ -76,6 +79,13 @@ const DashboardPage = () => {
   const [profileAvatarUploading, setProfileAvatarUploading] = useState(false);
   const [profileAvatarErr, setProfileAvatarErr] = useState('');
   const profileAvatarInputRef = useRef<HTMLInputElement>(null);
+  // BUG-035：护眼模式——纯前端偏好，点击即生效+持久化，不随「保存」按钮走后端
+  const [eyeCareMode, setEyeCareModeState] = useState(() => getEyeCareMode());
+  const handleToggleEyeCareMode = () => {
+    const next = !eyeCareMode;
+    setEyeCareMode(next);
+    setEyeCareModeState(next);
+  };
 
   // ===== 模板中心状态 =====
   const [activeTab, setActiveTab] = useState<DashTab>('rooms');
@@ -1101,6 +1111,25 @@ const DashboardPage = () => {
                   className="hidden"
                   onChange={handleProfileAvatarChange}
                 />
+              </div>
+              {/* BUG-035：护眼模式开关——纯前端 UI 偏好，点击立即生效，不随下方"保存"按钮走后端 */}
+              <div className="flex items-center justify-between py-1 border-t pt-4">
+                <div>
+                  <div className="text-sm text-gray-700">护眼模式</div>
+                  <div className="text-xs text-gray-400 mt-0.5">暖色低对比度背景，减少屏幕蓝光刺激</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleEyeCareMode}
+                  className={`relative flex-shrink-0 ml-4 transition-colors ${
+                    eyeCareMode ? 'text-amber-700' : 'text-gray-300'
+                  }`}
+                  title="护眼模式"
+                >
+                  {eyeCareMode
+                    ? <ToggleRight size={32} className="text-amber-700" />
+                    : <ToggleLeft size={32} className="text-gray-300" />}
+                </button>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">显示名称</label>
