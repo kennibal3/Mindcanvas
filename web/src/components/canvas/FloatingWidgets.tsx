@@ -425,6 +425,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                       payload={innerPayload}
                       isTeacher={isTeacher}
                       studentUUID={isTeacher ? undefined : currentUserUUID}
+                      studentName={isTeacher ? undefined : (localStorage.getItem('mc_nickname') || '学生')}  // BUG-028: 补上被漏传的作者昵称，修复协作墙学生留言恒显示「匿名」
                       onUpdate={(p) => handleElementUpdate(element.id, { payload: p })}
                       // REQ-035-a：单独传 onDelete 而不是让 ShelfWidget 复用 onUpdate({__delete:true})——
                       // 上面这个 onUpdate 会把参数包进 { payload: p }，__delete 标记会被包在 payload 里，

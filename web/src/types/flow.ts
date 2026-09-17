@@ -89,10 +89,20 @@ export interface AdvanceFlowRequest {
   target_index?: number;
 }
 
+/**
+ * 生成节点 id：优先用 crypto.randomUUID()，非 HTTPS 局域网访问下该 API 不存在时降级
+ * 为时间戳+随机串（BUG-029），避免老师在内网直连房间时点"新增节点"直接抛错。
+ */
+function safeNodeId(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `node_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /** 生成默认节点 */
 export function createDefaultNode(type: FlowNodeType = 'lecture'): FlowNode {
   return {
-    id: crypto.randomUUID(),
+    id: safeNodeId(),
     type,
     title: FLOW_NODE_TYPES[type].label,
     duration: type === 'break' ? 5 : type === 'interaction' ? 8 : 10,
