@@ -568,7 +568,16 @@ const DashboardPage = () => {
               className="text-sm text-gray-500 hover:text-amber-700 flex items-center gap-1 transition-colors"
               title="个人设置"
             >
-              <UserCircle size={16} />
+              {/* BUG-037：已上传头像时在顶部导航展示真实头像，而非固定的通用图标 */}
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt="头像"
+                  className="w-5 h-5 rounded-full object-cover border border-gray-200 flex-shrink-0"
+                />
+              ) : (
+                <UserCircle size={16} />
+              )}
               <span className="hidden sm:inline max-w-[120px] truncate">{user?.display_name}</span>
             </button>
             <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full hidden sm:block">
