@@ -54,11 +54,18 @@ export const useAuth = () => {
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
-      } else {
+      } else if (res.status === 401 || res.status === 403) {
+        // 明确的未登录/无权限响应才清用户
         clearUser();
+      } else {
+        // BUG-043：其他状态码（5xx 等网关/服务端抖动）不是"未登录"，
+        // 保留当前登录状态，只关掉 loading，避免误判登出
+        setLoading(false);
       }
     } catch {
-      clearUser();
+      // BUG-043：fetch 抛异常（网络抖动/超时/CORS）同样不是"未登录"，
+      // 此前一律 clearUser() 会把短暂断网的老师直接踢回登录页
+      setLoading(false);
     }
   }, [setUser, clearUser, setLoading]);
 

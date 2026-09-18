@@ -284,8 +284,10 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
         }
 
         case 'ctrl_kick': {
+          // BUG-042：改用 sessionStorage 传递原因 + JoinPage 的非阻塞错误横幅，
+          // 不再用 alert() 冻结页面（反正马上就要跳转，不需要用户先手动关掉弹窗）。
           const reason = msg.reason || msg.payload?.reason || '';
-          alert(`您已被移出房间：${reason}`);
+          sessionStorage.setItem('mc_kick_reason', `您已被移出房间：${reason}`);
           localStorage.removeItem('mc_uuid');
           window.location.href = '/join';
           return;

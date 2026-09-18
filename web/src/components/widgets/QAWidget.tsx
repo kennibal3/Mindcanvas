@@ -3,7 +3,7 @@
 // REQ-020修复：固定白色背景，移除所有 dark: 前缀 class
 // V4.3-STABLE：onUpdate 传 inner+changes，不产生三层嵌套
 // =============================================================
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Play, StopCircle, Eye, EyeOff,
   BookOpen, BookOpenCheck, Trash2,
@@ -56,6 +56,29 @@ const QAWidget: React.FC<QAWidgetProps> = ({
   const { isSubmitted, markSubmitted } = useWidgetStore()
   const [selected, setSelected]       = useState<number | null>(null)
   const [submitting, setSubmitting]   = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  // BUG-039：此前提交即本地 markSubmitted，不等服务端确认；服务端答题走的是与
+  // 投票/词云完全相同的 widget_update(from本人确认)/widget_error 广播路径
+  // （本轮已修好 msg.from 比对），QAWidget 只是从未接这个事件。照抄
+  // PollingWidget.tsx 的监听模式：确认了才算提交成功，被拒就把状态吐还给学生重试。
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.element_id !== id) return
+      if (detail?.confirmed) {
+        markSubmitted(id)
+        setSubmitting(false)
+        setSubmitError('')
+      } else if (detail?.error) {
+        setSubmitting(false)
+        setSubmitError(detail.error)
+        setSelected(null)
+      }
+    }
+    window.addEventListener('ws_widget_vote_result', handler)
+    return () => window.removeEventListener('ws_widget_vote_result', handler)
+  }, [id, markSubmitted])
 
   // 提取内层业务字段（兼容嵌套/平铺）
   const inner = extractInner(payload)
@@ -95,15 +118,13 @@ const QAWidget: React.FC<QAWidgetProps> = ({
   const handleToggleExplanation = () => updateInner({ showExplanation: !showExplanation })
   const handleDelete            = () => onUpdate({ __delete: true })
 
-  const handleSubmit = async () => {
-    if (selected === null || hasSubmitted || submitting) return
+  const handleSubmit = () => {
+    if (selected === null || hasSubmitted || submitting || !onSubmit) return
     setSubmitting(true)
-    try {
-      onSubmit?.('answer', { choice_idx: selected })
-      markSubmitted(id)
-    } finally {
-      setSubmitting(false)
-    }
+    setSubmitError('')
+    onSubmit('answer', { choice_idx: selected })
+    // 3 秒兜底：万一 WS 确认丢失（如短暂断线），不让按钮永久卡死在提交中
+    setTimeout(() => { setSubmitting(false) }, 3000)
   }
 
   // 统计图（教师视图）—— REQ-020：移除所有 dark: class
@@ -273,6 +294,12 @@ const QAWidget: React.FC<QAWidgetProps> = ({
         >
           {submitting ? '提交中...' : '提交答案'}
         </button>
+      )}
+
+      {!isTeacher && submitError && (
+        <div className="mt-2 text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2 text-center">
+          ⚠️ {submitError}
+        </div>
       )}
 
       {!isTeacher && hasSubmitted && !showResult && (

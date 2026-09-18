@@ -399,7 +399,12 @@ const RoomPage = () => {
     }
 
     if (msg.type === 'room_sync' && msg.payload?.room) {
-      setCurrentRoom(msg.payload.room);
+      // BUG-038：服务端此前从未发过 room 字段，学生端标题/模式永远是本地假造值。
+      // 用合并而非整体替换，避免覆盖掉本地对象里服务端未提供的字段（如 max_capacity）；
+      // setCurrentRoom 是 Zustand store 的直接赋值 setter（不支持函数式更新），
+      // 用 getState() 取当下最新值，避免这个 useCallback 闭包里的 currentRoom 过期。
+      const prevRoom = useRoomStore.getState().currentRoom;
+      setCurrentRoom(prevRoom ? { ...prevRoom, ...msg.payload.room } : msg.payload.room);
     }
   }, [isTeacher, setFollowMode]);
 
