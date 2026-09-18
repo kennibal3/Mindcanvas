@@ -39,6 +39,7 @@ import FlowController from './FlowController';
 import FlowEditor from './FlowEditor';
 import SharePublishModal from '@/components/share/SharePublishModal';
 import type { TeachingFlow } from '@/types/flow';
+import { getFlow } from '@/utils/flowApi';
 import type { CanvasElement } from '@/types/canvas';
 
 const API_BASE = '/api';
@@ -324,6 +325,19 @@ const ControlPanel = ({
   const [backgroundColor, setBackgroundColor] = useState('#ffffff');
   const [showFlowEditor, setShowFlowEditor] = useState(false);
   const [currentFlow, setCurrentFlow]       = useState<TeachingFlow | null>(null);
+
+  // BUG-040：currentFlow 此前只在「保存流程」的回调里赋值，初始恒为 null。
+  // FlowEditor 以 existingFlow 是否为空判断创建/编辑（existingFlow ? updateFlow : createFlow），
+  // 而后端 createFlow 会把房间原有 draft/active 流程归档为 finished——
+  // 结果是老师只要不是"创建后当场就改"，中途刷新过页面/换过会话再点"编辑课堂流程"保存，
+  // 就是在悄悄归档替换掉原流程而不是编辑它。挂载时补一次真实拉取。
+  useEffect(() => {
+    let cancelled = false;
+    getFlow(roomId)
+      .then(data => { if (!cancelled) setCurrentFlow(data.flow); })
+      .catch(err => console.error('[ControlPanel] 加载课堂流程失败:', err));
+    return () => { cancelled = true; };
+  }, [roomId]);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
 

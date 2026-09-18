@@ -44,6 +44,16 @@ const JoinPage = () => {
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
 
+  // BUG-042：读一次「被踢出房间」的原因（useWebSocket.ts 的 ctrl_kick 分支写入），
+  // 展示为已有的错误横幅后立即清掉，不重复出现。
+  useEffect(() => {
+    const kickReason = sessionStorage.getItem('mc_kick_reason');
+    if (kickReason) {
+      setError(kickReason);
+      sessionStorage.removeItem('mc_kick_reason');
+    }
+  }, []);
+
   // 监听视口高度变化判断键盘是否弹出
   useEffect(() => {
     const initialHeight = window.innerHeight;

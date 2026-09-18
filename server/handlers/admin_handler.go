@@ -510,6 +510,10 @@ func (h *AdminHandler) ExportRoomStatsCSV(c *gin.Context) {
 	currentRole := middleware.GetRole(c)
 	currentTenantID := middleware.GetTenantID(c)
 
+	// BUG-041：此前完全不读这个参数，超管在页面按机构筛选后导出的 CSV 仍是全部机构。
+	// 与 GetRoomStats（房间统计列表接口）的筛选逻辑对齐。
+	filterTenantID := c.Query("tenant_id")
+
 	var query string
 	var args []interface{}
 
@@ -528,7 +532,12 @@ func (h *AdminHandler) ExportRoomStatsCSV(c *gin.Context) {
 	`
 
 	if currentRole == "superadmin" {
-		query = baseQuery + " GROUP BY u.id, t.name ORDER BY total_rooms DESC"
+		if filterTenantID != "" {
+			query = baseQuery + " AND u.tenant_id = $1 GROUP BY u.id, t.name ORDER BY total_rooms DESC"
+			args = []interface{}{filterTenantID}
+		} else {
+			query = baseQuery + " GROUP BY u.id, t.name ORDER BY total_rooms DESC"
+		}
 	} else {
 		query = baseQuery + " AND u.tenant_id = $1 GROUP BY u.id, t.name ORDER BY total_rooms DESC"
 		args = []interface{}{currentTenantID}

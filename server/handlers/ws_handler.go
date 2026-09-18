@@ -306,11 +306,11 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		h.db.QueryRow("SELECT COALESCE(avatar_url,'') FROM users WHERE id=$1", userID).Scan(&avatarURL)
 	}
 
-	var roomStatus string
+	var roomStatus, roomTitle, roomMode, collabMode string
 	var isLocked, isReadOnly bool
 	if err := h.db.QueryRow(
-		"SELECT status, is_locked, is_readonly FROM rooms WHERE id=$1", roomID,
-	).Scan(&roomStatus, &isLocked, &isReadOnly); err != nil {
+		"SELECT status, is_locked, is_readonly, title, room_mode, collab_mode FROM rooms WHERE id=$1", roomID,
+	).Scan(&roomStatus, &isLocked, &isReadOnly, &roomTitle, &roomMode, &collabMode); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "房间不存在"})
 		return
 	}
@@ -386,8 +386,19 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			}
 		}
 		syncBytes, _ := json.Marshal(map[string]interface{}{
-			"type":             ws.MsgRoomSync,
-			"room_id":          roomID,
+			"type":    ws.MsgRoomSync,
+			"room_id": roomID,
+			// BUG-038：学生端此前完全没有真实房间信息来源，RoomPage.tsx 早已在等
+			// msg.payload.room 这个字段（写于 REQ-004 前后）但服务端从未发过，
+			// title 只能靠本地假造的 mc_room_title（从未被写入过）永远显示"课堂"。
+			"room": map[string]interface{}{
+				"id":          roomID,
+				"title":       roomTitle,
+				"is_locked":   isLocked,
+				"is_readonly": isReadOnly,
+				"room_mode":   roomMode,
+				"collab_mode": collabMode,
+			},
 			"excalidraw_scene": sceneData,
 			"elements":         elements,
 			"is_locked":        isLocked,

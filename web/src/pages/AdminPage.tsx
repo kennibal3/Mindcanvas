@@ -164,7 +164,11 @@ const AdminPage = () => {
   // 导出房间统计 CSV
   const exportRoomStatsCSV = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/room-stats/export`, {
+      // BUG-041：带上当前机构筛选，与页面上的房间统计列表保持一致
+      const exportUrl = filterTenantId
+        ? `${API_BASE}/admin/room-stats/export?tenant_id=${filterTenantId}`
+        : `${API_BASE}/admin/room-stats/export`;
+      const res = await fetch(exportUrl, {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('导出失败');
@@ -179,7 +183,7 @@ const AdminPage = () => {
     } catch {
       showToast('导出失败，请重试');
     }
-  }, []);
+  }, [filterTenantId]);
 
   useEffect(() => {
     if (isSuperAdmin) fetchTenants();
@@ -293,9 +297,9 @@ const AdminPage = () => {
         setUsers((prev: any[]) => prev.map(u => u.id === userId ? { ...u, chat_enabled: !currentEnabled } : u));
       
       } else {
-        alert('AI对话权限更新失败，状态码: ' + res.status);
+        showToast('AI对话权限更新失败，状态码: ' + res.status);
       }
-    } catch (err) { console.error('切换Chat权限失败:', err); alert('切换失败（网络错误）: ' + err); }
+    } catch (err) { console.error('切换Chat权限失败:', err); showToast('切换失败（网络错误）'); }
   };
   // ========== 智能体权限（REQ-062，与 Chat 权限刻意分开，见后端 UpdateUserAgent 注释）==========
   const toggleUserAgent = async (userId: string, currentEnabled: boolean) => {
@@ -309,9 +313,9 @@ const AdminPage = () => {
       if (res.ok) {
         setUsers((prev: any[]) => prev.map(u => u.id === userId ? { ...u, agent_enabled: !currentEnabled } : u));
       } else {
-        alert('智能体权限更新失败，状态码: ' + res.status);
+        showToast('智能体权限更新失败，状态码: ' + res.status);
       }
-    } catch (err) { console.error('切换智能体权限失败:', err); alert('切换失败（网络错误）: ' + err); }
+    } catch (err) { console.error('切换智能体权限失败:', err); showToast('切换失败（网络错误）'); }
   };
   // ========== 启禁用户 ==========
   const toggleUser = async (userId: string, currentActive: boolean) => {
