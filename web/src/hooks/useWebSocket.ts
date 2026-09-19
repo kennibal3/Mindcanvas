@@ -92,7 +92,15 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
           if (msg.payload?.excalidraw_scene) {
             window.dispatchEvent(new CustomEvent('excalidraw-remote-update', { detail: msg.payload.excalidraw_scene }));
           }
-          if (msg.payload?.room) store.setCurrentRoom(msg.payload.room);
+          // BUG-038（REOPEN）：服务端把 room 放在消息顶层（与 elements/members 同级），
+          // 此前读 msg.payload?.room 永远是 undefined，学生端标题恒为「课堂」。
+          {
+            const syncedRoom = msg.room ?? msg.payload?.room;
+            if (syncedRoom) {
+              const prevRoom = useRoomStore.getState().currentRoom;
+              store.setCurrentRoom(prevRoom ? { ...prevRoom, ...syncedRoom } : syncedRoom);
+            }
+          }
           // BUG-008：崩溃/断线重连后，widgetStore（无持久化）会丢失"我是否已提交"状态，
           // 用服务端随 room_sync 带回的本人已提交组件列表补齐，避免投票/问答等组件误显示成未提交表单。
           if (Array.isArray(msg.my_submissions)) {
@@ -428,9 +436,20 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
 
     socket.onmessage = (event) => handleMessageRef.current(event);
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       store.setConnectionStatus('disconnected');
       stopHeartbeat();
+      // BUG-049：服务端踢出/封禁时以关闭码 4001 断开。正常情况下 ctrl_kick 消息已先到并跳转 /join；
+      // 这里兜底——即使消息丢失也不自动重连，并带原因回到加入页。
+      if (event.code === 4001 && !isTeacher) {
+        manualClose.current = true;
+        if (!sessionStorage.getItem('mc_kick_reason')) {
+          sessionStorage.setItem('mc_kick_reason', '您已被移出房间');
+        }
+        localStorage.removeItem('mc_uuid');
+        window.location.href = '/join';
+        return;
+      }
       if (!manualClose.current && retryCount.current < WS_CONFIG.MAX_RETRY) {
         retryCount.current++;
         retryTimer.current = setTimeout(

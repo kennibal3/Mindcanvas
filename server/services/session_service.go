@@ -7,6 +7,7 @@ package services
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -377,6 +378,35 @@ func (s *SessionService) UpdateStudentProfile(roomID, studentUUID, nickname stri
 	if err != nil {
 		return fmt.Errorf("更新学生资料失败: %w", err)
 	}
+
+	// BUG-048：同步 Redis 会话缓存。学生重连时 ws_handler.go 是从 session:{uuid} 读
+	// nickname/suffix/avatar_id/avatar_url 生成 member_join 与 client 信息的，只改 DB 会让
+	// 重连后其他人重新看到入场时的旧昵称/旧头像。读-改-写、保留其余字段（如 room_id）与原 TTL；
+	// 键已过期则不新建（重连时会从 DB 补读头像；昵称此时只能沿用 DB，见下方日志）。
+	// 改名后清空 suffix，与 update_profile 广播（前端只显示新昵称、不再叠加 #后缀）保持一致。
+	if s.rdb != nil {
+		ctx := context.Background()
+		key := "session:" + studentUUID
+		if raw, gerr := s.rdb.Get(ctx, key).Result(); gerr == nil {
+			sd := map[string]interface{}{}
+			if json.Unmarshal([]byte(raw), &sd) == nil {
+				sd["nickname"] = nickname
+				sd["suffix"] = ""
+				sd["avatar_id"] = avatarID
+				sd["avatar_url"] = avatarURL
+				if b, merr := json.Marshal(sd); merr == nil {
+					ttl, _ := s.rdb.TTL(ctx, key).Result()
+					if ttl <= 0 {
+						ttl = 24 * time.Hour
+					}
+					if serr := s.rdb.Set(ctx, key, b, ttl).Err(); serr != nil {
+						log.Printf("[资料] 同步Redis会话失败 UUID:%s err:%v", studentUUID, serr)
+					}
+				}
+			}
+		}
+	}
+
 	log.Printf("[资料] 学生更新昵称/头像 - UUID:%s 房间:%s 新昵称:%s", studentUUID, roomID, nickname)
 	return nil
 }

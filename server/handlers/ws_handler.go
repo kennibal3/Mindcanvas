@@ -868,11 +868,15 @@ func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws
 		}
 
 	case "answer":
-		updatedPayload, submitErr = h.widgetService.HandleAnswer(
+		// BUG-047（BUG-006 回归重修）：HandleAnswer 返回的是内层业务对象（无 x/y/width/height
+		// 包装），与 vote/add_word 广播的完整两层结构不一致；useWebSocket.ts 的 widget_update
+		// 分支按两层结构浅合并，业务字段被摊平到顶层，QAWidget 读嵌套层 payload.payload.stats
+		// 永远是旧值，教师端「N 人已答题」不刷新。BUG-008 提交曾把此处改回，这里恢复 BUG-006 写法：
+		// 忽略 HandleAnswer 的返回值，提交成功后整行读库广播。
+		_, submitErr = h.widgetService.HandleAnswer(
 			submitData.ElementID, room.ID, client.UUID, client.Nickname, submitData.Data,
 		)
-		// 问答HandleAnswer已返回updatedPayload，但也做兜底
-		if submitErr == nil && updatedPayload == nil {
+		if submitErr == nil {
 			updatedPayload = h.readElementPayload(submitData.ElementID)
 		}
 
