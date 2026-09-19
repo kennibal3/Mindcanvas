@@ -27,6 +27,7 @@ import MemberList from '@/components/teacher/MemberList';
 import FloatingWidgets from '@/components/canvas/FloatingWidgets';
 import AIWorkbench from '@/components/canvas/AIWorkbench';
 import { API_BASE, AVATARS } from '@/utils/constants';
+import { extractSyncedRoom } from '@/utils/wsContracts';
 // REQ-039 3d：消费作业详情页交接过来的「插入画布」内容
 import { takeCanvasInsert } from '@/utils/canvasHandoff';
 import { buildLectureCards } from '@/utils/diagramBuilder';
@@ -448,7 +449,7 @@ const RoomPage = () => {
       }
     }
 
-    const syncedRoom = msg.type === 'room_sync' ? (msg.room ?? msg.payload?.room) : undefined;
+    const syncedRoom = extractSyncedRoom(msg);
     if (syncedRoom) {
       // BUG-038：服务端此前从未发过 room 字段，学生端标题/模式永远是本地假造值。
       // 用合并而非整体替换，避免覆盖掉本地对象里服务端未提供的字段（如 max_capacity）；
