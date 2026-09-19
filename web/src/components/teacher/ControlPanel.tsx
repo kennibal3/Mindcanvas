@@ -31,6 +31,7 @@ import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { CONTROL_CONFIG } from '@/utils/constants';
 import MemberList from './MemberList';
+import BannedList from './BannedList';
 import WidgetToolbar from './WidgetToolbar';
 import SummaryPanel from './SummaryPanel';
 import InsightPanel from './InsightPanel';
@@ -358,6 +359,9 @@ const ControlPanel = ({
   // REQ-012：踢人/封禁待操作目标
   const [pendingKick, setPendingKick] = useState<{ uuid: string; nickname: string } | null>(null);
 
+  // BUG-044：封禁名单展开后拉取，解封/封禁成功后靠此信号驱动重新拉取
+  const [banRefreshSignal, setBanRefreshSignal] = useState(0);
+
   const followTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const showToast = (msg: string) => {
@@ -497,6 +501,31 @@ const ControlPanel = ({
         try {
           await callAPI('/kick', 'POST', { target_uuid: target.uuid });
           showToast(`已踢出 ${target.nickname}`);
+        } catch {}
+        finally {
+          setActionLoading(null);
+          setPendingKick(null);
+        }
+      },
+    });
+  }, [callAPI]);
+
+  // BUG-044：封禁（拒绝重连）- 与踢出走不同接口，明确告知老师后果与解封方式
+  const handleBan = useCallback((uuid: string, nickname: string) => {
+    setPendingKick({ uuid, nickname });
+    setConfirmModal({
+      title: '封禁学生',
+      description: `确认封禁「${nickname}」？封禁后该学生将无法重新加入本课堂，除非你在下方"已封禁名单"中解封。`,
+      confirmText: '确认封禁',
+      confirmClass: 'bg-orange-500 hover:bg-orange-600 text-white',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        const target = { uuid, nickname };
+        setActionLoading(`kick-${target.uuid}`);
+        try {
+          await callAPI('/ban', 'POST', { target_uuid: target.uuid });
+          showToast(`已封禁 ${target.nickname}`);
+          setBanRefreshSignal((v) => v + 1);
         } catch {}
         finally {
           setActionLoading(null);
@@ -864,7 +893,12 @@ const ControlPanel = ({
                 members={members}
                 onKick={handleKick}
                 kickLoading={actionLoading}
+                onBan={handleBan}
               />
+              {/* BUG-044：已封禁名单 + 解封入口 */}
+              <div className="mt-2 pt-2 border-t border-gray-50">
+                <BannedList roomId={roomId} refreshSignal={banRefreshSignal} />
+              </div>
             </div>
 
             {/* 学情雷达 */}

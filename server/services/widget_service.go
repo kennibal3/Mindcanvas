@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"mindcanvas-server/models"
@@ -968,6 +969,48 @@ func (s *WidgetService) GetStudentWordCloudSubmissions(roomID, studentUUID strin
 			continue
 		}
 		result[elementID] = append(result[elementID], word)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetStudentAnswerSubmissions BUG-046：返回该学生在本房间内所有问答组件下已提交的具体
+// 选项（choice_idx）与当时是否正确，按 element_id 分组。与 GetStudentSubmittedElements
+// （只返回组件ID的布尔标记）不同——QAWidget 需要恢复"选了哪一项"这份内容本身，
+// 否则刷新后 selected 状态丢失，公布结果时一律显示"回答错误"（即使当初选对了）。
+func (s *WidgetService) GetStudentAnswerSubmissions(roomID, studentUUID string) (map[string]map[string]interface{}, error) {
+	result := make(map[string]map[string]interface{})
+	if studentUUID == "" {
+		return result, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT element_id, action_data->>'choice_idx' AS choice_idx, is_correct
+		 FROM widget_interactions
+		 WHERE room_id = $1 AND student_uuid = $2 AND action_type = 'answer'`,
+		roomID, studentUUID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询学生答题提交记录失败: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var elementID, choiceIdxStr string
+		var isCorrect bool
+		if err := rows.Scan(&elementID, &choiceIdxStr, &isCorrect); err != nil {
+			log.Printf("[BUG-046] 扫描答题提交记录失败: %v", err)
+			continue
+		}
+		choiceIdx, convErr := strconv.Atoi(choiceIdxStr)
+		if convErr != nil {
+			continue
+		}
+		result[elementID] = map[string]interface{}{
+			"choice_idx": choiceIdx,
+			"is_correct": isCorrect,
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

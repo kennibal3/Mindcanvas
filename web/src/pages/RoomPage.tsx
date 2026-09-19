@@ -58,10 +58,12 @@ interface EditProfileModalProps {
   uuid: string;
   onClose: () => void;
   onSaved: (nickname: string, avatarId: number, avatarUrl?: string) => void;
+  /** BUG-045：真同步——保存成功后把新昵称/头像通过 WS 广播给房间其他人并落库 */
+  onSend: (type: string, payload: Record<string, any>) => void;
 }
 
 const EditProfileModal: React.FC<EditProfileModalProps> = ({
-  currentNickname, currentAvatarId, currentAvatarUrl, uuid, onClose, onSaved,
+  currentNickname, currentAvatarId, currentAvatarUrl, uuid, onClose, onSaved, onSend,
 }) => {
   const [nickname, setNickname]   = useState(currentNickname);
   const [avatarId, setAvatarId]   = useState(currentAvatarId);
@@ -130,9 +132,24 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setSaving(true);
     setError('');
     try {
-      localStorage.setItem('mc_nickname', nickname.trim());
-      if (avatarUrl) localStorage.setItem('mc_avatar_url', avatarUrl);
-      onSaved(nickname.trim(), avatarId, avatarUrl || undefined);
+      const trimmedNickname = nickname.trim();
+      localStorage.setItem('mc_nickname', trimmedNickname);
+      localStorage.setItem('mc_avatar_id', String(avatarId));
+      // BUG-045 顺带修复：此前选择预设头像（avatarUrl 为空）时从不清除旧的
+      // mc_avatar_url，刷新后会被旧的自定义头像"复活"，忽略本次选择。
+      if (avatarUrl) {
+        localStorage.setItem('mc_avatar_url', avatarUrl);
+      } else {
+        localStorage.removeItem('mc_avatar_url');
+      }
+      // BUG-045：真同步——此前只更新本地状态，房间里其他人/老师看到的还是旧昵称头像。
+      // 现在通过 WS 广播，服务端落库 room_sessions 并转发给所有人。
+      onSend('update_profile', {
+        nickname:   trimmedNickname,
+        avatar_id:  avatarId,
+        avatar_url: avatarUrl || '',
+      });
+      onSaved(trimmedNickname, avatarId, avatarUrl || undefined);
       onClose();
     } catch (err: any) {
       setError(err.message || '保存失败');
@@ -299,6 +316,39 @@ const RoomPage = () => {
   const [studentAvatarUrl, setStudentAvatarUrl] = useState(
     localStorage.getItem('mc_avatar_url') || ''
   );
+
+  // BUG-045：资料同步状态——从"已发送"到"服务端确认广播"之间有真实的网络往返，
+  // 不能像此前那样保存到 localStorage 就算数（同一类"静默丢弃"问题在 QAWidget/
+  // 投票提交上已经犯过一次，这里直接照搬"提交后等确认，超时兜底"的模式）。
+  const [profileSyncStatus, setProfileSyncStatus] = useState<'idle' | 'syncing' | 'confirmed' | 'timeout'>('idle');
+  const profileSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.uuid !== uuid) return;
+      if (profileSyncTimerRef.current) {
+        clearTimeout(profileSyncTimerRef.current);
+        profileSyncTimerRef.current = null;
+      }
+      setProfileSyncStatus('confirmed');
+      profileSyncTimerRef.current = setTimeout(() => setProfileSyncStatus('idle'), 2500);
+    };
+    window.addEventListener('ws_member_profile_updated', handler);
+    return () => window.removeEventListener('ws_member_profile_updated', handler);
+  }, [uuid]);
+
+  useEffect(() => {
+    if (profileSyncStatus !== 'syncing') return;
+    const timer = setTimeout(() => setProfileSyncStatus('timeout'), 3000);
+    return () => clearTimeout(timer);
+  }, [profileSyncStatus]);
+
+  useEffect(() => {
+    if (profileSyncStatus !== 'timeout') return;
+    const timer = setTimeout(() => setProfileSyncStatus('idle'), 4000);
+    return () => clearTimeout(timer);
+  }, [profileSyncStatus]);
 
   // REQ-018：动态更新 document.title
   useEffect(() => {
@@ -646,23 +696,25 @@ const RoomPage = () => {
           <div className="flex items-center gap-2">
             {!isTeacher ? (
               // REQ-019：学生端头像点击入口
+              // BUG-045：用户明确要求昵称/头像的前端呈现"尽量大一点，比较醒目一点"——
+              // 此前头像仅 24px、昵称在小屏幕直接 hidden，几乎注意不到这是"我的身份"入口。
               <button
                 onClick={() => setShowEditProfile(true)}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-colors"
                 title="修改昵称/头像"
               >
                 {studentAvatarUrl ? (
                   <img
                     src={studentAvatarUrl}
                     alt="我的头像"
-                    className="w-6 h-6 rounded-full object-cover"
+                    className="w-9 h-9 rounded-full object-cover ring-2 ring-amber-200"
                   />
                 ) : (
-                  <span className="text-base">
+                  <span className="w-9 h-9 flex items-center justify-center text-xl rounded-full bg-amber-50 ring-2 ring-amber-200">
                     {AVATARS.find(a => a.id === studentAvatarId)?.emoji || '👤'}
                   </span>
                 )}
-                <span className="text-xs text-gray-500 max-w-[80px] truncate hidden sm:block">
+                <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">
                   {studentNickname}
                 </span>
               </button>
@@ -918,12 +970,34 @@ const RoomPage = () => {
           currentAvatarUrl={studentAvatarUrl}
           uuid={uuid}
           onClose={() => setShowEditProfile(false)}
+          onSend={send}
           onSaved={(nick, avId, avUrl) => {
             setStudentNickname(nick);
             setStudentAvatarId(avId);
-            if (avUrl) setStudentAvatarUrl(avUrl);
+            // BUG-045 顺带修复：切回预设头像（avUrl 为空）时也要清掉旧的自定义头像 URL，
+            // 否则右上角徽标会继续显示切换前的自定义头像。
+            setStudentAvatarUrl(avUrl || '');
+            setProfileSyncStatus('syncing');
           }}
         />
+      )}
+
+      {/* BUG-045：资料同步状态提示——尽量醒目，确认真的广播给全班而不只是本地改了 */}
+      {!isTeacher && profileSyncStatus !== 'idle' && (
+        <div
+          className="fixed top-16 left-1/2 -translate-x-1/2 z-[70] px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 animate-fade-in"
+          style={
+            profileSyncStatus === 'confirmed'
+              ? { backgroundColor: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }
+              : profileSyncStatus === 'timeout'
+              ? { backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }
+              : { backgroundColor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }
+          }
+        >
+          {profileSyncStatus === 'syncing' && '正在同步昵称/头像给全班…'}
+          {profileSyncStatus === 'confirmed' && `✅ 昵称头像已更新为「${studentNickname}」，全班可见`}
+          {profileSyncStatus === 'timeout' && '本地已保存，但暂未收到房间同步确认（可能是网络波动），可稍后刷新确认'}
+        </div>
       )}
     </div>
   );

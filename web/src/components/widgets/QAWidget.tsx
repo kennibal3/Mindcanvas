@@ -58,6 +58,20 @@ const QAWidget: React.FC<QAWidgetProps> = ({
   const [submitting, setSubmitting]   = useState(false)
   const [submitError, setSubmitError] = useState('')
 
+  // BUG-046：selected 此前只活在本地 useState，刷新页面就丢；即使 hasSubmitted
+  // 靠 BUG-008 的机制正确恢复成"已提交"，selected 仍是初始的 null，导致公布结果时
+  // isMyChoice/正确性判断（selected === correctIdx）永远算成"没选对"，哪怕当初选对了。
+  // 照抄 WordCloudWidget 的 storedMyWords 模式：从 widgetStore 里 room_sync 带回的
+  // 具体选项数据回填，只在本地还没有值时才采用，避免覆盖本次会话刚提交、服务端
+  // 尚未来得及包含的乐观本地选择。
+  const storedAnswer = useWidgetStore(s => s.myAnswerSubmissions[id])
+  useEffect(() => {
+    if (selected === null && storedAnswer && typeof storedAnswer.choice_idx === 'number') {
+      setSelected(storedAnswer.choice_idx)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedAnswer])
+
   // BUG-039：此前提交即本地 markSubmitted，不等服务端确认；服务端答题走的是与
   // 投票/词云完全相同的 widget_update(from本人确认)/widget_error 广播路径
   // （本轮已修好 msg.from 比对），QAWidget 只是从未接这个事件。照抄
