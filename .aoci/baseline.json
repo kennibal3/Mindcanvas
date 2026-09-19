@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-09-10T08:04:28Z",
-  "updated_at": "2026-09-19T08:23:37Z",
+  "updated_at": "2026-09-19T10:23:02Z",
   "files": {
     ".gitattributes": {
       "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
@@ -29,9 +29,9 @@
       "normalized_sha256": "f1b990d113409a9c7abc877eb83788e99c7096058d43974219dd9ea4c6659208"
     },
     "aoci.code.txt": {
-      "sha256": "9b6ee196a105200def0bf6901a83e2642db917418b811520a8310d4425334d0a",
-      "size": 103589,
-      "normalized_sha256": "9b6ee196a105200def0bf6901a83e2642db917418b811520a8310d4425334d0a"
+      "sha256": "d3d579191670c962645ad41b7fa9660601cda7c66bd5bd33482b072f279503ba",
+      "size": 103533,
+      "normalized_sha256": "d3d579191670c962645ad41b7fa9660601cda7c66bd5bd33482b072f279503ba"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -763,10 +763,10 @@
       "format_kind": "gofmt"
     },
     "server/services/session_service.go": {
-      "sha256": "5d926e10d1840b70681283530f2e55c5105af42ec308d61618867b62b33f4c7e",
-      "size": 14500,
-      "normalized_sha256": "5d926e10d1840b70681283530f2e55c5105af42ec308d61618867b62b33f4c7e",
-      "format_sha256": "5d926e10d1840b70681283530f2e55c5105af42ec308d61618867b62b33f4c7e",
+      "sha256": "7ff9c01e876c91f3d4ae035f4257a7bfa42f141da800a54846b96fd2cb0154e9",
+      "size": 14789,
+      "normalized_sha256": "7ff9c01e876c91f3d4ae035f4257a7bfa42f141da800a54846b96fd2cb0154e9",
+      "format_sha256": "7ff9c01e876c91f3d4ae035f4257a7bfa42f141da800a54846b96fd2cb0154e9",
       "format_kind": "gofmt"
     },
     "server/services/share_service.go": {
@@ -940,9 +940,9 @@
       "normalized_sha256": "7e74e55fe939dba1b4922295ec8fa2a024014d32d869ed5e45e3c630bc9a2c14"
     },
     "web/src/components/teacher/ControlPanel.tsx": {
-      "sha256": "2ab2898edd5834026e620aa5fdc6ee62103634cb31729a775df1c7d48e04abab",
-      "size": 42959,
-      "normalized_sha256": "2ab2898edd5834026e620aa5fdc6ee62103634cb31729a775df1c7d48e04abab"
+      "sha256": "6df5dedcde41aa74ea8a78dc4e8addadf3994b2192aca1ebbe9d2fb05eec4e1c",
+      "size": 43704,
+      "normalized_sha256": "6df5dedcde41aa74ea8a78dc4e8addadf3994b2192aca1ebbe9d2fb05eec4e1c"
     },
     "web/src/components/teacher/FlowController.tsx": {
       "sha256": "ff432e0dd9bdd00e672d2cb967b92d821a993b8b35621ce800e37b5416c08de2",
@@ -1230,9 +1230,9 @@
       "normalized_sha256": "a1ec85c03f4b7b54949cb9a441686d000a5742ff0dd4a2e0510f08b7726a8910"
     },
     "web/src/types/widget.ts": {
-      "sha256": "2ba3a265d072e432e1cedb7223792179edf921f5b4225f16523610febc8de588",
-      "size": 4398,
-      "normalized_sha256": "2ba3a265d072e432e1cedb7223792179edf921f5b4225f16523610febc8de588"
+      "sha256": "2819302ff3828594a31bce6d47af57ad061218415dd442e04bf9c1c42d8fd12d",
+      "size": 3939,
+      "normalized_sha256": "2819302ff3828594a31bce6d47af57ad061218415dd442e04bf9c1c42d8fd12d"
     },
     "web/src/utils/agentApi.ts": {
       "sha256": "54a2626dda20496088c48ef8ef0a17b3816cfb81ab0f7a4d0d4c233520f570d6",
