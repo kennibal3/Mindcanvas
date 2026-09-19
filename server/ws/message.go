@@ -37,6 +37,10 @@ const (
 	MsgWidgetSubmit = "widget_submit"
 	MsgWidgetUpdate = "widget_update"
 
+	// BUG-045：学生中途修改昵称/头像的真同步（此前 EditProfileModal 只写 localStorage）
+	MsgUpdateProfile        = "update_profile"
+	MsgMemberProfileUpdated = "member_profile_updated"
+
 	// 点赞/反应
 	MsgCardLike     = "card_like"
 	MsgCardReaction = "card_reaction"

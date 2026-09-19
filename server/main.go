@@ -400,6 +400,9 @@ func main() {
 		rooms.PUT("/:id/lock", roomHandler.LockRoom)
 		rooms.PUT("/:id/readonly", roomHandler.SetReadOnly)
 		rooms.POST("/:id/kick", roomHandler.KickMember)
+		rooms.POST("/:id/ban", roomHandler.BanMember)     // BUG-044：封禁（拒绝重连）
+		rooms.POST("/:id/unban", roomHandler.UnbanMember) // BUG-044：解封
+		rooms.GET("/:id/banned-members", roomHandler.ListBannedMembers) // BUG-044：黑名单列表
 		rooms.POST("/:id/gather", roomHandler.GatherMembers)
 		rooms.GET("/:id/members", roomHandler.ListMembers)
 

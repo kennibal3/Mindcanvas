@@ -287,7 +287,42 @@ func (h *RoomHandler) SetReadOnly(c *gin.Context) {
 }
 
 // KickMember POST /api/rooms/:id/kick
+// BUG-044：产品拍板"踢出"与"封禁"需要真区分——踢出仅断开连接，允许学生随后重新加入；
+// 封禁（拒绝重连）改走下面新增的 BanMember。此前两者共用 BanStudent，踢出会附带永久拉黑。
 func (h *RoomHandler) KickMember(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	role := middleware.GetRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if err := h.roomService.CheckRoomOwnership(roomID, userID, role, tenantID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	var req models.KickRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if err := h.sessionService.MarkStudentLeft(roomID, req.TargetUUID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	reason := req.Reason
+	if reason == "" {
+		reason = "您已被教师移出房间"
+	}
+	h.hub.SendToClient(roomID, req.TargetUUID, ws.Message{
+		Type:    "ctrl_kick",
+		Payload: map[string]interface{}{"reason": reason},
+	})
+	h.hub.RemoveClient(roomID, req.TargetUUID)
+	log.Printf("[场控] 踢出学生(可重连) - 房间:%s 学生:%s", roomID, req.TargetUUID)
+	c.JSON(http.StatusOK, gin.H{"message": "已踢出"})
+}
+
+// BanMember POST /api/rooms/:id/ban
+// BUG-044：新增。封禁 = 断开连接 + 拉黑，学生此后无法重新加入本房间，除非老师调用 UnbanMember 解封。
+func (h *RoomHandler) BanMember(c *gin.Context) {
 	roomID := c.Param("id")
 	userID := middleware.GetUserID(c)
 	role := middleware.GetRole(c)
@@ -307,15 +342,58 @@ func (h *RoomHandler) KickMember(c *gin.Context) {
 	}
 	reason := req.Reason
 	if reason == "" {
-		reason = "您已被教师移出房间"
+		reason = "您已被教师封禁，无法重新进入本房间（除非教师解封）"
 	}
 	h.hub.SendToClient(roomID, req.TargetUUID, ws.Message{
 		Type:    "ctrl_kick",
 		Payload: map[string]interface{}{"reason": reason},
 	})
 	h.hub.RemoveClient(roomID, req.TargetUUID)
-	log.Printf("[场控] 踢出学生 - 房间:%s 学生:%s", roomID, req.TargetUUID)
-	c.JSON(http.StatusOK, gin.H{"message": "已踢出"})
+	log.Printf("[场控] 封禁学生(拒绝重连) - 房间:%s 学生:%s", roomID, req.TargetUUID)
+	c.JSON(http.StatusOK, gin.H{"message": "已封禁"})
+}
+
+// UnbanMember POST /api/rooms/:id/unban
+// BUG-044：新增。老师从黑名单中放出学生，允许其重新加入房间。
+func (h *RoomHandler) UnbanMember(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	role := middleware.GetRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if err := h.roomService.CheckRoomOwnership(roomID, userID, role, tenantID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	var req models.KickRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+	if err := h.sessionService.UnbanStudent(roomID, req.TargetUUID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("[场控] 解封学生 - 房间:%s 学生:%s", roomID, req.TargetUUID)
+	c.JSON(http.StatusOK, gin.H{"message": "已解封"})
+}
+
+// ListBannedMembers GET /api/rooms/:id/banned-members
+// BUG-044：新增。供老师端查看当前房间黑名单，配合 UnbanMember 使用。
+func (h *RoomHandler) ListBannedMembers(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	role := middleware.GetRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if err := h.roomService.CheckRoomOwnership(roomID, userID, role, tenantID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	sessions, err := h.sessionService.GetBannedSessionsByRoom(roomID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"banned_members": sessions})
 }
 
 // GatherMembers POST /api/rooms/:id/gather

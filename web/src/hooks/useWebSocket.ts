@@ -106,6 +106,11 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
           if (msg.my_word_submissions && typeof msg.my_word_submissions === 'object') {
             useWidgetStore.getState().setMyWordSubmissions(msg.my_word_submissions);
           }
+          // BUG-046：问答"本人已提交内容"需要具体选了哪一项（而非布尔标记），
+          // 写入 widgetStore 的 myAnswerSubmissions，供 QAWidget 恢复 selected。
+          if (msg.my_answer_submissions && typeof msg.my_answer_submissions === 'object') {
+            useWidgetStore.getState().setMyAnswerSubmissions(msg.my_answer_submissions);
+          }
           // REQ-029：入场时携带当前场景容量，让场控面板一开始就能显示
           if (typeof msg.scene_size === 'number') {
             const warnBytes = msg.scene_size_warn ?? 0;
@@ -178,6 +183,31 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
           if (leaveUuid) {
             store.removeMember(leaveUuid);
             store.removeCursor(leaveUuid); // REQ-021：成员离开时清除光标
+          }
+          break;
+        }
+
+        // BUG-045：学生中途改昵称/头像的真同步广播。服务端 update_profile 落库后
+        // 广播这条消息，房间内所有人（含老师 MemberList、自己的顶部资料徽标）实时更新，
+        // 不必等到刷新页面重新拉取 room_sync。
+        case 'member_profile_updated': {
+          const profileUuid = msg.uuid;
+          if (profileUuid) {
+            const existing = store.members.find((m) => m.uuid === profileUuid);
+            store.addMember({
+              id:         profileUuid,
+              uuid:       profileUuid,
+              nickname:   msg.nickname ?? existing?.nickname ?? '',
+              suffix:     existing?.suffix || '',
+              avatar_id:  msg.avatar_id ?? existing?.avatar_id ?? 1,
+              avatar_url: msg.avatar_url ?? existing?.avatar_url ?? '',
+              is_banned:  existing?.is_banned || false,
+              role:       existing?.role || 'student',
+              joined_at:  existing?.joined_at || new Date().toISOString(),
+            });
+            window.dispatchEvent(new CustomEvent('ws_member_profile_updated', {
+              detail: { uuid: profileUuid, nickname: msg.nickname, avatar_id: msg.avatar_id, avatar_url: msg.avatar_url },
+            }));
           }
           break;
         }

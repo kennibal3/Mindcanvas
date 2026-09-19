@@ -243,7 +243,11 @@ func (s *SessionService) GetSessionsByRoom(roomID string) ([]models.Session, err
 	return sessions, nil
 }
 
-// BanStudent 封禁学生（踢出）
+// BUG-044：踢出（可重连）与封禁（不可重连，除非老师解封）产品语义拍板后拆分——
+// 此前 KickMember 无条件调用本函数，导致"踢出"与"封禁"在后端是同一个动作。
+// 现在本函数只服务于"封禁"路径（BanMember），"踢出"改走 MarkStudentLeft（见 room_handler.go）。
+
+// BanStudent 封禁学生（拒绝重连，除非老师调用 UnbanStudent 解封）
 func (s *SessionService) BanStudent(roomID, studentUUID string) error {
 	ctx := context.Background()
 
@@ -257,26 +261,124 @@ func (s *SessionService) BanStudent(roomID, studentUUID string) error {
 		return fmt.Errorf("封禁学生失败: %w", err)
 	}
 
-	// 2. 写入 Redis 黑名单（24小时）
+	// 2. 写入 Redis 黑名单（BUG-044：改为永不过期——"封禁"应持续到老师主动解封为止，
+	//    此前 24 小时 TTL 会导致学生在老师不知情的情况下自动被解封，与产品语义冲突）
 	banKey := fmt.Sprintf("ban:%s:%s", roomID, studentUUID)
-	s.rdb.Set(ctx, banKey, "1", 24*time.Hour)
+	s.rdb.Set(ctx, banKey, "1", 0)
 
 	// 3. 清除 Redis 会话
 	s.rdb.Del(ctx, fmt.Sprintf("session:%s", studentUUID))
 
-	log.Printf("[封禁] 学生被踢出 - UUID:%s 房间:%s", studentUUID, roomID)
+	log.Printf("[封禁] 学生被封禁(拒绝重连) - UUID:%s 房间:%s", studentUUID, roomID)
 	return nil
 }
 
+// UnbanStudent 解封学生（老师从黑名单放出来，允许重新加入房间）
+func (s *SessionService) UnbanStudent(roomID, studentUUID string) error {
+	ctx := context.Background()
+
+	_, err := s.db.Exec(
+		`UPDATE room_sessions SET is_banned = FALSE
+		 WHERE room_id = $1 AND student_uuid = $2`,
+		roomID, studentUUID,
+	)
+	if err != nil {
+		return fmt.Errorf("解封学生失败: %w", err)
+	}
+
+	banKey := fmt.Sprintf("ban:%s:%s", roomID, studentUUID)
+	s.rdb.Del(ctx, banKey)
+
+	log.Printf("[解封] 学生被老师解封 - UUID:%s 房间:%s", studentUUID, roomID)
+	return nil
+}
+
+// GetBannedSessionsByRoom 查询某房间当前被封禁（黑名单）的学生列表，供老师端管理解封
+func (s *SessionService) GetBannedSessionsByRoom(roomID string) ([]models.Session, error) {
+	// DISTINCT ON + 按 student_uuid 去重：同一学生可能因多次入场/被踢产生多条历史行，
+	// 被封禁时 BanStudent 会把该学生名下所有历史行的 is_banned 都置 TRUE，
+	// 这里只取每个学生最新的一行，避免黑名单里同一个人出现好几条。
+	rows, err := s.db.Query(
+		`SELECT id, room_id, student_uuid, nickname, suffix, avatar_id, ip_address, is_banned, joined_at, left_at
+		 FROM (
+		     SELECT DISTINCT ON (student_uuid)
+		            id, room_id, student_uuid, nickname, suffix, avatar_id, ip_address, is_banned, joined_at, left_at
+		     FROM room_sessions
+		     WHERE room_id = $1 AND is_banned = TRUE
+		     ORDER BY student_uuid, joined_at DESC
+		 ) dedup
+		 ORDER BY left_at DESC NULLS LAST, joined_at DESC`,
+		roomID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询封禁名单失败: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []models.Session
+	for rows.Next() {
+		var sess models.Session
+		if err := rows.Scan(
+			&sess.ID, &sess.RoomID, &sess.StudentUUID, &sess.Nickname,
+			&sess.Suffix, &sess.AvatarID, &sess.IPAddress, &sess.IsBanned,
+			&sess.JoinedAt, &sess.LeftAt,
+		); err != nil {
+			return nil, fmt.Errorf("扫描封禁会话数据失败: %w", err)
+		}
+		sessions = append(sessions, sess)
+	}
+	return sessions, nil
+}
+
 // IsStudentBanned 检查学生是否被封禁
+// BUG-044：此前只查 Redis，一旦 Redis 因重启等原因丢键，DB 里 is_banned=TRUE 的学生会被
+// 静默放行，与"封禁需老师主动解封"的语义相悖。现在 Redis 未命中时回退查库，并在库里确认
+// 封禁时自愈写回 Redis 键，兼顾性能与正确性。
 func (s *SessionService) IsStudentBanned(roomID, studentUUID string) bool {
 	ctx := context.Background()
 	banKey := fmt.Sprintf("ban:%s:%s", roomID, studentUUID)
 	result, err := s.rdb.Get(ctx, banKey).Result()
-	if err != nil {
+	if err == nil {
+		return result == "1"
+	}
+
+	var isBanned bool
+	dbErr := s.db.QueryRow(
+		`SELECT is_banned FROM room_sessions WHERE room_id = $1 AND student_uuid = $2
+		 ORDER BY joined_at DESC LIMIT 1`,
+		roomID, studentUUID,
+	).Scan(&isBanned)
+	if dbErr != nil {
 		return false
 	}
-	return result == "1"
+	if isBanned {
+		s.rdb.Set(ctx, banKey, "1", 0)
+	}
+	return isBanned
+}
+
+// UpdateStudentProfile 学生中途修改昵称/头像（BUG-045）
+// 此前 web/src/pages/RoomPage.tsx 的 EditProfileModal.handleSave 只写 localStorage，
+// 服务端 room_sessions 与其他成员看到的都还是入场时的旧值。现在真正落库，
+// 配合 ws_handler.go 新增的 update_profile/member_profile_updated 消息实时广播。
+func (s *SessionService) UpdateStudentProfile(roomID, studentUUID, nickname string, avatarID int, avatarURL string) error {
+	nickname = s.profanity.Filter(nickname)
+	if nickname == "" {
+		return fmt.Errorf("昵称不能为空")
+	}
+	if avatarID <= 0 {
+		avatarID = 1
+	}
+	_, err := s.db.Exec(
+		`UPDATE room_sessions SET nickname = $1, avatar_id = $2, avatar_url = $3
+		 WHERE room_id = $4 AND student_uuid = $5`,
+		nickname, avatarID, avatarURL, roomID, studentUUID,
+	)
+	if err != nil {
+		return fmt.Errorf("更新学生资料失败: %w", err)
+	}
+	log.Printf("[资料] 学生更新昵称/头像 - UUID:%s 房间:%s 新昵称:%s", studentUUID, roomID, nickname)
+	return nil
 }
 
 // MarkStudentLeft 标记学生离场

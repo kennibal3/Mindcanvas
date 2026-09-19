@@ -372,9 +372,13 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 		// BUG-009：词云要恢复的是"具体提交过哪些词"这份内容本身（而非布尔标记），
 		// 按 element_id 分组带回，供前端 WordCloudWidget 初始化 myWords。
 		var myWordSubmissions map[string][]string
+		// BUG-046：问答要恢复的也是"选了哪一项"这份内容本身（而非布尔标记），否则刷新后
+		// selected 状态丢失，公布结果时一律显示"回答错误"，即使当初选对了。
+		var myAnswerSubmissions map[string]map[string]interface{}
 		if senderRole != "teacher" {
 			mySubmissions, _ = h.widgetService.GetStudentSubmittedElements(roomID, senderUUID)
 			myWordSubmissions, _ = h.widgetService.GetStudentWordCloudSubmissions(roomID, senderUUID)
+			myAnswerSubmissions, _ = h.widgetService.GetStudentAnswerSubmissions(roomID, senderUUID)
 		}
 
 		// BUG-018：重连时随 room_sync 带回当前成员快照（排除自己），前端 setMembers 复原成员列表与在线人数；
@@ -414,7 +418,10 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 			"my_submissions": mySubmissions,
 			// BUG-009：本学生在各词云组件下已提交过的具体词语（{element_id: [word,...]}）
 			"my_word_submissions": myWordSubmissions,
-			"members":             onlineMembers,
+			// BUG-046：本学生在各问答组件下已提交的具体选项与当时是否正确
+			// （{element_id: {choice_idx, is_correct}}）
+			"my_answer_submissions": myAnswerSubmissions,
+			"members":               onlineMembers,
 		})
 		client.Send <- syncBytes
 	}()
@@ -716,6 +723,46 @@ func (h *WSHandler) SetupMessageHandler() {
 				"from":    senderUUID,
 			})
 			room.BroadcastRaw(modeBroadcast)
+
+		// BUG-045：学生中途修改昵称/头像的真同步。此前 EditProfileModal 只写
+		// localStorage，房间里其他人（老师/同学）看到的永远是入场时的旧昵称/头像。
+		case ws.MsgUpdateProfile:
+			if client.Role != "student" {
+				log.Printf("[资料] 非学生 %s(%s) 尝试修改资料，已拦截", senderUUID, client.Role)
+				return
+			}
+			var profileData struct {
+				Nickname  string `json:"nickname"`
+				AvatarID  int    `json:"avatar_id"`
+				AvatarURL string `json:"avatar_url"`
+			}
+			if err := json.Unmarshal(msg.Payload, &profileData); err != nil {
+				return
+			}
+			if err := h.sessionService.UpdateStudentProfile(
+				roomID, senderUUID, profileData.Nickname, profileData.AvatarID, profileData.AvatarURL,
+			); err != nil {
+				errBytes, _ := json.Marshal(map[string]interface{}{
+					"type": "widget_error", "error": err.Error(),
+				})
+				client.Send <- errBytes
+				return
+			}
+			// 同步内存里的 client，确保这之后的投票/词云/问答等提交用新昵称落库归属
+			// （client.Nickname 只在连接建立时赋过一次值，不会因为 room_sessions 更新而自动变化）
+			client.Nickname = h.profanity.Filter(profileData.Nickname)
+			if profileData.AvatarID > 0 {
+				client.AvatarID = profileData.AvatarID
+			}
+			profileBytes, _ := json.Marshal(map[string]interface{}{
+				"type":       ws.MsgMemberProfileUpdated,
+				"uuid":       senderUUID,
+				"nickname":   profileData.Nickname,
+				"avatar_id":  profileData.AvatarID,
+				"avatar_url": profileData.AvatarURL,
+			})
+			room.BroadcastRaw(profileBytes)
+			log.Printf("[资料] 广播学生资料更新 - room:%s uuid:%s", roomID, senderUUID)
 
 		case ws.MsgPing:
 			pongBytes, _ := json.Marshal(map[string]string{"type": ws.MsgPong})

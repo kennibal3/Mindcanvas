@@ -24,6 +24,15 @@ interface WidgetState {
    */
   myWordSubmissions: Record<string, string[]>;
 
+  /**
+   * BUG-046：各问答组件下，本人已提交的具体选项与当时是否正确
+   * （{element_id: {choice_idx, is_correct}}）。QAWidget 的 selected 此前只在
+   * useState 里，刷新后必丢，即使 hasSubmitted 正确恢复，公布结果时也一律显示
+   * "回答错误"。与 myWordSubmissions 同理，放进全局 store 而非 CustomEvent，
+   * 避免组件挂载时序问题。
+   */
+  myAnswerSubmissions: Record<string, { choice_idx: number; is_correct: boolean }>;
+
   // === 操作方法 ===
 
   /** 设置正在创建的组件类型 */
@@ -38,6 +47,8 @@ interface WidgetState {
   setEditingWidget: (id: string | null) => void;
   /** BUG-009：批量写入本人词云提交记录（room_sync 到达时调用） */
   setMyWordSubmissions: (submissions: Record<string, string[]>) => void;
+  /** BUG-046：批量写入本人问答提交记录（room_sync 到达时调用） */
+  setMyAnswerSubmissions: (submissions: Record<string, { choice_idx: number; is_correct: boolean }>) => void;
   /** 重置组件状态 */
   resetWidgets: () => void;
 }
@@ -52,6 +63,7 @@ export const useWidgetStore = create<WidgetState>((set, get) => ({
   selectedWidgetId: null,
   editingWidgetId: null,
   myWordSubmissions: {},
+  myAnswerSubmissions: {},
 
   // === 操作方法 ===
 
@@ -79,6 +91,11 @@ export const useWidgetStore = create<WidgetState>((set, get) => ({
     myWordSubmissions: { ...state.myWordSubmissions, ...submissions },
   })),
 
+  /** BUG-046：批量写入本人问答提交记录（合并而非覆盖） */
+  setMyAnswerSubmissions: (submissions) => set((state) => ({
+    myAnswerSubmissions: { ...state.myAnswerSubmissions, ...submissions },
+  })),
+
   /** 重置组件状态 */
   resetWidgets: () => set({
     creatingType: null,
@@ -86,5 +103,6 @@ export const useWidgetStore = create<WidgetState>((set, get) => ({
     selectedWidgetId: null,
     editingWidgetId: null,
     myWordSubmissions: {},
+    myAnswerSubmissions: {},
   }),
 }));
