@@ -30,7 +30,15 @@ type Client struct {
 	Conn     *websocket.Conn // WebSocket 连接
 	Send     chan []byte     // 发送缓冲通道
 	Room     *Room           // 所属房间
+
+	// BUG-049：非 0 时，WritePump 在发完缓冲消息后用该关闭码发关闭帧（如踢出/封禁用 CloseCodeKicked）。
+	// 仅在 close(Send) 之前写入，WritePump 观察到通道关闭后才读取，由通道关闭建立 happens-before，无需额外加锁。
+	closeCode int
 }
+
+// CloseCodeKicked 自定义 WebSocket 关闭码：被教师踢出/封禁。
+// 前端 onclose 见到该码即不自动重连（RFC 6455：4000-4999 为应用私有码）。
+const CloseCodeKicked = 4001
 
 // NewClient 创建客户端实例
 func NewClient(uuid, nickname, role string, avatarID int, conn *websocket.Conn, room *Room) *Client {
@@ -106,8 +114,12 @@ func (c *Client) WritePump() {
 		case data, ok := <-c.Send:
 			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				// 通道已关闭，发送关闭帧
-				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// 通道已关闭，发送关闭帧（缓冲里的消息已在此前的循环中写完）
+				closeMsg := []byte{}
+				if c.closeCode != 0 {
+					closeMsg = websocket.FormatCloseMessage(c.closeCode, "kicked")
+				}
+				c.Conn.WriteMessage(websocket.CloseMessage, closeMsg)
 				return
 			}
 

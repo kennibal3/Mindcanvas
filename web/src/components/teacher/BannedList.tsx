@@ -29,6 +29,8 @@ const BannedList: React.FC<BannedListProps> = ({ roomId, refreshSignal }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [unbanningUuid, setUnbanningUuid] = useState<string | null>(null);
+  // BUG-051：改用内联二次确认，取代阻塞式 window.confirm（自动化浏览器里恒返回 false，点击无反应）
+  const [confirmingUuid, setConfirmingUuid] = useState<string | null>(null);
 
   const fetchBanned = useCallback(async () => {
     setLoading(true);
@@ -54,7 +56,7 @@ const BannedList: React.FC<BannedListProps> = ({ roomId, refreshSignal }) => {
   }, [expanded, refreshSignal]);
 
   const handleUnban = async (uuid: string, nickname: string) => {
-    if (!window.confirm(`确认解封「${nickname}」？解封后该学生可以重新加入本课堂。`)) return;
+    setConfirmingUuid(null);
     setUnbanningUuid(uuid);
     setError('');
     try {
@@ -115,14 +117,32 @@ const BannedList: React.FC<BannedListProps> = ({ roomId, refreshSignal }) => {
                   {m.nickname}
                   {m.suffix ? `#${m.suffix}` : ''}
                 </span>
-                <button
-                  onClick={() => handleUnban(m.student_uuid, m.nickname)}
-                  disabled={unbanningUuid === m.student_uuid}
-                  className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-800 disabled:opacity-50 flex-shrink-0 ml-2"
-                >
-                  <Unlock size={12} />
-                  {unbanningUuid === m.student_uuid ? '解封中...' : '解封'}
-                </button>
+                {confirmingUuid === m.student_uuid ? (
+                  <span className="flex items-center gap-2 text-xs flex-shrink-0 ml-2">
+                    <button
+                      onClick={() => handleUnban(m.student_uuid, m.nickname)}
+                      className="text-red-600 hover:text-red-800 font-medium"
+                      title="解封后该学生可以重新加入本课堂"
+                    >
+                      确认解封？
+                    </button>
+                    <button
+                      onClick={() => setConfirmingUuid(null)}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      取消
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => setConfirmingUuid(m.student_uuid)}
+                    disabled={unbanningUuid === m.student_uuid}
+                    className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-800 disabled:opacity-50 flex-shrink-0 ml-2"
+                  >
+                    <Unlock size={12} />
+                    {unbanningUuid === m.student_uuid ? '解封中...' : '解封'}
+                  </button>
+                )}
               </div>
             ))}
         </div>

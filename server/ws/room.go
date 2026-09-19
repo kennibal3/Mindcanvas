@@ -214,15 +214,24 @@ func (r *Room) ShouldThrottleCursor() string {
 	return "disabled"
 }
 
-// RemoveClient 强制移除客户端（踢人用）
+// RemoveClient 强制移除客户端（踢人/封禁用）
+//
+// BUG-049：此前 close(c.Send) 后立刻 c.Conn.Close()，WritePump 还没来得及把刚塞进通道的
+// ctrl_kick 写到线上连接就断了，学生端收不到原因，onclose 还会按普通断线自动重连。
+// 现改为：只标记关闭码并 close(c.Send)，由 WritePump 先把缓冲里的消息（含 ctrl_kick）写完，
+// 再发带 CloseCodeKicked 的关闭帧并关闭连接；另设 3 秒兜底强制关闭，防止对端不读数据时连接悬挂。
 func (r *Room) RemoveClient(uuid string) {
 	r.mu.Lock()
-	if c, ok := r.Clients[uuid]; ok {
+	c, ok := r.Clients[uuid]
+	if ok {
+		c.closeCode = CloseCodeKicked
 		close(c.Send)
 		delete(r.Clients, uuid)
-		c.Conn.Close()
 	}
 	r.mu.Unlock()
+	if ok {
+		time.AfterFunc(3*time.Second, func() { c.Conn.Close() })
+	}
 }
 
 // BroadcastRaw 广播原始字节给所有客户端
