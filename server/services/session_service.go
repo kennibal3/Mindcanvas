@@ -371,7 +371,7 @@ func (s *SessionService) UpdateStudentProfile(roomID, studentUUID, nickname stri
 		avatarID = 1
 	}
 	_, err := s.db.Exec(
-		`UPDATE room_sessions SET nickname = $1, avatar_id = $2, avatar_url = $3
+		`UPDATE room_sessions SET nickname = $1, suffix = '', avatar_id = $2, avatar_url = $3
 		 WHERE room_id = $4 AND student_uuid = $5`,
 		nickname, avatarID, avatarURL, roomID, studentUUID,
 	)
@@ -379,6 +379,8 @@ func (s *SessionService) UpdateStudentProfile(roomID, studentUUID, nickname stri
 		return fmt.Errorf("更新学生资料失败: %w", err)
 	}
 
+	// BUG-048 尾巴：DB 也同步清空 suffix（上面 UPDATE），否则从库读取的路径（分组 CONCAT(nickname,suffix)、
+	// 会话列表）会得到「新昵称+旧后缀」，与 Redis 及广播不一致。身份靠 student_uuid，不靠 suffix，清空安全。
 	// BUG-048：同步 Redis 会话缓存。学生重连时 ws_handler.go 是从 session:{uuid} 读
 	// nickname/suffix/avatar_id/avatar_url 生成 member_join 与 client 信息的，只改 DB 会让
 	// 重连后其他人重新看到入场时的旧昵称/旧头像。读-改-写、保留其余字段（如 room_id）与原 TTL；

@@ -311,6 +311,8 @@ const ControlPanel = ({
   const isLocked    = useRoomStore(s => s.isLocked);
   const isReadOnly  = useRoomStore(s => s.isReadOnly);
   const currentRoom = useRoomStore(s => s.currentRoom);
+  // BUG-050：仅实名班级房（roster）封禁有效；currentRoom 未加载时不显示，避免闪现
+  const canBan      = currentRoom?.collab_mode === 'roster';
   const transform   = useCanvasStore(s => s.transform);
 
   // UI 状态
@@ -893,12 +895,19 @@ const ControlPanel = ({
                 members={members}
                 onKick={handleKick}
                 kickLoading={actionLoading}
-                onBan={handleBan}
+                onBan={canBan ? handleBan : undefined}
               />
-              {/* BUG-044：已封禁名单 + 解封入口 */}
-              <div className="mt-2 pt-2 border-t border-gray-50">
-                <BannedList roomId={roomId} refreshSignal={banRefreshSignal} />
-              </div>
+              {/* BUG-050：匿名/团队房每次入场身份都是新的，封禁挂在旧身份上封不住，
+                  故仅实名班级房提供「封禁」与已封禁名单，其余房间只保留「踢出」并如实告知 */}
+              {canBan ? (
+                <div className="mt-2 pt-2 border-t border-gray-50">
+                  <BannedList roomId={roomId} refreshSignal={banRefreshSignal} />
+                </div>
+              ) : currentRoom ? (
+                <div className="mt-2 text-xs text-gray-400 leading-relaxed">
+                  匿名/团队课堂中学生每次入场都是新身份，无法封禁；「踢出」后对方仍可重新扫码加入。需要封禁请使用实名班级课堂。
+                </div>
+              ) : null}
             </div>
 
             {/* 学情雷达 */}
