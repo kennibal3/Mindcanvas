@@ -136,22 +136,3 @@ export interface DropzoneActionMessage {
   action_type: 'like' | 'pin' | 'tag' | 'hide' | 'delete_submission';
   tags?: string[];
 }
-
-// ===== Teaching Module =====
-export type MountPoint = 'sidebar' | 'panel' | 'fullpage';
-export type MinRole = 'teacher' | 'admin' | 'superadmin';
-
-export interface ModuleProps {
-  roomId: string;
-  isTeacher: boolean;
-}
-
-export interface TeachingModuleConfig {
-  name?: string;  // 兼容 ModuleRegistry 旧调用
-  id: string;
-  label: string;
-  icon: string;
-  mountPoint: MountPoint;
-  minRole: MinRole;
-  component: React.ComponentType<ModuleProps>;
-}
