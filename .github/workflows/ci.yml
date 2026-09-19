@@ -48,3 +48,20 @@ jobs:
           cd web
           npm ci
           npm run build
+
+  # REQ-054 的一小片：WebSocket 契约回归。
+  # 后端三条契约（问答广播两层结构 / room_sync 的 room 在顶层 / 踢出先送 ctrl_kick 再发 4001 关闭帧）
+  # 在上面 backend 任务的 `go test ./...` 里跑（server/handlers/ws_contract_test.go、server/ws/room_kick_test.go）；
+  # 这里跑前端侧对同一份共享样例（contracts/room_sync.json）的校验。
+  # 用 Node 内置测试运行器 + 类型剥离，零依赖、不需要 npm ci，几秒跑完。
+  contract-tests:
+    name: 前端契约测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: node --test
+        run: node --experimental-strip-types --test "web/tests/*.test.mts"
+

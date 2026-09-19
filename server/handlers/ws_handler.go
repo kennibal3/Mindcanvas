@@ -389,40 +389,25 @@ func (h *WSHandler) HandleWebSocket(c *gin.Context) {
 				onlineMembers = append(onlineMembers, m)
 			}
 		}
-		syncBytes, _ := json.Marshal(map[string]interface{}{
-			"type":    ws.MsgRoomSync,
-			"room_id": roomID,
-			// BUG-038：学生端此前完全没有真实房间信息来源，RoomPage.tsx 早已在等
-			// msg.payload.room 这个字段（写于 REQ-004 前后）但服务端从未发过，
-			// title 只能靠本地假造的 mc_room_title（从未被写入过）永远显示"课堂"。
-			"room": map[string]interface{}{
-				"id":          roomID,
-				"title":       roomTitle,
-				"is_locked":   isLocked,
-				"is_readonly": isReadOnly,
-				"room_mode":   roomMode,
-				"collab_mode": collabMode,
-			},
-			"excalidraw_scene": sceneData,
-			"elements":         elements,
-			"is_locked":        isLocked,
-			"is_readonly":      isReadOnly,
-			"sender_uuid":      senderUUID,
-			"sender_name":      senderName,
-			"sender_role":      senderRole,
-			// REQ-029：场景容量三件套，前端场控面板据此渲染进度条
-			"scene_size":        sceneSizeBytes,
-			"scene_size_warn":   sceneSizeWarnBytes,
-			"scene_size_reject": sceneSizeRejectBytes,
-			// BUG-008：本学生已提交过的组件ID列表
-			"my_submissions": mySubmissions,
-			// BUG-009：本学生在各词云组件下已提交过的具体词语（{element_id: [word,...]}）
-			"my_word_submissions": myWordSubmissions,
-			// BUG-046：本学生在各问答组件下已提交的具体选项与当时是否正确
-			// （{element_id: {choice_idx, is_correct}}）
-			"my_answer_submissions": myAnswerSubmissions,
-			"members":               onlineMembers,
-		})
+		// room_sync 的构造抽到 buildRoomSyncMessage（ws_room_sync.go），其结构由 ws_contract_test.go 锁定
+		syncBytes, _ := json.Marshal(buildRoomSyncMessage(roomSyncInput{
+			RoomID:              roomID,
+			RoomTitle:           roomTitle,
+			RoomMode:            roomMode,
+			CollabMode:          collabMode,
+			IsLocked:            isLocked,
+			IsReadOnly:          isReadOnly,
+			SceneData:           sceneData,
+			Elements:            elements,
+			SenderUUID:          senderUUID,
+			SenderName:          senderName,
+			SenderRole:          senderRole,
+			SceneSize:           sceneSizeBytes,
+			MySubmissions:       mySubmissions,
+			MyWordSubmissions:   myWordSubmissions,
+			MyAnswerSubmissions: myAnswerSubmissions,
+			Members:             onlineMembers,
+		}))
 		client.Send <- syncBytes
 	}()
 

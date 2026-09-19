@@ -1,0 +1,26 @@
+{
+  "type": "room_sync",
+  "room_id": "11111111-2222-3333-4444-555555555555",
+  "room": {
+    "id": "11111111-2222-3333-4444-555555555555",
+    "title": "契约样例课堂",
+    "is_locked": false,
+    "is_readonly": false,
+    "room_mode": "whiteboard",
+    "collab_mode": "anonymous"
+  },
+  "excalidraw_scene": null,
+  "elements": [],
+  "is_locked": false,
+  "is_readonly": false,
+  "sender_uuid": "guest-00000000-0000-0000-0000-000000000000",
+  "sender_name": "小明#1234",
+  "sender_role": "student",
+  "scene_size": 0,
+  "scene_size_warn": 2097152,
+  "scene_size_reject": 5242880,
+  "my_submissions": [],
+  "my_word_submissions": {},
+  "my_answer_submissions": {},
+  "members": []
+}

@@ -8,6 +8,7 @@ import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useWidgetStore } from '@/store/widgetStore';
 import { WS_CONFIG, WS_BASE } from '@/utils/constants';
+import { extractSyncedRoom } from '@/utils/wsContracts';
 import type { WSMessage } from '@/types/message';
 
 interface UseWebSocketOptions {
@@ -95,7 +96,7 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
           // BUG-038（REOPEN）：服务端把 room 放在消息顶层（与 elements/members 同级），
           // 此前读 msg.payload?.room 永远是 undefined，学生端标题恒为「课堂」。
           {
-            const syncedRoom = msg.room ?? msg.payload?.room;
+            const syncedRoom = extractSyncedRoom(msg);
             if (syncedRoom) {
               const prevRoom = useRoomStore.getState().currentRoom;
               store.setCurrentRoom(prevRoom ? { ...prevRoom, ...syncedRoom } : syncedRoom);
