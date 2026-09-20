@@ -451,26 +451,28 @@ func (h *WSHandler) SetupMessageHandler() {
 			if err := json.Unmarshal(msg.Payload, &payload); err != nil {
 				return
 			}
-			if illegalIDs := validateDeletePermissions(senderUUID, client.Role == "student", payload); len(illegalIDs) > 0 {
-				// REQ-046 团队协作形态：人人可删他人元素，放行、不恢复。
-				// 仅在确有越权删除时才查库（罕见），避免每次 scene_update 都查房间形态。
-				if !h.isTeamRoom(roomID) {
-					payload = filterIllegalDeletes(payload, illegalIDs)
-					log.Printf("[删除校验] 非团队 room:%s sender:%s 恢复并回弹 %d 个越权删除", roomID, senderUUID, len(illegalIDs))
-					// 把被恢复的元素ID回发删除者本人，令其画布即时回弹。
-					// BroadcastRawToOthers 不含本人，缺这一步删除者要刷新才看到恢复（体验缺口）。
-					if restoreBytes, err := json.Marshal(map[string]interface{}{
-						"type": "scene_restore",
-						"data": map[string]interface{}{"illegal_ids": illegalIDs},
-					}); err == nil {
-						select {
-						case client.Send <- restoreBytes:
-						default:
-						}
+			// 删除权限决策抽为纯函数 resolveSceneDeleteGuard（ws_scene_messages.go，REQ-054 契约测试锁定）。
+			// REQ-046 团队协作形态：人人可删他人元素，放行、不恢复。
+			// isTeamRoom 以函数传入，仅在确有越权删除时才查库（罕见），避免每次 scene_update 都查房间形态。
+			var illegalIDs []string
+			var guardOutcome sceneDeleteGuardOutcome
+			payload, illegalIDs, guardOutcome = resolveSceneDeleteGuard(
+				senderUUID, client.Role == "student", payload,
+				func() bool { return h.isTeamRoom(roomID) },
+			)
+			switch guardOutcome {
+			case guardRestored:
+				log.Printf("[删除校验] 非团队 room:%s sender:%s 恢复并回弹 %d 个越权删除", roomID, senderUUID, len(illegalIDs))
+				// 把被恢复的元素ID回发删除者本人，令其画布即时回弹。
+				// BroadcastRawToOthers 不含本人，缺这一步删除者要刷新才看到恢复（体验缺口）。
+				if restoreBytes, err := json.Marshal(buildSceneRestoreMessage(illegalIDs)); err == nil {
+					select {
+					case client.Send <- restoreBytes:
+					default:
 					}
-				} else {
-					log.Printf("[删除校验] 团队 room:%s sender:%s 放行 %d 个跨人删除", roomID, senderUUID, len(illegalIDs))
 				}
+			case guardTeamAllowed:
+				log.Printf("[删除校验] 团队 room:%s sender:%s 放行 %d 个跨人删除", roomID, senderUUID, len(illegalIDs))
 			}
 			// BUG-020 一期：删除审计。2026-08-11 事故当天完全查不到「谁在什么时候
 			// 删了什么」——validateDeletePermissions 对教师第一行就 return nil，
@@ -482,11 +484,7 @@ func (h *WSHandler) SetupMessageHandler() {
 					roomID, senderUUID, client.Role, delCount)
 			}
 
-			broadcastBytes, _ := json.Marshal(map[string]interface{}{
-				"type": ws.MsgSceneUpdate,
-				"data": payload,
-				"from": senderUUID,
-			})
+			broadcastBytes, _ := json.Marshal(buildSceneUpdateMessage(payload, senderUUID))
 			room.BroadcastRawToOthers(senderUUID, broadcastBytes)
 
 			sceneBytes, _ := json.Marshal(payload)
