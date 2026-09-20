@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-09-10T08:04:28Z",
-  "updated_at": "2026-09-20T04:00:24Z",
+  "updated_at": "2026-09-20T06:14:55Z",
   "files": {
     ".gitattributes": {
       "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
@@ -9,9 +9,9 @@
       "normalized_sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476"
     },
     ".github/workflows/ci.yml": {
-      "sha256": "8063fafa0cf43d277548042acec87fad08e8385af93772e6ee22b1c2bd5652a0",
-      "size": 2978,
-      "normalized_sha256": "8063fafa0cf43d277548042acec87fad08e8385af93772e6ee22b1c2bd5652a0"
+      "sha256": "76eee767aac25854804e06a69facc0be03b62fd043ef05b3e8e55413abe870d9",
+      "size": 6908,
+      "normalized_sha256": "76eee767aac25854804e06a69facc0be03b62fd043ef05b3e8e55413abe870d9"
     },
     ".gitignore": {
       "sha256": "31496c15cafcab00bbf69b910bf0ae7eda82c3b03879060276d116cc19049fd4",
@@ -29,9 +29,9 @@
       "normalized_sha256": "f1b990d113409a9c7abc877eb83788e99c7096058d43974219dd9ea4c6659208"
     },
     "aoci.code.txt": {
-      "sha256": "ac51d4330ab6ff569ed6ad3121d49c34a4c7a7bb80002d9efd90729e0f8311f3",
-      "size": 106471,
-      "normalized_sha256": "ac51d4330ab6ff569ed6ad3121d49c34a4c7a7bb80002d9efd90729e0f8311f3"
+      "sha256": "072d3e7482761b4cadd3ae1b9e772702a2ac99941bac77bef0000615910eb586",
+      "size": 107789,
+      "normalized_sha256": "072d3e7482761b4cadd3ae1b9e772702a2ac99941bac77bef0000615910eb586"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -229,6 +229,21 @@
       "sha256": "8d04b0f030074c169686e7cd3e9027588f52b73f7efdc6311a1cf7a8a6484f85",
       "size": 7459,
       "normalized_sha256": "8d04b0f030074c169686e7cd3e9027588f52b73f7efdc6311a1cf7a8a6484f85"
+    },
+    "scripts/ci/apply_migrations.sh": {
+      "sha256": "1af9415f91b42019fd6ec093e8ba7e60a7037f93e751a92f065da968a9ac213d",
+      "size": 1825,
+      "normalized_sha256": "1af9415f91b42019fd6ec093e8ba7e60a7037f93e751a92f065da968a9ac213d"
+    },
+    "scripts/ci/seed_smoke.sql": {
+      "sha256": "ccd3739242ed016922b5668019e5d1e2e2da34d83b9b15322565439cbff8c204",
+      "size": 1775,
+      "normalized_sha256": "ccd3739242ed016922b5668019e5d1e2e2da34d83b9b15322565439cbff8c204"
+    },
+    "scripts/ci/smoke_ws.mjs": {
+      "sha256": "ab2cb6dcfff7b9212dc2952fbedc5e368d06f65eae8446137d1d4faf1f487eac",
+      "size": 11378,
+      "normalized_sha256": "ab2cb6dcfff7b9212dc2952fbedc5e368d06f65eae8446137d1d4faf1f487eac"
     },
     "scripts/com.mindcanvas.offsitepull.plist.example": {
       "sha256": "0fdf6ce4f393843baff705c2794505a7325998f71d306ad33d0ce6342a9a7e34",
