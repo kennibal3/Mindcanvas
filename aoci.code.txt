@@ -12,7 +12,7 @@ test_phase8_full.sh[TB6L]: F:Phase8-v2 全量回归：Phase4-8 全部功能，�
 缺陷清单_AOCI审计.md[SG7S]: F:AOCI-CODE 索引构建时对全仓 223 个源文件逐文件阅读产出的缺陷清单：功能缺陷/安全隐私/数据一致性/死代码/健壮性五类，另附索引自身遗留项 | R:- | A:- | S:-
 
 ===/Users/kdongnmt.edu/Desktop/mind/.github/workflows/===
-ci.yml[OV6T]: F:main推送与PR触发，后端gofmt检查加go build/vet/test、前端npm ci+build、前端契约测试三作业并行 | R:code:contracts/room_sync.json | A:- | S:gofmt -l 非空即红，须先全仓清零再加检查；先本地全绿再入 CI 免卡死 PR；契约测试用 glob 传 web/tests/*.test.mts，传目录报 MODULE_NOT_FOUND
+ci.yml[OV6S]: F:main推送与PR触发四作业并行：后端gofmt检查加编译/vet/test、前端构建、前端契约测试、后端冒烟（临时Postgres+Redis空库跑迁移并走教师学生双WS答题） | R:code:contracts/room_sync.json,code:scripts/ci/apply_migrations.sh,code:scripts/ci/smoke_ws.mjs | A:- | S:gofmt -l非空即红须先全仓清零;契约测试传glob不传目录;冒烟须先播种绕开012与001约束冲突(BUG-052);.github路径远程工具不可写
 
 ===/Users/kdongnmt.edu/Desktop/mind/configs/===
 001_init.sql[PB9M]: F:初始化六张核心表 tenants/users/rooms/room_elements/widget_interactions/room_sessions 及索引 | R:code:configs/002_dropzone.sql,code:configs/004_scene_persistence.sql,code:configs/011_avatar.sql,code:configs/012_chat.sql | A:- | S:idx_wi_no_duplicate_vote 是仅对 action_type='vote' 的部分唯一索引，用数据库原子性替代应用层计数防重复投票，词云与问答不受限；chk_tenant_role 要求 superadmin 的 tenant_id 为 NULL 而 admin/teacher 非空；room_elements 用 is_deleted 软删除以支持撤销；学生无账号不入 users 表
@@ -289,3 +289,8 @@ wsContracts.ts[CN6T]: F:WebSocket 消息契约纯函数：extractSyncedRoom 取�
 ===/Users/kdongnmt.edu/Desktop/mind/contracts/===
 room_sync.json[FN6T]: F:Go 与前端共用的 room_sync 消息样例，两端契约测试都读它 | R:code:server/handlers/ws_room_sync.go,code:web/src/utils/wsContracts.ts,code:.github/workflows/ci.yml | A:- | S:room 必须在消息顶层且没有 payload 层；服务端 room_sync 增删字段必须同步改本文件，否则 Go 与前端两边契约测试同时变红
 widget_update.json[FN6T]: F:Go 与前端共用的 widget_update 消息样例，服务端广播字段集与前端处理都按它校验 | R:code:server/handlers/ws_handler.go,code:web/src/utils/wsContracts.ts,code:web/src/hooks/useWebSocket.ts | A:- | S:payload 必须两层（x/y/width/height + 内层 payload）；服务端广播增删字段须同步改本文件，否则 Go 与前端契约测试至少一侧变红
+
+===/Users/kdongnmt.edu/Desktop/mind/scripts/ci/===
+apply_migrations.sh[TQ5T]: F:空库按编号逐个执行configs迁移文件，001之后调用种子SQL，任一失败即停并指明文件名 | R:code:scripts/ci/seed_smoke.sql | A:- | S:同号012靠C排序定序;001后必须播种否则012违反chk_tenant_role;只能用于空库，重跑会在播种处冲突
+seed_smoke.sql[TQ5T]: F:CI专用种子：测试租户、带租户的Victoria、冒烟教师smoke_teacher（pgcrypto生成bcrypt口令） | R:code:configs/012_chat.sql,code:scripts/ci/apply_migrations.sh | A:- | S:预插带租户Victoria让012的WHERE NOT EXISTS跳过，不改已上线迁移;口令只属CI临时库，绝不用于真实账号
+smoke_ws.mjs[TQ6M]: F:零依赖Node22冒烟脚本：教师登录取cookie、建房间、学生入场、两条真WebSocket、建qa_widget并答题，断言教师收到两层结构widget_update，重复提交只回widget_error | R:code:server/handlers/ws_handler.go,code:contracts/widget_update.json,code:scripts/ci/apply_migrations.sh | A:- | S:教师WS只认Cookie，靠Node22全局WebSocket的headers选项传;断言复用两层payload与顶层room契约;不替代真机点击验收
