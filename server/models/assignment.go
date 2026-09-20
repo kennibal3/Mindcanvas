@@ -26,11 +26,11 @@ const (
 
 // 解析状态
 const (
-	ParseStatusPending  = "pending"
-	ParseStatusParsing  = "parsing"
-	ParseStatusDone     = "done"
-	ParseStatusFailed   = "failed"
-	ParseStatusSkipped  = "skipped"
+	ParseStatusPending = "pending"
+	ParseStatusParsing = "parsing"
+	ParseStatusDone    = "done"
+	ParseStatusFailed  = "failed"
+	ParseStatusSkipped = "skipped"
 )
 
 // 评审状态
@@ -82,8 +82,8 @@ type AssignmentMaterial struct {
 
 // RubricCriterion 评分维度
 type RubricCriterion struct {
-	Name   string       `json:"name"`
-	Weight int          `json:"weight"` // 权重百分比
+	Name   string        `json:"name"`
+	Weight int           `json:"weight"` // 权重百分比
 	Levels []RubricLevel `json:"levels"`
 }
 
@@ -96,16 +96,16 @@ type RubricLevel struct {
 
 // AssignmentRubric 评分标准版本
 type AssignmentRubric struct {
-	ID               string    `json:"id"`
-	AssignmentID     string    `json:"assignment_id"`
-	Version          int       `json:"version"`
-	Source           string    `json:"source"` // extracted/generated/manual
-	CriteriaJSON     string    `json:"criteria_json"` // 原始JSON字符串
+	ID               string            `json:"id"`
+	AssignmentID     string            `json:"assignment_id"`
+	Version          int               `json:"version"`
+	Source           string            `json:"source"`        // extracted/generated/manual
+	CriteriaJSON     string            `json:"criteria_json"` // 原始JSON字符串
 	Criteria         []RubricCriterion `json:"criteria,omitempty"`
-	TotalScore       int       `json:"total_score"`
-	TeacherConfirmed bool      `json:"teacher_confirmed"`
-	ConfirmedAt      *time.Time `json:"confirmed_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
+	TotalScore       int               `json:"total_score"`
+	TeacherConfirmed bool              `json:"teacher_confirmed"`
+	ConfirmedAt      *time.Time        `json:"confirmed_at,omitempty"`
+	CreatedAt        time.Time         `json:"created_at"`
 }
 
 // AssignmentSubmission 学生提交
@@ -125,25 +125,25 @@ type AssignmentSubmission struct {
 
 // AssignmentAssessment AI初评与教师确认
 type AssignmentAssessment struct {
-	ID                  string     `json:"id"`
-	SubmissionID        string     `json:"submission_id"`
-	RubricID            string     `json:"rubric_id"`
-	AIScore             *float64   `json:"ai_score,omitempty"`
-	AIDimensionScores   string     `json:"ai_dimension_scores,omitempty"`
-	AIFeedback          string     `json:"ai_feedback,omitempty"`
-	AIHighlights        string     `json:"ai_highlights,omitempty"`
-	AIIssues            string     `json:"ai_issues,omitempty"`
-	AISuggestions       string     `json:"ai_suggestions,omitempty"`
-	AIAssessedAt        *time.Time `json:"ai_assessed_at,omitempty"`
-	FinalScore          *float64   `json:"final_score,omitempty"`
-	FinalDimensionScores string    `json:"final_dimension_scores,omitempty"`
-	FinalFeedback       string     `json:"final_feedback,omitempty"`
-	ReviewStatus        string     `json:"review_status"`
-	ReviewedBy          *string    `json:"reviewed_by,omitempty"`
-	ReviewedAt          *time.Time `json:"reviewed_at,omitempty"`
-	PublishedAt         *time.Time `json:"published_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	ID                   string     `json:"id"`
+	SubmissionID         string     `json:"submission_id"`
+	RubricID             string     `json:"rubric_id"`
+	AIScore              *float64   `json:"ai_score,omitempty"`
+	AIDimensionScores    string     `json:"ai_dimension_scores,omitempty"`
+	AIFeedback           string     `json:"ai_feedback,omitempty"`
+	AIHighlights         string     `json:"ai_highlights,omitempty"`
+	AIIssues             string     `json:"ai_issues,omitempty"`
+	AISuggestions        string     `json:"ai_suggestions,omitempty"`
+	AIAssessedAt         *time.Time `json:"ai_assessed_at,omitempty"`
+	FinalScore           *float64   `json:"final_score,omitempty"`
+	FinalDimensionScores string     `json:"final_dimension_scores,omitempty"`
+	FinalFeedback        string     `json:"final_feedback,omitempty"`
+	ReviewStatus         string     `json:"review_status"`
+	ReviewedBy           *string    `json:"reviewed_by,omitempty"`
+	ReviewedAt           *time.Time `json:"reviewed_at,omitempty"`
+	PublishedAt          *time.Time `json:"published_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // ===== 请求/响应结构 =====
@@ -185,28 +185,28 @@ type SubmitAssignmentRequest struct {
 
 // ReviewAssessmentRequest 教师复核
 type ReviewAssessmentRequest struct {
-	FinalScore          float64           `json:"final_score"`
+	FinalScore           float64            `json:"final_score"`
 	FinalDimensionScores map[string]float64 `json:"final_dimension_scores"`
-	FinalFeedback       string            `json:"final_feedback"`
-	Publish             bool              `json:"publish"` // 是否直接发布给学生
+	FinalFeedback        string             `json:"final_feedback"`
+	Publish              bool               `json:"publish"` // 是否直接发布给学生
 }
 
 // AssignmentDetail 作业详情（含统计）
 type AssignmentDetail struct {
 	Assignment
-	MaterialCount    int `json:"material_count"`
-	SubmissionCount  int `json:"submission_count"`
-	AssessedCount    int `json:"assessed_count"`
-	PublishedCount   int `json:"published_count"`
-	LatestRubric     *AssignmentRubric `json:"latest_rubric,omitempty"`
+	MaterialCount   int               `json:"material_count"`
+	SubmissionCount int               `json:"submission_count"`
+	AssessedCount   int               `json:"assessed_count"`
+	PublishedCount  int               `json:"published_count"`
+	LatestRubric    *AssignmentRubric `json:"latest_rubric,omitempty"`
 }
 
 // ParseResult 解析服务返回结果
 type ParseResult struct {
-	Success    bool   `json:"success"`
-	Markdown   string `json:"markdown"`
-	WordCount  int    `json:"word_count"`
-	CharCount  int    `json:"char_count"`
-	ElapsedMs  int    `json:"elapsed_ms"`
-	Error      string `json:"error,omitempty"`
+	Success   bool   `json:"success"`
+	Markdown  string `json:"markdown"`
+	WordCount int    `json:"word_count"`
+	CharCount int    `json:"char_count"`
+	ElapsedMs int    `json:"elapsed_ms"`
+	Error     string `json:"error,omitempty"`
 }

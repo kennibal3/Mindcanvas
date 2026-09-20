@@ -1,35 +1,37 @@
 // =============================================================
 // MindCanvas Phase8 - 作业评价中心处理器
 // API：
-//   POST   /api/assignments                    创建作业
-//   GET    /api/assignments                    列出作业（可?room_id=过滤）
-//   GET    /api/assignments/:aid               作业详情
-//   PATCH  /api/assignments/:aid/status        更新状态
-//   PATCH  /api/assignments/:aid/room          关联/解绑课堂房间（REQ-048）
-//   DELETE /api/assignments/:aid               删除作业
-//   POST   /api/assignments/:aid/materials     上传材料（文件）
-//   POST   /api/assignments/:aid/materials/text 添加文字材料
-//   GET    /api/assignments/:aid/materials     列出材料
-//   DELETE /api/assignments/:aid/materials/:mid 删除材料
-//   POST   /api/assignments/:aid/materials/:mid/parse 触发重新解析
-//   POST   /api/assignments/:aid/rubric/generate 生成默认Rubric
-//   PUT    /api/assignments/:aid/rubric        教师确认Rubric
-//   GET    /api/assignments/:aid/rubric        获取最新Rubric
-//   POST   /api/assignments/:aid/submit        学生提交作业
-//   GET    /api/assignments/:aid/submissions   列出所有提交
-//   GET    /api/assignments/:aid/parser/health 检查解析服务状态
+//
+//	POST   /api/assignments                    创建作业
+//	GET    /api/assignments                    列出作业（可?room_id=过滤）
+//	GET    /api/assignments/:aid               作业详情
+//	PATCH  /api/assignments/:aid/status        更新状态
+//	PATCH  /api/assignments/:aid/room          关联/解绑课堂房间（REQ-048）
+//	DELETE /api/assignments/:aid               删除作业
+//	POST   /api/assignments/:aid/materials     上传材料（文件）
+//	POST   /api/assignments/:aid/materials/text 添加文字材料
+//	GET    /api/assignments/:aid/materials     列出材料
+//	DELETE /api/assignments/:aid/materials/:mid 删除材料
+//	POST   /api/assignments/:aid/materials/:mid/parse 触发重新解析
+//	POST   /api/assignments/:aid/rubric/generate 生成默认Rubric
+//	PUT    /api/assignments/:aid/rubric        教师确认Rubric
+//	GET    /api/assignments/:aid/rubric        获取最新Rubric
+//	POST   /api/assignments/:aid/submit        学生提交作业
+//	GET    /api/assignments/:aid/submissions   列出所有提交
+//	GET    /api/assignments/:aid/parser/health 检查解析服务状态
+//
 // =============================================================
 package handlers
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
-	"io"
-	"os"
 
 	"github.com/gin-gonic/gin"
 

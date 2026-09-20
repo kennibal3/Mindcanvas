@@ -111,9 +111,9 @@ type UpdateRemediationRequest struct {
 
 // StudentRemediationPublic 学生侧可见内容（无诊断、无答案解析）
 type StudentRemediationPublic struct {
-	StudentName    string                   `json:"student_name"`
-	GentleFeedback string                   `json:"gentle_feedback"`
-	SentAt         string                   `json:"sent_at"`
+	StudentName    string                    `json:"student_name"`
+	GentleFeedback string                    `json:"gentle_feedback"`
+	SentAt         string                    `json:"sent_at"`
 	Questions      []StudentPracticeQuestion `json:"questions"`
 }
 

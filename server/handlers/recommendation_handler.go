@@ -1,11 +1,13 @@
 // =============================================================
 // MindCanvas REQ-039 第三期 3b - 推荐练习处理器
 // API（挂在 assignments 路由组内，自动继承 AuthRequired + RequireRole(teacher…)）：
-//   POST   /api/assignments/:aid/recommendations/generate     生成推荐题（异步，返回 job_id）
-//   GET    /api/assignments/:aid/recommendations/jobs/:jid    查询生成任务状态（供轮询）
-//   GET    /api/assignments/:aid/recommendations              列出推荐题
-//   PATCH  /api/assignments/:aid/recommendations/:rid         审核（采用/拒绝/修改）
-//   POST   /api/assignments/:aid/recommendations/publish      发布为新作业
+//
+//	POST   /api/assignments/:aid/recommendations/generate     生成推荐题（异步，返回 job_id）
+//	GET    /api/assignments/:aid/recommendations/jobs/:jid    查询生成任务状态（供轮询）
+//	GET    /api/assignments/:aid/recommendations              列出推荐题
+//	PATCH  /api/assignments/:aid/recommendations/:rid         审核（采用/拒绝/修改）
+//	POST   /api/assignments/:aid/recommendations/publish      发布为新作业
+//
 // =============================================================
 package handlers
 

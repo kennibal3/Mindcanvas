@@ -16,7 +16,7 @@ import (
 
 // ProfanityService 敏感词过滤服务
 type ProfanityService struct {
-	root *trieNode   // Trie 树根节点
+	root *trieNode    // Trie 树根节点
 	mu   sync.RWMutex // 读写锁（支持热加载）
 }
 

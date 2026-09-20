@@ -31,6 +31,13 @@ import (
 const fakeQAElementPayload = `{"x":100,"y":200,"width":320,"height":260,` +
 	`"payload":{"status":"open","question":"1+1等于几？","options":["1","2","3","4"],"correctIdx":1}}`
 
+// fakeElementPayload 是假驱动对「SELECT payload FROM room_elements」返回的内容，
+// 默认是问答组件；其余契约测试（投票/词云）按需临时替换，用完由 setFakeElementPayload 还原。
+var fakeElementPayload = fakeQAElementPayload
+
+// fakeHTMLWidgetType 供 HandleHtmlEvent 的「元素存在且类型为 html_widget」校验使用
+const fakeHTMLWidgetType = "html_widget"
+
 type fakeDriver struct{}
 
 func (fakeDriver) Open(string) (driver.Conn, error) { return &fakeConn{}, nil }
@@ -57,7 +64,9 @@ func (s *fakeStmt) Exec([]driver.Value) (driver.Result, error) {
 func (s *fakeStmt) Query([]driver.Value) (driver.Rows, error) {
 	switch {
 	case strings.Contains(s.query, "SELECT payload FROM room_elements"):
-		return &fakeRows{cols: []string{"payload"}, data: [][]driver.Value{{[]byte(fakeQAElementPayload)}}}, nil
+		return &fakeRows{cols: []string{"payload"}, data: [][]driver.Value{{[]byte(fakeElementPayload)}}}, nil
+	case strings.Contains(s.query, "JOIN rooms"):
+		return &fakeRows{cols: []string{"type", "teacher_id"}, data: [][]driver.Value{{fakeHTMLWidgetType, "teacher-1"}}}, nil
 	case strings.Contains(s.query, "FROM widget_interactions"):
 		return &fakeRows{cols: []string{"choice_idx", "cnt"}, data: [][]driver.Value{{"1", int64(1)}}}, nil
 	}

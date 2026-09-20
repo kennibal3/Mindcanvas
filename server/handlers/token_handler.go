@@ -2,17 +2,19 @@
 // MindCanvas Phase8-v2 - 作业码与花名册API处理器
 // 功能：生成作业码、管理花名册、学生凭码提交、查看评价结果
 // API路由：
-//   POST   /api/assignments/:aid/tokens/generate  生成作业码
-//   GET    /api/assignments/:aid/tokens            查询作业码列表
-//   GET    /api/assignments/:aid/tokens/export     导出CSV
-//   GET    /api/assignments/:aid/roster            花名册+提交状态
-//   POST   /api/assignments/:aid/roster            手动添加花名册条目
-//   POST   /api/assignments/:aid/roster/import     CSV批量导入
-//   POST   /api/assignments/:aid/roster/sync       从课堂同步花名册
-//   DELETE /api/assignments/:aid/roster/:rid       删除花名册条目
-//   POST   /api/submit/verify                      验证作业码（公开）
-//   POST   /api/submit                             凭作业码提交（公开）
-//   GET    /api/submit/:aid/result                 学生查看评价结果（公开）
+//
+//	POST   /api/assignments/:aid/tokens/generate  生成作业码
+//	GET    /api/assignments/:aid/tokens            查询作业码列表
+//	GET    /api/assignments/:aid/tokens/export     导出CSV
+//	GET    /api/assignments/:aid/roster            花名册+提交状态
+//	POST   /api/assignments/:aid/roster            手动添加花名册条目
+//	POST   /api/assignments/:aid/roster/import     CSV批量导入
+//	POST   /api/assignments/:aid/roster/sync       从课堂同步花名册
+//	DELETE /api/assignments/:aid/roster/:rid       删除花名册条目
+//	POST   /api/submit/verify                      验证作业码（公开）
+//	POST   /api/submit                             凭作业码提交（公开）
+//	GET    /api/submit/:aid/result                 学生查看评价结果（公开）
+//
 // =============================================================
 package handlers
 
@@ -156,8 +158,8 @@ func (h *TokenHandler) AddRosterEntry(c *gin.Context) {
 // ImportRosterCSV POST /api/assignments/:aid/roster/import
 // CSV批量导入花名册
 // 支持两种格式：
-//   1. JSON body: {"names": ["张三", "李四,uuid-xxx"]}
-//   2. multipart CSV文件上传
+//  1. JSON body: {"names": ["张三", "李四,uuid-xxx"]}
+//  2. multipart CSV文件上传
 func (h *TokenHandler) ImportRosterCSV(c *gin.Context) {
 	aid := c.Param("aid")
 
@@ -357,7 +359,6 @@ func (h *TokenHandler) GetStudentResult(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"assessment": assessment})
 }
-
 
 // =============================================================
 // 公开端：学生作业文件上传（无需登录，凭作业码身份上传）

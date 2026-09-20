@@ -18,10 +18,10 @@ import (
 // Context Key 常量，用于在 gin.Context 中存取用户信息
 const (
 	ContextKeyUserID      = "user_id"      // 用户 UUID
-	ContextKeyRole        = "role"          // 用户角色
-	ContextKeyTenantID    = "tenant_id"     // 租户 ID
-	ContextKeyDisplayName = "display_name"  // 显示名称
-	ContextKeyPermissions = "permissions"   // 权限列表
+	ContextKeyRole        = "role"         // 用户角色
+	ContextKeyTenantID    = "tenant_id"    // 租户 ID
+	ContextKeyDisplayName = "display_name" // 显示名称
+	ContextKeyPermissions = "permissions"  // 权限列表
 )
 
 // AuthRequired JWT 认证中间件

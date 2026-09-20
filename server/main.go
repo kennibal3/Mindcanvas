@@ -142,11 +142,11 @@ func main() {
 	profanityService := services.NewProfanityService(cfg.Profanity.DictPath)
 	log.Printf("[启动] 敏感词服务就绪，词条数: %d", profanityService.WordCount())
 
-	roomService    := services.NewRoomService(db)
+	roomService := services.NewRoomService(db)
 	sessionService := services.NewSessionService(db, rdb, profanityService)
-	widgetService  := services.NewWidgetService(db, profanityService)
-	exportService  := services.NewExportService(db, rdb)
-	flowService    := services.NewFlowService(db)
+	widgetService := services.NewWidgetService(db, profanityService)
+	exportService := services.NewExportService(db, rdb)
+	flowService := services.NewFlowService(db)
 	// REQ-059：zip 课件包（解压落 /opt/mindcanvas/courseware/，不进 nginx 直出的 uploads/）
 	coursewareService := services.NewCoursewareService(db)
 
@@ -179,20 +179,20 @@ func main() {
 	insightService := services.NewInsightService(db, rdb, hub)
 
 	// ========== 6. 初始化处理器 ==========
-	authHandler       := handlers.NewAuthHandler(db)
-	adminHandler      := handlers.NewAdminHandler(db)
-	roomHandler       := handlers.NewRoomHandler(roomService, sessionService, widgetService, exportService, hub, rdb)
-	guestHandler      := handlers.NewGuestHandler(sessionService)
-	wsHandler         := handlers.NewWSHandler(db, rdb, hub, widgetService, sessionService, profanityService)
-	uploadHandler     := handlers.NewUploadHandler(db, rdb)
+	authHandler := handlers.NewAuthHandler(db)
+	adminHandler := handlers.NewAdminHandler(db)
+	roomHandler := handlers.NewRoomHandler(roomService, sessionService, widgetService, exportService, hub, rdb)
+	guestHandler := handlers.NewGuestHandler(sessionService)
+	wsHandler := handlers.NewWSHandler(db, rdb, hub, widgetService, sessionService, profanityService)
+	uploadHandler := handlers.NewUploadHandler(db, rdb)
 	coursewareHandler := handlers.NewCoursewareHandler(roomService, widgetService, coursewareService, hub)
-	flowHandler       := handlers.NewFlowHandler(flowService, roomService, hub)
-	insightHandler    := handlers.NewInsightHandler(insightService)
-	reviewHandler     := handlers.NewReviewHandler(reviewService)
-	shareHandler      := handlers.NewShareHandler(shareService)
+	flowHandler := handlers.NewFlowHandler(flowService, roomService, hub)
+	insightHandler := handlers.NewInsightHandler(insightService)
+	reviewHandler := handlers.NewReviewHandler(reviewService)
+	shareHandler := handlers.NewShareHandler(shareService)
 	assignmentHandler := handlers.NewAssignmentHandler(assignmentService, roomService)
-	tokenHandler      := handlers.NewTokenHandler(tokenService)
-	shelfHandler      := handlers.NewShelfHandler(roomService, hub)
+	tokenHandler := handlers.NewTokenHandler(tokenService)
+	shelfHandler := handlers.NewShelfHandler(roomService, hub)
 
 	// REQ-045 P2 班级/花名册
 	classService := services.NewClassService(db)
@@ -301,9 +301,9 @@ func main() {
 	// Phase7 公开分享页接口（无需认证）
 	sharePublic := r.Group("/api/share")
 	{
-		sharePublic.GET("/:token/meta",    shareHandler.GetShareMeta)
+		sharePublic.GET("/:token/meta", shareHandler.GetShareMeta)
 		sharePublic.POST("/:token/verify", shareHandler.VerifySharePassword)
-		sharePublic.GET("/:token/data",    shareHandler.GetShareData)
+		sharePublic.GET("/:token/data", shareHandler.GetShareData)
 	}
 
 	// Phase8 学生提交作业（原有UUID鉴权方式，保留兼容）
@@ -365,7 +365,7 @@ func main() {
 		admin.POST("/users", adminHandler.CreateUser)
 		admin.GET("/users", adminHandler.ListUsers)
 		admin.PUT("/users/:id/status", adminHandler.UpdateUserStatus)
-			admin.PATCH("/users/:id/chat", adminHandler.UpdateUserChat)
+		admin.PATCH("/users/:id/chat", adminHandler.UpdateUserChat)
 		admin.PATCH("/users/:id/agent", adminHandler.UpdateUserAgent) // REQ-062
 		// 需求5：房间统计（superadmin 看全部，admin 看本租户）
 		admin.GET("/room-stats", adminHandler.GetRoomStats)
@@ -400,8 +400,8 @@ func main() {
 		rooms.PUT("/:id/lock", roomHandler.LockRoom)
 		rooms.PUT("/:id/readonly", roomHandler.SetReadOnly)
 		rooms.POST("/:id/kick", roomHandler.KickMember)
-		rooms.POST("/:id/ban", roomHandler.BanMember)     // BUG-044：封禁（拒绝重连）
-		rooms.POST("/:id/unban", roomHandler.UnbanMember) // BUG-044：解封
+		rooms.POST("/:id/ban", roomHandler.BanMember)                   // BUG-044：封禁（拒绝重连）
+		rooms.POST("/:id/unban", roomHandler.UnbanMember)               // BUG-044：解封
 		rooms.GET("/:id/banned-members", roomHandler.ListBannedMembers) // BUG-044：黑名单列表
 		rooms.POST("/:id/gather", roomHandler.GatherMembers)
 		rooms.GET("/:id/members", roomHandler.ListMembers)
@@ -436,8 +436,8 @@ func main() {
 		// Phase6 互评
 		rooms.POST("/:id/elements/:eid/reviews", reviewHandler.CreateReview)
 		rooms.GET("/:id/elements/:eid/reviews", reviewHandler.ListReviews)
-			rooms.DELETE("/:id/elements/:eid/shelf-cards/:cid", shelfHandler.DeleteShelfCard)
-			rooms.PATCH("/:id/elements/:eid/shelf-visibility", shelfHandler.ToggleShelfVisibility)
+		rooms.DELETE("/:id/elements/:eid/shelf-cards/:cid", shelfHandler.DeleteShelfCard)
+		rooms.PATCH("/:id/elements/:eid/shelf-visibility", shelfHandler.ToggleShelfVisibility)
 
 		// Phase6 学情雷达
 		rooms.GET("/:id/insight", insightHandler.GetInsight)
@@ -528,29 +528,29 @@ func main() {
 	chat.Use(middleware.AuthRequired())
 	{
 		// 人设管理
-		chat.GET("/persona",  chatHandler.GetPersona)
-		chat.PUT("/persona",  chatHandler.UpdatePersona)
+		chat.GET("/persona", chatHandler.GetPersona)
+		chat.PUT("/persona", chatHandler.UpdatePersona)
 
 		// 会话管理
-		chat.GET("/sessions",        chatHandler.ListSessions)
-		chat.POST("/sessions",       chatHandler.CreateSession)
+		chat.GET("/sessions", chatHandler.ListSessions)
+		chat.POST("/sessions", chatHandler.CreateSession)
 		chat.DELETE("/sessions/:sid", chatHandler.DeleteSession)
 
 		// 消息
 		chat.GET("/sessions/:sid/messages", chatHandler.GetMessages)
-		chat.POST("/sessions/:sid/send",    chatHandler.SendMessage)
+		chat.POST("/sessions/:sid/send", chatHandler.SendMessage)
 
 		// Claude代理（解决浏览器直调403问题，API Key通过X-API-Key请求头传入）
 		chat.POST("/proxy", chatHandler.ClaudeProxy)
 		// Doubao 流式接口
 		chat.POST("/doubao/messages", chatDoubaoHandler.SendMessage)
-		chat.GET("/doubao/models",   chatDoubaoHandler.ListModels)
+		chat.GET("/doubao/models", chatDoubaoHandler.ListModels)
 
 		// 文件记忆库
-		chat.POST("/memory/upload",               chatHandler.UploadMemoryFile)
-		chat.GET("/memory/files",                 chatHandler.ListMemoryFiles)
-		chat.PATCH("/memory/files/:fid/toggle",   chatHandler.ToggleMemoryFile)
-		chat.DELETE("/memory/files/:fid",         chatHandler.DeleteMemoryFile)
+		chat.POST("/memory/upload", chatHandler.UploadMemoryFile)
+		chat.GET("/memory/files", chatHandler.ListMemoryFiles)
+		chat.PATCH("/memory/files/:fid/toggle", chatHandler.ToggleMemoryFile)
+		chat.DELETE("/memory/files/:fid", chatHandler.DeleteMemoryFile)
 	}
 	// ===== AI 图形生成路由（思维导图/流程图/时间轴/架构图/鱼骨图）=====
 	ai := r.Group("/api/ai")
@@ -558,8 +558,8 @@ func main() {
 	{
 		ai.POST("/diagram", diagramHandler.Generate)
 		ai.POST("/diagram/:gid/outcome", diagramHandler.RecordOutcome) // REQ-050 B：老师后续动作回报
-		ai.POST("/refine", refineHandler.Refine) // REQ-028：文本→Markdown AI 提炼
-		ai.POST("/parse-file", parseFileHandler.ParseFile) // REQ-038：文件→Markdown（MarkItDown）
+		ai.POST("/refine", refineHandler.Refine)                       // REQ-028：文本→Markdown AI 提炼
+		ai.POST("/parse-file", parseFileHandler.ParseFile)             // REQ-038：文件→Markdown（MarkItDown）
 		// REQ-062：房间内智能体。挂在既有 /api/ai 组下，天然继承 AuthRequired；
 		// 另外两道权限（agent_enabled、房间归属）在 handler 的 guard() 里。
 		ai.POST("/agent/chat", agentHandler.Chat)

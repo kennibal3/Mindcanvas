@@ -12,13 +12,13 @@ type Session struct {
 	ID          string     `json:"id"`           // UUID 主键
 	RoomID      string     `json:"room_id"`      // 所属房间 ID
 	StudentUUID string     `json:"student_uuid"` // 学生 UUID
-	Nickname    string     `json:"nickname"`      // 昵称
-	Suffix      string     `json:"suffix"`        // 4 位防冒充后缀
-	AvatarID    int        `json:"avatar_id"`     // 头像 ID
-	IPAddress   *string    `json:"ip_address"`    // IP 地址
-	IsBanned    bool       `json:"is_banned"`     // 是否封禁
-	JoinedAt    time.Time  `json:"joined_at"`     // 入场时间
-	LeftAt      *time.Time `json:"left_at"`       // 离场时间
+	Nickname    string     `json:"nickname"`     // 昵称
+	Suffix      string     `json:"suffix"`       // 4 位防冒充后缀
+	AvatarID    int        `json:"avatar_id"`    // 头像 ID
+	IPAddress   *string    `json:"ip_address"`   // IP 地址
+	IsBanned    bool       `json:"is_banned"`    // 是否封禁
+	JoinedAt    time.Time  `json:"joined_at"`    // 入场时间
+	LeftAt      *time.Time `json:"left_at"`      // 离场时间
 }
 
 // JoinRoomRequest 学生入场请求

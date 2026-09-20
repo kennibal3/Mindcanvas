@@ -1,15 +1,17 @@
 // =============================================================
 // MindCanvas v4.1 Phase7 - 公开分享页处理器
 // API：
-//   POST   /api/rooms/:id/share          发布/更新分享
-//   GET    /api/rooms/:id/share          查看当前房间的分享配置
-//   DELETE /api/rooms/:id/share/:sid     删除分享
-//   GET    /api/share/:token/meta        获取分享页元数据（公开）
-//   POST   /api/share/:token/verify      验证分享密码（公开）
-//   GET    /api/share/:token/data        获取分享页完整数据（公开）
-//   GET    /api/templates                获取模板列表（当前用户）
-//   POST   /api/rooms/:id/templates      保存模板
-//   DELETE /api/rooms/:id/templates/:tid 删除模板
+//
+//	POST   /api/rooms/:id/share          发布/更新分享
+//	GET    /api/rooms/:id/share          查看当前房间的分享配置
+//	DELETE /api/rooms/:id/share/:sid     删除分享
+//	GET    /api/share/:token/meta        获取分享页元数据（公开）
+//	POST   /api/share/:token/verify      验证分享密码（公开）
+//	GET    /api/share/:token/data        获取分享页完整数据（公开）
+//	GET    /api/templates                获取模板列表（当前用户）
+//	POST   /api/rooms/:id/templates      保存模板
+//	DELETE /api/rooms/:id/templates/:tid 删除模板
+//
 // =============================================================
 package handlers
 
@@ -41,7 +43,8 @@ func NewShareHandler(shareSvc *services.ShareService) *ShareHandler {
 // PublishShare 发布或更新公开分享页
 // POST /api/rooms/:id/share
 // 说明：show_stats/show_canvas/show_dropzone 默认值为 true
-//       前端需明确传 false 才会关闭对应区块
+//
+//	前端需明确传 false 才会关闭对应区块
 func (h *ShareHandler) PublishShare(c *gin.Context) {
 	roomID := c.Param("id")
 	userID, _ := c.Get("user_id")

@@ -18,9 +18,9 @@ type Tenant struct {
 
 // CreateTenantRequest 创建租户请求
 type CreateTenantRequest struct {
-	Name        string `json:"name" binding:"required"`          // 租户名称（必填）
-	MaxTeachers int    `json:"max_teachers"`                     // 最大教师数（默认50）
-	MaxRooms    int    `json:"max_rooms"`                        // 最大房间数（默认100）
+	Name        string `json:"name" binding:"required"` // 租户名称（必填）
+	MaxTeachers int    `json:"max_teachers"`            // 最大教师数（默认50）
+	MaxRooms    int    `json:"max_rooms"`               // 最大房间数（默认100）
 }
 
 // UpdateTenantRequest 更新租户请求

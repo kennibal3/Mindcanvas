@@ -36,8 +36,8 @@ func InitPostgres(cfg config.DBConfig) (*sql.DB, error) {
 	}
 
 	// 配置连接池参数
-	db.SetMaxOpenConns(cfg.MaxOpenConns)    // 最大打开连接数
-	db.SetMaxIdleConns(cfg.MaxIdleConns)    // 最大空闲连接数
+	db.SetMaxOpenConns(cfg.MaxOpenConns)       // 最大打开连接数
+	db.SetMaxIdleConns(cfg.MaxIdleConns)       // 最大空闲连接数
 	db.SetConnMaxLifetime(cfg.ConnMaxLifetime) // 连接最大生命周期
 
 	// 健康检查：验证连接是否可用

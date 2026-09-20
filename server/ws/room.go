@@ -1,14 +1,18 @@
 // =============================================================
 // MindCanvas v3.0 - WebSocket 房间模型
 // REQ-004修复：移除Register分支中的重复member_join广播
-//   原问题：ws_handler.go已用BroadcastRawToOthers发扁平格式member_join
-//           room.go的Run()里Register分支又用BroadcastToOthers发旧Message格式
-//           前端useWebSocket只能识别扁平格式，旧格式被忽略但不会造成问题
-//           真正问题是双重广播导致时序混乱，以及旧格式member_join无法被正确解析
-//   修复：移除room.go Register分支中的BroadcastToOthers调用
-//         member_join完全由ws_handler.go负责广播（扁平格式）
+//
+//	原问题：ws_handler.go已用BroadcastRawToOthers发扁平格式member_join
+//	        room.go的Run()里Register分支又用BroadcastToOthers发旧Message格式
+//	        前端useWebSocket只能识别扁平格式，旧格式被忽略但不会造成问题
+//	        真正问题是双重广播导致时序混乱，以及旧格式member_join无法被正确解析
+//	修复：移除room.go Register分支中的BroadcastToOthers调用
+//	      member_join完全由ws_handler.go负责广播（扁平格式）
+//
 // REQ-004修复：member_leave同样改用BroadcastRaw扁平格式
-//   原问题：BroadcastAll(Message{})发嵌套格式，前端读msg.uuid才能获取
+//
+//	原问题：BroadcastAll(Message{})发嵌套格式，前端读msg.uuid才能获取
+//
 // 并发安全：broadcastToOthers分离读写锁，防panic
 // =============================================================
 package ws

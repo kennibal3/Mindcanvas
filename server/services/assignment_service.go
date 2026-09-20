@@ -9,6 +9,7 @@
 //   - recoverStuckParsingTasks 升级：同时处理 job_queue 中
 //     长期 running 的任务
 //   - 保留原有信号量并发控制（job_queue + 信号量双层保护）
+//
 // =============================================================
 package services
 
@@ -376,8 +377,8 @@ func (s *AssignmentService) JobQueueStats() map[string]interface{} {
 
 // recoverOnStartup 服务启动时修复卡住的任务
 // 同时处理：
-//   1. assignment_materials 中卡住的 parsing 状态（旧机制兼容）
-//   2. job_queue 中卡住的 running 状态（新机制）
+//  1. assignment_materials 中卡住的 parsing 状态（旧机制兼容）
+//  2. job_queue 中卡住的 running 状态（新机制）
 func (s *AssignmentService) recoverOnStartup() {
 	// 等待服务完全启动后再执行
 	time.Sleep(3 * time.Second)

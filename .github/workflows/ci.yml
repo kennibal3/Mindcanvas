@@ -14,6 +14,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
+      # REQ-054 的一小片：gofmt 格式检查。
+      # 此前「代码要 gofmt」只是口头约定，欠账从 25 个文件涨到 45 个都没人发现
+      # （没有自动检查的约定等于不存在）。2026-09-20 全仓一次性 gofmt -w 清零后加入本检查，
+      # 之后任何未格式化的 Go 文件都会让 PR 变红。本地修复：cd server && gofmt -w .
+      - name: gofmt 格式检查
+        run: |
+          cd server
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未 gofmt，请在 server/ 下运行 gofmt -w . 后重新提交："
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: go build + vet
         run: |
           cd server

@@ -60,18 +60,18 @@ type RosterWithStatus struct {
 
 // TokenVerifyResult 作业码验证结果
 type TokenVerifyResult struct {
-	Valid        bool   `json:"valid"`
-	Token        string `json:"token"`
-	TokenType    string `json:"token_type"`
-	StudentUUID  string `json:"student_uuid,omitempty"`
-	StudentName  string `json:"student_name,omitempty"`
-	AssignmentID string `json:"assignment_id"`
-	AssignmentTitle       string     `json:"assignment_title"`
-	AssignmentDescription string     `json:"assignment_description"`
-	AssignmentStatus      string     `json:"assignment_status"`
-	DueAt                 *time.Time `json:"due_at,omitempty"`
-	AllowResubmit         bool       `json:"allow_resubmit"`
-	ExistingSubmission *AssignmentSubmission `json:"existing_submission,omitempty"`
+	Valid                 bool                  `json:"valid"`
+	Token                 string                `json:"token"`
+	TokenType             string                `json:"token_type"`
+	StudentUUID           string                `json:"student_uuid,omitempty"`
+	StudentName           string                `json:"student_name,omitempty"`
+	AssignmentID          string                `json:"assignment_id"`
+	AssignmentTitle       string                `json:"assignment_title"`
+	AssignmentDescription string                `json:"assignment_description"`
+	AssignmentStatus      string                `json:"assignment_status"`
+	DueAt                 *time.Time            `json:"due_at,omitempty"`
+	AllowResubmit         bool                  `json:"allow_resubmit"`
+	ExistingSubmission    *AssignmentSubmission `json:"existing_submission,omitempty"`
 }
 
 // ===== 请求结构体 =====

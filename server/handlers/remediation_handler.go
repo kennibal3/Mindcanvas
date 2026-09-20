@@ -1,15 +1,17 @@
 // =============================================================
 // MindCanvas REQ-039 第三期 3c - 学生补救处理器
 // 教师侧 API（挂 assignments 路由组，自动继承 AuthRequired + RequireRole）：
-//   GET    /api/assignments/:aid/remediations                        学生列表（含补救状态）
-//   POST   /api/assignments/:aid/students/:sid/remediation/generate  生成（异步，返回 job_id）
-//   GET    /api/assignments/:aid/remediation/jobs/:jid               轮询生成状态
-//   GET    /api/assignments/:aid/students/:sid/remediation           详情（含诊断，仅教师）
-//   PATCH  /api/assignments/:aid/students/:sid/remediation           编辑温和版/备注
-//   POST   /api/assignments/:aid/students/:sid/remediation/send      发送给学生
+//
+//	GET    /api/assignments/:aid/remediations                        学生列表（含补救状态）
+//	POST   /api/assignments/:aid/students/:sid/remediation/generate  生成（异步，返回 job_id）
+//	GET    /api/assignments/:aid/remediation/jobs/:jid               轮询生成状态
+//	GET    /api/assignments/:aid/students/:sid/remediation           详情（含诊断，仅教师）
+//	PATCH  /api/assignments/:aid/students/:sid/remediation           编辑温和版/备注
+//	POST   /api/assignments/:aid/students/:sid/remediation/send      发送给学生
 //
 // 学生侧公开 API（挂 /api/submit 组，完全公开，token+uuid 双证）：
-//   GET    /api/submit/:aid/remediation?token=XXX（uuid 走 X-Student-UUID 或 ?uuid=）
+//
+//	GET    /api/submit/:aid/remediation?token=XXX（uuid 走 X-Student-UUID 或 ?uuid=）
 //
 // 注：:sid 为学生 uuid，含中文/连字符，前端务必 encodeURIComponent。
 // =============================================================

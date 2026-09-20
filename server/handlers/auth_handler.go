@@ -1,7 +1,9 @@
 // =============================================================
 // MindCanvas - 登录鉴权处理器
 // 需求3：UpdateProfile 支持 avatar_url 字段更新
-//        GetCurrentUser 返回 avatar_url
+//
+//	GetCurrentUser 返回 avatar_url
+//
 // =============================================================
 package handlers
 
@@ -120,11 +122,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "登录成功",
 		"user": gin.H{
-			"id":           user.ID,
-			"username":     user.Username,
-			"display_name": user.DisplayName,
-			"role":         user.Role,
-			"tenant_id":    tenantIDStr,
+			"id":            user.ID,
+			"username":      user.Username,
+			"display_name":  user.DisplayName,
+			"role":          user.Role,
+			"tenant_id":     tenantIDStr,
 			"avatar_url":    avatarURLStr,
 			"chat_enabled":  chatEnabled,
 			"agent_enabled": agentEnabled,
@@ -193,7 +195,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 	hasDisplayName := req.DisplayName != ""
-	hasAvatarURL   := req.AvatarURL != ""
+	hasAvatarURL := req.AvatarURL != ""
 	hasNewPassword := req.NewPassword != ""
 	if !hasDisplayName && !hasAvatarURL && !hasNewPassword {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "没有要更新的内容"})

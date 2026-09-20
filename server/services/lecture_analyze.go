@@ -37,8 +37,9 @@ type lectureAnalyzeResult struct {
 }
 
 // EnqueueLectureAnalyze 发起一次讲评分析：
-//   1. upsert 一条 assignment_lecture_reports（generation_status=analyzing）
-//   2. 写 job_queue（task_type=assignment_lecture_analyze）
+//  1. upsert 一条 assignment_lecture_reports（generation_status=analyzing）
+//  2. 写 job_queue（task_type=assignment_lecture_analyze）
+//
 // 返回 reportID 供前端轮询。
 func (s *AssignmentService) EnqueueLectureAnalyze(ctx context.Context, assignmentID, teacherID string) (string, error) {
 	var reportID string
