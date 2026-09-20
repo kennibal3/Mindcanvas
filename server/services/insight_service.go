@@ -1,7 +1,9 @@
 // =============================================================
 // MindCanvas v4.1 - 学情雷达聚合服务
 // 功能：聚合课堂实时数据，包含在线人数、参与率、未提交名单、
-//       问答正确率、高频词、小组活跃度、Top5学生
+//
+//	问答正确率、高频词、小组活跃度、Top5学生
+//
 // ⭐修复：在线人数统计同时计入教师（role=teacher）
 // 缓存：Redis 10秒 TTL，手动刷新接口
 // =============================================================
@@ -27,8 +29,10 @@ func insightKey(roomID string) string {
 type InsightService struct {
 	db  *sql.DB
 	rdb *redis.Client
-	hub interface{ GetRoomClientCount(roomID string) int
-		GetRoomClientList(roomID string) []map[string]interface{} }
+	hub interface {
+		GetRoomClientCount(roomID string) int
+		GetRoomClientList(roomID string) []map[string]interface{}
+	}
 }
 
 // NewInsightService 创建学情雷达服务
@@ -45,13 +49,13 @@ func NewInsightService(db *sql.DB, rdb *redis.Client, hub interface {
 // ComponentInsight 单个互动组件的参与统计
 // BUG-031：json 标签对齐前端 InsightPanel.tsx 的 ComponentStat（type 而非 widget_type）
 type ComponentInsight struct {
-	ElementID   string  `json:"element_id"`
-	Title       string  `json:"title"`  // 组件标题（问题/提示语）
-	WidgetType  string  `json:"type"`   // polling_widget / wordcloud_widget / qa_widget / dropzone_widget
-	Status      string  `json:"status"` // draft/open/paused/closed
-	Submitted   int     `json:"submitted"`   // 已提交人数
-	Total       int     `json:"total"`       // 在线人数（作为分母）
-	Rate        float64 `json:"rate"`        // 参与率 0~1
+	ElementID  string  `json:"element_id"`
+	Title      string  `json:"title"`     // 组件标题（问题/提示语）
+	WidgetType string  `json:"type"`      // polling_widget / wordcloud_widget / qa_widget / dropzone_widget
+	Status     string  `json:"status"`    // draft/open/paused/closed
+	Submitted  int     `json:"submitted"` // 已提交人数
+	Total      int     `json:"total"`     // 在线人数（作为分母）
+	Rate       float64 `json:"rate"`      // 参与率 0~1
 }
 
 // UnsubmittedStudent 未提交学生信息
@@ -132,13 +136,13 @@ type HtmlStudentStat struct {
 
 // InsightData 学情雷达完整数据
 type InsightData struct {
-	RoomID        string               `json:"room_id"`
+	RoomID string `json:"room_id"`
 	// ⭐ 在线人数：包含教师和学生
-	OnlineCount   int                  `json:"online_count"`
+	OnlineCount int `json:"online_count"`
 	// ⭐ 在线成员详情（含角色）
 	OnlineClients []map[string]interface{} `json:"online_clients"`
-	TotalJoined   int                  `json:"total_joined"`   // 历史累计进入人数
-	Components    []ComponentInsight   `json:"components"`
+	TotalJoined   int                      `json:"total_joined"` // 历史累计进入人数
+	Components    []ComponentInsight       `json:"components"`
 	// BUG-031：改为跨开放组件去重后的扁平学生数组，对齐前端 InsightPanel.tsx 的 UnsubmittedStudent[]
 	Unsubmitted   []UnsubmittedStudent `json:"unsubmitted"`
 	QAStats       []QAStat             `json:"qa_stats"`
@@ -146,10 +150,10 @@ type InsightData struct {
 	GroupActivity []GroupActivity      `json:"group_activity"`
 	TopStudents   []TopStudent         `json:"top_students"`
 	// REQ-043 Slice-3：HTML 课件互动
-	HtmlKnowledge []HtmlKnowledgeStat  `json:"html_knowledge"`
-	HtmlWidgets   []HtmlWidgetStat     `json:"html_widgets"`
-	HtmlStudents  []HtmlStudentStat    `json:"html_students"`
-	UpdatedAt     string               `json:"updated_at"`
+	HtmlKnowledge []HtmlKnowledgeStat `json:"html_knowledge"`
+	HtmlWidgets   []HtmlWidgetStat    `json:"html_widgets"`
+	HtmlStudents  []HtmlStudentStat   `json:"html_students"`
+	UpdatedAt     string              `json:"updated_at"`
 }
 
 // ---- 核心方法 ------------------------------------------------

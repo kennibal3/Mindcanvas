@@ -350,32 +350,32 @@ type WordCloudSummary struct {
 
 // QASummary ⭐问答汇总
 type QASummary struct {
-	ElementID     string         `json:"element_id"`
-	Question      string         `json:"question"`
-	Options       []string       `json:"options"`
-	CorrectIndex  int            `json:"correct_index"`
-	AnswerCounts  map[string]int `json:"answer_counts"`  // 选项→答题人数
-	TotalAnswers  int            `json:"total_answers"`
-	CorrectCount  int            `json:"correct_count"`
-	CorrectRate   float64        `json:"correct_rate"`
-	ShowAnswer    bool           `json:"show_answer"`
+	ElementID    string         `json:"element_id"`
+	Question     string         `json:"question"`
+	Options      []string       `json:"options"`
+	CorrectIndex int            `json:"correct_index"`
+	AnswerCounts map[string]int `json:"answer_counts"` // 选项→答题人数
+	TotalAnswers int            `json:"total_answers"`
+	CorrectCount int            `json:"correct_count"`
+	CorrectRate  float64        `json:"correct_rate"`
+	ShowAnswer   bool           `json:"show_answer"`
 }
 
 // DropZoneSubmission ⭐作品墙单个提交
 type DropZoneSubmission struct {
-	StudentName  string `json:"student_name"`
-	ContentType  string `json:"content_type"` // text/image/file/link
-	Content      string `json:"content"`
-	SubmittedAt  string `json:"submitted_at"`
-	Likes        int    `json:"likes"`
+	StudentName string `json:"student_name"`
+	ContentType string `json:"content_type"` // text/image/file/link
+	Content     string `json:"content"`
+	SubmittedAt string `json:"submitted_at"`
+	Likes       int    `json:"likes"`
 }
 
 // DropZoneSummary ⭐作品墙汇总
 type DropZoneSummary struct {
-	ElementID       string               `json:"element_id"`
-	Title           string               `json:"title"`
-	TotalSubmissions int                 `json:"total_submissions"`
-	Submissions     []DropZoneSubmission `json:"submissions"`
+	ElementID        string               `json:"element_id"`
+	Title            string               `json:"title"`
+	TotalSubmissions int                  `json:"total_submissions"`
+	Submissions      []DropZoneSubmission `json:"submissions"`
 }
 
 // RoomSummary 课堂总结完整数据
@@ -388,10 +388,10 @@ type RoomSummary struct {
 	Polls         []PollSummary      `json:"polls"`
 	WordClouds    []WordCloudSummary `json:"word_clouds"`
 	// ⭐ 新增
-	QASummaries   []QASummary        `json:"qa_summaries"`
-	DropZones     []DropZoneSummary  `json:"dropzones"`
-	TopWords      []string           `json:"top_words"`
-	Participation map[string]int     `json:"participation"`
+	QASummaries   []QASummary       `json:"qa_summaries"`
+	DropZones     []DropZoneSummary `json:"dropzones"`
+	TopWords      []string          `json:"top_words"`
+	Participation map[string]int    `json:"participation"`
 }
 
 // =============================================================

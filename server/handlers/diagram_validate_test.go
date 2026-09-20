@@ -77,11 +77,11 @@ func TestDiagramRepair_MindmapDirty(t *testing.T) {
 	nodes := []DiagramNode{
 		{ID: "root", Label: "主题", Parent: ""},
 		{ID: "a", Label: "分支A", Parent: "root"},
-		{ID: "b", Label: "第二个根", Parent: ""},       // 多根
+		{ID: "b", Label: "第二个根", Parent: ""}, // 多根
 		{ID: "b1", Label: "第二个根的孩子", Parent: "b"},
-		{ID: "ghost", Label: "游离节点", Parent: "nope"}, // 孤儿
+		{ID: "ghost", Label: "游离节点", Parent: "nope"},  // 孤儿
 		{ID: "self", Label: "自己当自己爹", Parent: "self"}, // 自环
-		{ID: "c1", Label: "环上一", Parent: "c2"},       // 闭环
+		{ID: "c1", Label: "环上一", Parent: "c2"},        // 闭环
 		{ID: "c2", Label: "环上二", Parent: "c1"},
 		{ID: "a", Label: "重复 id", Parent: "root"}, // 重复 id（旧版 nodeMap 直接覆盖）
 	}
@@ -114,9 +114,9 @@ func TestDiagramRepair_FlowchartDirty(t *testing.T) {
 	}
 	edges := []DiagramEdge{
 		{From: "d1", To: "a", Label: "是"},
-		{From: "d1", To: "a", Label: "是"},      // 重复边
-		{From: "d1", To: "nope", Label: "否"},   // 悬空边 → 旧版画出甩向画布角落的幽灵箭头
-		{From: "zzz", To: "a", Label: ""},      // 两端都不在
+		{From: "d1", To: "a", Label: "是"},    // 重复边
+		{From: "d1", To: "nope", Label: "否"}, // 悬空边 → 旧版画出甩向画布角落的幽灵箭头
+		{From: "zzz", To: "a", Label: ""},    // 两端都不在
 	}
 
 	got := validateAndRepairDiagram("flowchart", nodes, edges)

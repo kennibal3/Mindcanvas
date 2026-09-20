@@ -1,7 +1,9 @@
 // =============================================================
 // MindCanvas v4.1 - 房间管理处理器
 // REQ-005修复：LockRoom/SetReadOnly/GatherMembers改用BroadcastRaw
-//              扁平JSON格式，与ws_handler.go广播格式统一
+//
+//	扁平JSON格式，与ws_handler.go广播格式统一
+//
 // 包含：房间CRUD、场控、导出、总结、分组管理、作品下载
 // =============================================================
 package handlers
@@ -14,12 +16,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"math/rand"
 	"time"
 
 	"github.com/gin-gonic/gin"

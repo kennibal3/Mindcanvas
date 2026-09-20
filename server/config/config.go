@@ -82,9 +82,9 @@ type ProfanityConfig struct {
 
 // AIConfig AI 服务配置
 type AIConfig struct {
-        APIKey  string // ARK_API_KEY
-        BaseURL string // ARK_BASE_URL
-        Model   string // ARK_MODEL
+	APIKey  string // ARK_API_KEY
+	BaseURL string // ARK_BASE_URL
+	Model   string // ARK_MODEL
 }
 
 // 全局配置实例

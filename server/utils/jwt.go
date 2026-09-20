@@ -14,12 +14,12 @@ import (
 
 // Claims JWT 自定义声明
 type Claims struct {
-	UserID      string   `json:"user_id"`      // 用户 UUID
-	Role        string   `json:"role"`          // 角色：superadmin/admin/teacher
-	TenantID    string   `json:"tenant_id"`     // 租户 ID（superadmin 为空字符串）
-	DisplayName string   `json:"display_name"`  // 显示名称
-	Permissions []string `json:"permissions"`   // 权限列表
-	jwt.RegisteredClaims                        // 标准声明（过期时间等）
+	UserID               string   `json:"user_id"`      // 用户 UUID
+	Role                 string   `json:"role"`         // 角色：superadmin/admin/teacher
+	TenantID             string   `json:"tenant_id"`    // 租户 ID（superadmin 为空字符串）
+	DisplayName          string   `json:"display_name"` // 显示名称
+	Permissions          []string `json:"permissions"`  // 权限列表
+	jwt.RegisteredClaims          // 标准声明（过期时间等）
 }
 
 // JWT 相关错误定义

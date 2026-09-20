@@ -1,8 +1,10 @@
 // =============================================================
 // MindCanvas REQ-039 第二期 - 讲评分析处理器
 // API：
-//   POST /api/assignments/:aid/lecture/analyze  发起讲评分析（异步）
-//   GET  /api/assignments/:aid/lecture/report   获取讲评报告+内容块（供轮询/展示）
+//
+//	POST /api/assignments/:aid/lecture/analyze  发起讲评分析（异步）
+//	GET  /api/assignments/:aid/lecture/report   获取讲评报告+内容块（供轮询/展示）
+//
 // 挂在 assignments 路由组内，自动继承 AuthRequired + RequireRole(teacher…)
 // =============================================================
 package handlers

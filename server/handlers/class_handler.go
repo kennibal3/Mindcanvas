@@ -1,13 +1,15 @@
 // =============================================================
 // MindCanvas REQ-045 P2 - 班级 / 花名册处理器
 // API（认证组，教师私有）：
-//   POST   /api/classes                         建班
-//   GET    /api/classes                         列班（含学生数）
-//   DELETE /api/classes/:cid                    删班（先解绑房间）
-//   GET    /api/classes/:cid/students           花名册
-//   POST   /api/classes/:cid/students           单个添加
-//   POST   /api/classes/:cid/students/import    粘名批量导入
-//   DELETE /api/classes/:cid/students/:sid      删学生
+//
+//	POST   /api/classes                         建班
+//	GET    /api/classes                         列班（含学生数）
+//	DELETE /api/classes/:cid                    删班（先解绑房间）
+//	GET    /api/classes/:cid/students           花名册
+//	POST   /api/classes/:cid/students           单个添加
+//	POST   /api/classes/:cid/students/import    粘名批量导入
+//	DELETE /api/classes/:cid/students/:sid      删学生
+//
 // =============================================================
 package handlers
 

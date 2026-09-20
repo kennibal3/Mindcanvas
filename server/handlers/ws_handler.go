@@ -813,6 +813,7 @@ func (h *WSHandler) throttledPersistSceneDB(roomID string, sceneJSON []byte, sav
 //   - 投票/词云：HandleVote/HandleWordCloud返回nil payload
 //   - 修复方案：提交成功后统一从DB重新读取最新payload广播
 //   - 确保教师端widget_update消息携带有效payload
+//
 // =============================================================
 func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws.RawMessage) {
 	if client.Role != "student" {

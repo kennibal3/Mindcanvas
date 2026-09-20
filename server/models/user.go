@@ -11,14 +11,14 @@ import "time"
 type User struct {
 	ID          string    `json:"id"`           // UUID 主键
 	TenantID    *string   `json:"tenant_id"`    // 租户 ID（superadmin 为 null）
-	Username    string    `json:"username"`      // 登录用户名
-	Password    string    `json:"-"`             // 密码（bcrypt，JSON 序列化时隐藏）
-	DisplayName string    `json:"display_name"`  // 显示名称
-	Role        string    `json:"role"`          // 角色
-	IsActive    bool      `json:"is_active"`     // 是否启用
-	CreatedBy   *string   `json:"created_by"`    // 创建者 ID
-	CreatedAt   time.Time `json:"created_at"`    // 创建时间
-	UpdatedAt   time.Time `json:"updated_at"`    // 更新时间
+	Username    string    `json:"username"`     // 登录用户名
+	Password    string    `json:"-"`            // 密码（bcrypt，JSON 序列化时隐藏）
+	DisplayName string    `json:"display_name"` // 显示名称
+	Role        string    `json:"role"`         // 角色
+	IsActive    bool      `json:"is_active"`    // 是否启用
+	CreatedBy   *string   `json:"created_by"`   // 创建者 ID
+	CreatedAt   time.Time `json:"created_at"`   // 创建时间
+	UpdatedAt   time.Time `json:"updated_at"`   // 更新时间
 }
 
 // LoginRequest 登录请求
@@ -35,11 +35,11 @@ type LoginResponse struct {
 
 // CreateUserRequest 创建用户请求
 type CreateUserRequest struct {
-	Username    string `json:"username" binding:"required"`     // 用户名（必填）
-	Password    string `json:"password" binding:"required"`     // 密码（必填）
-	DisplayName string `json:"display_name"`                    // 显示名称
-	Role        string `json:"role" binding:"required"`         // 角色（必填）
-	TenantID    string `json:"tenant_id"`                       // 租户 ID
+	Username    string `json:"username" binding:"required"` // 用户名（必填）
+	Password    string `json:"password" binding:"required"` // 密码（必填）
+	DisplayName string `json:"display_name"`                // 显示名称
+	Role        string `json:"role" binding:"required"`     // 角色（必填）
+	TenantID    string `json:"tenant_id"`                   // 租户 ID
 }
 
 // UpdateUserStatusRequest 更新用户状态请求

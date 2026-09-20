@@ -244,9 +244,9 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 
 	type UserWithTenant struct {
 		models.User
-		TenantName string `json:"tenant_name"`
-                ChatEnabled bool   `json:"chat_enabled"`
-		AgentEnabled bool  `json:"agent_enabled"`
+		TenantName   string `json:"tenant_name"`
+		ChatEnabled  bool   `json:"chat_enabled"`
+		AgentEnabled bool   `json:"agent_enabled"`
 	}
 
 	var users []UserWithTenant
@@ -294,7 +294,6 @@ func (h *AdminHandler) UpdateUserStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "状态更新成功"})
 }
-
 
 // UpdateUserChat 开启/关闭用户 AI 对话权限
 // PATCH /api/admin/users/:id/chat
@@ -345,20 +344,21 @@ func (h *AdminHandler) UpdateUserAgent(c *gin.Context) {
 	log.Printf("[管理] 智能体权限更新 user:%s enabled:%v", userID, req.AgentEnabled)
 	c.JSON(http.StatusOK, gin.H{"message": "智能体权限更新成功"})
 }
+
 // =============================================================
 // 需求5：房间统计接口
 // =============================================================
 
 // TeacherRoomStat 单个教师的房间统计
 type TeacherRoomStat struct {
-	TeacherID      string     `json:"teacher_id"`
-	Username       string     `json:"username"`
-	DisplayName    string     `json:"display_name"`
-	TenantName     string     `json:"tenant_name"`
-	TotalRooms     int        `json:"total_rooms"`
-	ActiveRooms    int        `json:"active_rooms"`
-	LastActiveAt   *time.Time `json:"last_active_at"`
-	LastActiveStr  string     `json:"last_active_str"`
+	TeacherID     string     `json:"teacher_id"`
+	Username      string     `json:"username"`
+	DisplayName   string     `json:"display_name"`
+	TenantName    string     `json:"tenant_name"`
+	TotalRooms    int        `json:"total_rooms"`
+	ActiveRooms   int        `json:"active_rooms"`
+	LastActiveAt  *time.Time `json:"last_active_at"`
+	LastActiveStr string     `json:"last_active_str"`
 }
 
 // GetRoomStats 获取所有教师的房间统计

@@ -247,9 +247,9 @@ func (h *FlowHandler) AdvanceFlow(c *gin.Context) {
 	log.Printf("[FlowHandler] 节点推进 room:%s flow:%s direction:%s index:%d",
 		roomID, flowID, req.Direction, flow.CurrentNodeIndex)
 	c.JSON(http.StatusOK, gin.H{
-		"flow":              flow,
+		"flow":               flow,
 		"current_node_index": flow.CurrentNodeIndex,
-		"message":           "节点已推进",
+		"message":            "节点已推进",
 	})
 }
 
@@ -372,9 +372,9 @@ func (h *FlowHandler) GetStudentProgress(c *gin.Context) {
 // 学生端根据 show_progress_to_students 决定是否展示
 func (h *FlowHandler) broadcastFlowUpdate(roomID string, flow *models.TeachingFlow, event string) {
 	payload := map[string]interface{}{
-		"event":   event,
-		"flow_id": flow.ID,
-		"status":  flow.Status,
+		"event":                     event,
+		"flow_id":                   flow.ID,
+		"status":                    flow.Status,
 		"show_progress_to_students": flow.ShowProgressToStudents,
 		"current_node_index":        flow.CurrentNodeIndex,
 		"total_nodes":               len(flow.Nodes),

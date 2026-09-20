@@ -1,11 +1,13 @@
 // =============================================================
 // MindCanvas REQ-039 第三期 3a - 讲评报告编辑处理器
 // API（挂在 assignments 路由组内，自动继承 AuthRequired + RequireRole(teacher…)）：
-//   PATCH  /api/assignments/:aid/lecture/blocks/:bid            更新块（标题/内容/移动/确认）
-//   DELETE /api/assignments/:aid/lecture/blocks/:bid            删除块
-//   POST   /api/assignments/:aid/lecture/blocks/:bid/regenerate 单块重新生成（异步，返回 job_id）
-//   GET    /api/assignments/:aid/lecture/jobs/:jid              查询重生成任务状态（供轮询）
-//   POST   /api/assignments/:aid/lecture/confirm                确认整份报告
+//
+//	PATCH  /api/assignments/:aid/lecture/blocks/:bid            更新块（标题/内容/移动/确认）
+//	DELETE /api/assignments/:aid/lecture/blocks/:bid            删除块
+//	POST   /api/assignments/:aid/lecture/blocks/:bid/regenerate 单块重新生成（异步，返回 job_id）
+//	GET    /api/assignments/:aid/lecture/jobs/:jid              查询重生成任务状态（供轮询）
+//	POST   /api/assignments/:aid/lecture/confirm                确认整份报告
+//
 // =============================================================
 package handlers
 

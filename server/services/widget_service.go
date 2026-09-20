@@ -1,17 +1,19 @@
 // =============================================================
 // MindCanvas v4.3 - 互动组件服务
 // 修复记录：
-//   REQ-003-ROOT: 数据库 payload 双层嵌套结构
-//                 room_elements.payload = {x,y,width,height,payload:{status,options,...}}
-//                 所有读取组件配置必须读 payload->'payload' 而非顶层
-//   REQ-003-FIX1: HandleVote 读嵌套 inner payload；ON CONFLICT 防重复投票
-//   REQ-003-FIX2: updateVoteCount 回写嵌套路径 {payload,votes}/{payload,total_voters}
-//   REQ-003-FIX3: HandleWordCloud/HandleAnswer 同样读嵌套 inner payload
-//   V4.3-STABLE:
-//     - extractInnerPayload 增加类型保护：payload.payload 为非 object 时回退平铺格式
-//     - updateVoteCount/updateWordCloudFreq/updateAnswerStats 自动检测嵌套/平铺格式
-//     - HandleWordCloud 移除无效 ON CONFLICT DO NOTHING（无对应唯一索引）
-//     - HandleAnswer 防重通过捕获 unique constraint 错误返回明确提示
+//
+//	REQ-003-ROOT: 数据库 payload 双层嵌套结构
+//	              room_elements.payload = {x,y,width,height,payload:{status,options,...}}
+//	              所有读取组件配置必须读 payload->'payload' 而非顶层
+//	REQ-003-FIX1: HandleVote 读嵌套 inner payload；ON CONFLICT 防重复投票
+//	REQ-003-FIX2: updateVoteCount 回写嵌套路径 {payload,votes}/{payload,total_voters}
+//	REQ-003-FIX3: HandleWordCloud/HandleAnswer 同样读嵌套 inner payload
+//	V4.3-STABLE:
+//	  - extractInnerPayload 增加类型保护：payload.payload 为非 object 时回退平铺格式
+//	  - updateVoteCount/updateWordCloudFreq/updateAnswerStats 自动检测嵌套/平铺格式
+//	  - HandleWordCloud 移除无效 ON CONFLICT DO NOTHING（无对应唯一索引）
+//	  - HandleAnswer 防重通过捕获 unique constraint 错误返回明确提示
+//
 // =============================================================
 package services
 
@@ -40,10 +42,12 @@ func NewWidgetService(db *sql.DB, profanity *ProfanityService) *WidgetService {
 // extractInnerPayload 从双层嵌套的 room_elements.payload 中提取内层业务 payload
 //
 // 数据库存储格式（嵌套）：
-//   {x, y, width, height, payload: {status, options, votes, ...}}
+//
+//	{x, y, width, height, payload: {status, options, votes, ...}}
 //
 // 兼容格式（平铺，历史数据或教师状态切换后写入）：
-//   {x, y, width, height, status, options, votes, ...}
+//
+//	{x, y, width, height, status, options, votes, ...}
 //
 // 安全保护：
 //   - payload.payload 存在且为 JSON object（{ 开头）时，使用内层
@@ -1159,8 +1163,9 @@ func (s *WidgetService) GetHtmlContent(elementID string) (string, error) {
 // =============================================================
 
 // htmlEventData 课件上报的结构化事件（mc_event 契约的服务端镜像）
-//   对错表达三档：isCorrect(二元) / score+maxScore(部分得分) / 都不给(无对错的行为事件)。
-//   response = 学生实际作答的可读文本，供教师端直接查看。
+//
+//	对错表达三档：isCorrect(二元) / score+maxScore(部分得分) / 都不给(无对错的行为事件)。
+//	response = 学生实际作答的可读文本，供教师端直接查看。
 type htmlEventData struct {
 	Event          string          `json:"event"`
 	QuestionID     string          `json:"questionId"`
@@ -1287,7 +1292,9 @@ func contains(slice []string, item string) bool {
 // FlattenWidgetPayload 展平 Widget payload，防止三层嵌套写入数据库
 //
 // 问题场景：前端 element_update 可能携带三层嵌套结构：
-//   {x,y,width,height, payload:{..., payload:{业务字段}}}
+//
+//	{x,y,width,height, payload:{..., payload:{业务字段}}}
+//
 // 若直接写库，后续 extractInnerPayload 会读到错误层级的数据。
 //
 // 处理规则：
@@ -1295,6 +1302,7 @@ func contains(slice []string, item string) bool {
 //   - 展平策略：外层保留位置字段，内层取第二层业务字段（去掉 payload 子键），
 //     聚合数据（words/votes/stats/submissionOrder/total_voters）优先取第三层
 //   - 非 Widget 类型或非三层嵌套时，原样返回
+//
 // =============================================================
 func FlattenWidgetPayload(elemType string, rawPayload []byte) []byte {
 	widgetTypes := map[string]bool{

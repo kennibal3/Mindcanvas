@@ -25,14 +25,14 @@ type Element struct {
 
 // 元素类型常量
 const (
-	ElementTypeTextCard          = "text_card"          // 文本卡片
-	ElementTypeImageCard         = "image_card"         // 图片卡片
-	ElementTypeVideoCard         = "video_card"         // 视频卡片
-	ElementTypeFileCard          = "file_card"          // 文件卡片
-	ElementTypePollingWidget     = "polling_widget"     // 投票组件
-	ElementTypeWordCloudWidget   = "wordcloud_widget"   // 词云组件
-	ElementTypeQAWidget          = "qa_widget"          // 问答组件
-	ElementTypeExcalidrawStroke  = "excalidraw_stroke"  // 画笔轨迹
-	ElementTypeDropzone          = "dropzone"           // 收集区
-	ElementTypeHtmlWidget        = "html_widget"        // REQ-041 HTML 展示组件
+	ElementTypeTextCard         = "text_card"         // 文本卡片
+	ElementTypeImageCard        = "image_card"        // 图片卡片
+	ElementTypeVideoCard        = "video_card"        // 视频卡片
+	ElementTypeFileCard         = "file_card"         // 文件卡片
+	ElementTypePollingWidget    = "polling_widget"    // 投票组件
+	ElementTypeWordCloudWidget  = "wordcloud_widget"  // 词云组件
+	ElementTypeQAWidget         = "qa_widget"         // 问答组件
+	ElementTypeExcalidrawStroke = "excalidraw_stroke" // 画笔轨迹
+	ElementTypeDropzone         = "dropzone"          // 收集区
+	ElementTypeHtmlWidget       = "html_widget"       // REQ-041 HTML 展示组件
 )

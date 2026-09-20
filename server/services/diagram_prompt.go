@@ -7,7 +7,7 @@ package services
 
 // DiagramType 枚举
 const (
-	DiagramTypeMindmap  = "mindmap"
+	DiagramTypeMindmap   = "mindmap"
 	DiagramTypeFlowchart = "flowchart"
 	DiagramTypeTimeline  = "timeline"
 	DiagramTypeOrgchart  = "orgchart"

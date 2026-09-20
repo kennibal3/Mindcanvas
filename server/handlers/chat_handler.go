@@ -66,12 +66,12 @@ func (h *ChatHandler) GetPersona(c *gin.Context) {
 		return
 	}
 	var p struct {
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		Description  string `json:"description"`
-		AvatarEmoji  string `json:"avatar_emoji"`
-		CompressEvery int   `json:"compress_every"`
-		APIKeyHint   string `json:"api_key_hint"`
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Description   string `json:"description"`
+		AvatarEmoji   string `json:"avatar_emoji"`
+		CompressEvery int    `json:"compress_every"`
+		APIKeyHint    string `json:"api_key_hint"`
 	}
 	err := h.db.QueryRow(`
 		SELECT id, name, description, avatar_emoji, compress_every, COALESCE(api_key_hint,'')
@@ -402,7 +402,7 @@ func (h *ChatHandler) ClaudeProxy(c *gin.Context) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer " + apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
@@ -496,7 +496,9 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	go func(uid, sessID string, ms int64) {
 		_, _clErr := h.db.Exec(`INSERT INTO chat_logs (user_id, session_id, model, latency_ms, is_stream) VALUES ($1,$2,$3,$4,false)`,
 			uid, sessID, "doubao", ms)
-		if _clErr != nil { log.Printf("[chat_logs] insert failed uid=%s sid=%s err=%v", uid, sessID, _clErr) }
+		if _clErr != nil {
+			log.Printf("[chat_logs] insert failed uid=%s sid=%s err=%v", uid, sessID, _clErr)
+		}
 	}(userID, sid, time.Since(_chatStartAt).Milliseconds())
 	// 存储用户消息和AI回复
 	newTurn := turnCount + 1
@@ -533,10 +535,10 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"reply":            aiReply,
-		"reply_id":         replyMsgID,
-		"turn_count":       newTurn,
-		"should_compress":  shouldCompress,
+		"reply":           aiReply,
+		"reply_id":        replyMsgID,
+		"turn_count":      newTurn,
+		"should_compress": shouldCompress,
 	})
 }
 
@@ -700,7 +702,7 @@ func (h *ChatHandler) compressMemory(sid, userID, personaName string) {
 // UploadMemoryFile 上传文件到记忆库（支持MD和Word）
 // POST /api/chat/memory/upload
 
-	// POST /api/chat/proxy
+// POST /api/chat/proxy
 func (h *ChatHandler) UploadMemoryFile(c *gin.Context) {
 	userID, ok := h.checkChatAccess(c)
 	if !ok {
@@ -783,12 +785,12 @@ func (h *ChatHandler) UploadMemoryFile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":        memID,
-		"file_name": header.Filename,
-		"file_type": fileType,
-		"file_size": header.Size,
+		"id":         memID,
+		"file_name":  header.Filename,
+		"file_type":  fileType,
+		"file_size":  header.Size,
 		"char_count": utf8.RuneCountInString(contentText),
-		"message":   "文件已加入记忆库",
+		"message":    "文件已加入记忆库",
 	})
 }
 

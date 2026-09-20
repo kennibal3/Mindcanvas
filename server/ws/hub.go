@@ -11,10 +11,10 @@ import (
 
 // Hub WebSocket 全局管理器
 type Hub struct {
-	rooms      map[string]*Room // roomID → Room 映射
-	mu         sync.RWMutex     // 读写锁保护 rooms map
-	onMessage  func(*Room, *ClientMessage) // 全局消息处理回调
-	onEmpty    func(string)                // 房间清空回调（BUG-021②）
+	rooms     map[string]*Room            // roomID → Room 映射
+	mu        sync.RWMutex                // 读写锁保护 rooms map
+	onMessage func(*Room, *ClientMessage) // 全局消息处理回调
+	onEmpty   func(string)                // 房间清空回调（BUG-021②）
 }
 
 // NewHub 创建 Hub 实例
@@ -116,8 +116,9 @@ func (h *Hub) GetRoomClientCount(roomID string) int {
 
 // GetRoomClientList 获取指定房间所有在线成员详情
 // ⭐ 返回格式：[]map{"uuid","nickname","role","avatar_id"}
-//    含教师（role=teacher）和学生（role=student）
-//    用于 InsightService 未提交名单计算（排除教师）
+//
+//	含教师（role=teacher）和学生（role=student）
+//	用于 InsightService 未提交名单计算（排除教师）
 func (h *Hub) GetRoomClientList(roomID string) []map[string]interface{} {
 	room := h.GetRoom(roomID)
 	if room != nil {
