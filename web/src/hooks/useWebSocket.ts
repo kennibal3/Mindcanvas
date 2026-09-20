@@ -8,7 +8,7 @@ import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useWidgetStore } from '@/store/widgetStore';
 import { WS_CONFIG, WS_BASE } from '@/utils/constants';
-import { extractSyncedRoom } from '@/utils/wsContracts';
+import { extractSyncedRoom, interpretWidgetUpdate, buildWidgetErrorDetail } from '@/utils/wsContracts';
 import type { WSMessage } from '@/types/message';
 
 interface UseWebSocketOptions {
@@ -254,35 +254,33 @@ export const useWebSocket = (options: UseWebSocketOptions): UseWebSocketReturn =
         }
 
         case 'widget_update': {
-          const elemId        = msg.element_id || msg.payload?.element_id;
-          const widgetPayload = msg.payload;
-          if (elemId && widgetPayload) {
-            // BUG-004修复：服务端广播的 widgetPayload 已经是完整两层结构
-            // {x,y,width,height,payload:{业务字段}}（对齐 element_update /
-            // dropzone_update 的用法），不能再包一层 payload，否则会变成
-            // 三层嵌套，导致组件 extractInner() 读错层级、业务字段全部丢失
-            store.updateElement(elemId, widgetPayload);
-          }
+          // 判定逻辑抽为纯函数 interpretWidgetUpdate（utils/wsContracts.ts，REQ-054 契约测试锁定）：
+          // BUG-004修复：服务端广播的 payload 已经是完整两层结构
+          // {x,y,width,height,payload:{业务字段}}（对齐 element_update /
+          // dropzone_update 的用法），不能再包一层 payload，否则会变成
+          // 三层嵌套，导致组件 extractInner() 读错层级、业务字段全部丢失。
           // BUG修复：widget_update 是 room.BroadcastRaw 广播给全房间的，
           // 消息里带 from（提交者 uuid）；只有提交者本人才该收到
           // ws_widget_vote_result 已提交确认，否则任意一人投票会让全房间
           // 学生的投票/问答组件一起被 markSubmitted，别人再也提交不了
-          const fromUuid = msg.from || msg.sender_uuid || '';
-          if (elemId && fromUuid && fromUuid === uuid) {
+          const fx = interpretWidgetUpdate(msg, uuid);
+          if (fx.applyToStore) {
+            store.updateElement(fx.elementId, fx.payload);
+          }
+          if (fx.confirmToSubmitter) {
             window.dispatchEvent(new CustomEvent('ws_widget_vote_result', {
-              detail: { element_id: elemId, confirmed: true, payload: widgetPayload },
+              detail: { element_id: fx.elementId, confirmed: true, payload: fx.payload },
             }));
           }
           break;
         }
 
         case 'widget_error': {
-          const errorMsg  = msg.error || '提交失败';
-          const errorElem = msg.element_id || '';
+          const errorDetail = buildWidgetErrorDetail(msg);
           window.dispatchEvent(new CustomEvent('ws_widget_vote_result', {
-            detail: { element_id: errorElem, confirmed: false, error: errorMsg },
+            detail: errorDetail,
           }));
-          console.warn('[Widget] 服务端拒绝提交:', errorMsg, 'element:', errorElem);
+          console.warn('[Widget] 服务端拒绝提交:', errorDetail.error, 'element:', errorDetail.element_id);
           break;
         }
 

@@ -1,0 +1,17 @@
+{
+  "type": "widget_update",
+  "element_id": "el-1",
+  "payload": {
+    "x": 100,
+    "y": 200,
+    "width": 320,
+    "height": 260,
+    "payload": {
+      "status": "open",
+      "question": "1+1等于几？",
+      "options": ["1", "2", "3", "4"],
+      "correctIdx": 1
+    }
+  },
+  "from": "guest-00000000-0000-0000-0000-000000000000"
+}
