@@ -15,3 +15,43 @@ export function extractSyncedRoom(msg: any): any {
   if (!msg || msg.type !== 'room_sync') return undefined;
   return msg.room ?? msg.payload?.room ?? undefined;
 }
+
+/**
+ * widget_update（投票/词云/问答提交后服务端广播给全房间）应如何处理。
+ * 契约样例与服务端共享：仓库根目录 contracts/widget_update.json
+ *   （server/handlers/ws_contract_widget_fixture_test.go 校验真实广播的字段集合与样例一致）。
+ *
+ * 两条历史教训都锁在这里：
+ *   1. BUG-004/047：msg.payload 已是完整两层结构 {x,y,width,height,payload:{业务字段}}，
+ *      必须原样交给 store.updateElement，不能再包一层；服务端若把业务字段摊平到外层，
+ *      组件读嵌套层就永远是旧值（教师端「N 人已答题」不刷新）。
+ *   2. 2026-09-17：广播是给全房间的，只有 from 等于本人 uuid 才向本人派发「提交已确认」，
+ *      否则任意一人投票会让全房间学生的投票/问答组件一起被标记已提交。
+ */
+export interface WidgetUpdateEffect {
+  elementId: string;
+  payload: any;
+  applyToStore: boolean;
+  confirmToSubmitter: boolean;
+}
+
+export function interpretWidgetUpdate(msg: any, selfUuid?: string): WidgetUpdateEffect {
+  const elementId: string = msg?.element_id || msg?.payload?.element_id || '';
+  const payload = msg?.payload;
+  const fromUuid: string = msg?.from || msg?.sender_uuid || '';
+  return {
+    elementId,
+    payload,
+    applyToStore: !!(elementId && payload),
+    confirmToSubmitter: !!(elementId && fromUuid && fromUuid === selfUuid),
+  };
+}
+
+/** widget_error（提交失败，只回给提交者本人）对应的 ws_widget_vote_result 事件 detail */
+export function buildWidgetErrorDetail(msg: any): { element_id: string; confirmed: false; error: string } {
+  return {
+    element_id: msg?.element_id || '',
+    confirmed: false,
+    error: msg?.error || '提交失败',
+  };
+}
