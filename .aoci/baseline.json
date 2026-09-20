@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-09-10T08:04:28Z",
-  "updated_at": "2026-09-20T01:18:15Z",
+  "updated_at": "2026-09-20T04:00:24Z",
   "files": {
     ".gitattributes": {
       "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
@@ -29,9 +29,9 @@
       "normalized_sha256": "f1b990d113409a9c7abc877eb83788e99c7096058d43974219dd9ea4c6659208"
     },
     "aoci.code.txt": {
-      "sha256": "07b4683b81df5ac7359c40983dff12a6778d4de8c866460c8b1e29d8b54ae5e0",
-      "size": 105030,
-      "normalized_sha256": "07b4683b81df5ac7359c40983dff12a6778d4de8c866460c8b1e29d8b54ae5e0"
+      "sha256": "ac51d4330ab6ff569ed6ad3121d49c34a4c7a7bb80002d9efd90729e0f8311f3",
+      "size": 106471,
+      "normalized_sha256": "ac51d4330ab6ff569ed6ad3121d49c34a4c7a7bb80002d9efd90729e0f8311f3"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -194,6 +194,11 @@
       "sha256": "a671897d65f1afdfcd977f2e5ccbe58a27881d36c29c3590b55e1a8a2655ba7b",
       "size": 690,
       "normalized_sha256": "a671897d65f1afdfcd977f2e5ccbe58a27881d36c29c3590b55e1a8a2655ba7b"
+    },
+    "contracts/widget_update.json": {
+      "sha256": "3f0ff6b134f443d71e5bafda9d29a20f8d8f02acf498c8d35226ca44afbcdc80",
+      "size": 340,
+      "normalized_sha256": "3f0ff6b134f443d71e5bafda9d29a20f8d8f02acf498c8d35226ca44afbcdc80"
     },
     "deploy.sh": {
       "sha256": "eec12b2f7ba92c74d465edc4655c5b849480d146d9bded3b48a95e52ef22fbb1",
@@ -471,12 +476,28 @@
       "format_sha256": "1bafd3935652eb032da602f412dd5c7decc8fa5c12e6c217fd8cc2d0a91ca19a",
       "format_kind": "gofmt"
     },
+    "server/handlers/ws_contract_scene_messages_test.go": {
+      "role": "observe",
+      "sha256": "0450e2b00e1b6b844e055a789438629389e650380a4665a0b23fef38fcca20a9",
+      "size": 7158,
+      "normalized_sha256": "0450e2b00e1b6b844e055a789438629389e650380a4665a0b23fef38fcca20a9",
+      "format_sha256": "0450e2b00e1b6b844e055a789438629389e650380a4665a0b23fef38fcca20a9",
+      "format_kind": "gofmt"
+    },
     "server/handlers/ws_contract_test.go": {
       "role": "observe",
       "sha256": "b9f53b00f8b4397581fddcfdab677b9d42b43c8d24318db0f3170f460a030b00",
       "size": 7772,
       "normalized_sha256": "b9f53b00f8b4397581fddcfdab677b9d42b43c8d24318db0f3170f460a030b00",
       "format_sha256": "b9f53b00f8b4397581fddcfdab677b9d42b43c8d24318db0f3170f460a030b00",
+      "format_kind": "gofmt"
+    },
+    "server/handlers/ws_contract_widget_fixture_test.go": {
+      "role": "observe",
+      "sha256": "7a72d5f0d0ec682208d181b2e1834f92c3a43dd7cb5497683b81fe6e5d66b283",
+      "size": 2214,
+      "normalized_sha256": "7a72d5f0d0ec682208d181b2e1834f92c3a43dd7cb5497683b81fe6e5d66b283",
+      "format_sha256": "7a72d5f0d0ec682208d181b2e1834f92c3a43dd7cb5497683b81fe6e5d66b283",
       "format_kind": "gofmt"
     },
     "server/handlers/ws_contract_widget_scene_test.go": {
@@ -488,10 +509,10 @@
       "format_kind": "gofmt"
     },
     "server/handlers/ws_handler.go": {
-      "sha256": "cfc687532a958a180f83a4dd33f90b7c3a10990eb8dea21e20a9a06aefabf161",
-      "size": 39386,
-      "normalized_sha256": "cfc687532a958a180f83a4dd33f90b7c3a10990eb8dea21e20a9a06aefabf161",
-      "format_sha256": "cfc687532a958a180f83a4dd33f90b7c3a10990eb8dea21e20a9a06aefabf161",
+      "sha256": "56e60ffbd48fdf3d124f957a5cba8a5133fc1c483e26444db98e10bd27bc3f3e",
+      "size": 39466,
+      "normalized_sha256": "56e60ffbd48fdf3d124f957a5cba8a5133fc1c483e26444db98e10bd27bc3f3e",
+      "format_sha256": "56e60ffbd48fdf3d124f957a5cba8a5133fc1c483e26444db98e10bd27bc3f3e",
       "format_kind": "gofmt"
     },
     "server/handlers/ws_room_sync.go": {
@@ -499,6 +520,13 @@
       "size": 2984,
       "normalized_sha256": "4dfaab578bcb4890403cbda33d1f2fbb7242072af8438844f4a04ddb191ff918",
       "format_sha256": "4dfaab578bcb4890403cbda33d1f2fbb7242072af8438844f4a04ddb191ff918",
+      "format_kind": "gofmt"
+    },
+    "server/handlers/ws_scene_messages.go": {
+      "sha256": "3e78295656d69d753d1cf6e3d9aa311134384fb3ce1fe15f133d16a9fe444cc0",
+      "size": 3035,
+      "normalized_sha256": "3e78295656d69d753d1cf6e3d9aa311134384fb3ce1fe15f133d16a9fe444cc0",
+      "format_sha256": "3e78295656d69d753d1cf6e3d9aa311134384fb3ce1fe15f133d16a9fe444cc0",
       "format_kind": "gofmt"
     },
     "server/main.go": {
@@ -867,6 +895,14 @@
       "format_sha256": "2b023c363e8f36863cf289a8fc20877c17c841d78876afeede1b2c5a02023fc8",
       "format_kind": "gofmt"
     },
+    "server/ws/room_broadcast_test.go": {
+      "role": "observe",
+      "sha256": "2ecc4af83e02d48a4e97a54d4ad0bbcdbab8aa29208370dd1a942145cf0f7721",
+      "size": 1535,
+      "normalized_sha256": "2ecc4af83e02d48a4e97a54d4ad0bbcdbab8aa29208370dd1a942145cf0f7721",
+      "format_sha256": "2ecc4af83e02d48a4e97a54d4ad0bbcdbab8aa29208370dd1a942145cf0f7721",
+      "format_kind": "gofmt"
+    },
     "server/ws/room_kick_test.go": {
       "role": "observe",
       "sha256": "7779cea605007e9e10a6cfa296376f81d9c27a51edde9da104f618110d376047",
@@ -1101,9 +1137,9 @@
       "normalized_sha256": "9d6d7cfabd7e29721b0358649d0c2ffeea7b66322ab4f71406ab300e614db081"
     },
     "web/src/hooks/useWebSocket.ts": {
-      "sha256": "da831a14839f1d0a884387cfb20359fb8a3e2eec35e4a4047ba1c0bd36fa64fa",
-      "size": 21185,
-      "normalized_sha256": "da831a14839f1d0a884387cfb20359fb8a3e2eec35e4a4047ba1c0bd36fa64fa"
+      "sha256": "803ed3dd852afc34c71087e4bef7630a42293aaec916b39e29b9be8c0ac10f35",
+      "size": 21120,
+      "normalized_sha256": "803ed3dd852afc34c71087e4bef7630a42293aaec916b39e29b9be8c0ac10f35"
     },
     "web/src/i18n/en.json": {
       "sha256": "e2161ec6ee36fc4b8736617fb2a7810740689e7d69c158c01f5bbe7b7ed3e59b",
@@ -1356,9 +1392,9 @@
       "normalized_sha256": "2d72b9594ac3945172bc0bfbf0a640c4a51013e66db4225f1c969ee5802025ac"
     },
     "web/src/utils/wsContracts.ts": {
-      "sha256": "45720accf940deeeac7694949f986f5373b75c8bbdfba85c11fee4cd16cb05e9",
-      "size": 1011,
-      "normalized_sha256": "45720accf940deeeac7694949f986f5373b75c8bbdfba85c11fee4cd16cb05e9"
+      "sha256": "4bb2cb5526cf3925615593c8e8fdb2a3ddb618b79f3fa9a033be498062f09380",
+      "size": 2794,
+      "normalized_sha256": "4bb2cb5526cf3925615593c8e8fdb2a3ddb618b79f3fa9a033be498062f09380"
     },
     "web/tailwind.config.cjs": {
       "sha256": "7dd8a697b706a310c7b40b554a4c09662f66152792a4ec5f14bf5bcae3bd894f",
@@ -1370,6 +1406,12 @@
       "sha256": "41f9640671f0432dc1481a4e38c88a3ccadbf3257e03bc840e43493d7e0ad55a",
       "size": 1792,
       "normalized_sha256": "41f9640671f0432dc1481a4e38c88a3ccadbf3257e03bc840e43493d7e0ad55a"
+    },
+    "web/tests/wsWidgetContracts.test.mts": {
+      "role": "observe",
+      "sha256": "ff1a8c15b7cadc07b80d01a5abcce7f00bb4a1b021df66f70034c46b46768a1a",
+      "size": 3548,
+      "normalized_sha256": "ff1a8c15b7cadc07b80d01a5abcce7f00bb4a1b021df66f70034c46b46768a1a"
     },
     "web/tsconfig.json": {
       "sha256": "1e3318d00f882d629b7dbb47eda96c2c8dd849c56ba7e1911c9cdac2c04eef9f",
