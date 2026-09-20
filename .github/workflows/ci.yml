@@ -79,3 +79,103 @@ jobs:
       - name: node --test
         run: node --experimental-strip-types --test "web/tests/*.test.mts"
 
+
+  # REQ-054 方案 C：CI 内临时环境——staging 的零成本版本（2026-09-20 用户拍板选 C，未选同机/独立机器）。
+  #
+  # 起一个「用完即销毁」的真 Postgres 16 + 真 Redis 7，在空库上按编号跑完全部迁移，
+  # 编译并启动后端，再用一个教师 + 一个学生两条真 WebSocket 走一遍答题链路。
+  # 它补的是两个此前完全空白的检查：
+  #   ① 迁移文件能否从空库一路跑到最新（生产库是增量演进的，从没有人从零跑过；
+  #      首次实测就发现 012_chat.sql 与 001 的约束冲突，见 scripts/ci/seed_smoke.sql）；
+  #   ② 后端接真数据库 + 真 Redis 时，契约是否仍然成立
+  #      （现有契约测试用的是假数据库驱动，只能证明「结构对」，证明不了「真库上跑得通」）。
+  # 它不替代真机点击验收：这里没有浏览器、没有 nginx、没有 HTTPS / cookie 域。
+  # 失败时会把后端日志尾部打印出来，方便直接定位。
+  smoke:
+    name: 后端冒烟（临时 Postgres + Redis）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mindcanvas
+          POSTGRES_PASSWORD: ci-smoke-pass
+          POSTGRES_DB: mindcanvas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mindcanvas -d mindcanvas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # psql 与 apply_migrations.sh 读这组标准 PG 环境变量
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: mindcanvas
+      PGPASSWORD: ci-smoke-pass
+      PGDATABASE: mindcanvas
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 确认 psql 可用
+        run: |
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          psql --version
+
+      - name: 空库按编号执行全部迁移
+        run: bash scripts/ci/apply_migrations.sh
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+
+      - name: 编译后端
+        run: |
+          cd server
+          go build -o "$RUNNER_TEMP/mindcanvas-server" .
+
+      - name: 启动后端并等待 /health
+        run: |
+          # 后端只认环境变量即可启动（/opt/mindcanvas/configs/.env 不存在时会自动走纯环境变量模式）。
+          # GIN_MODE=release 同时避免 pprof 的 :6060 被拉起。
+          env \
+            PORT=8080 \
+            GIN_MODE=release \
+            DB_HOST=127.0.0.1 DB_PORT=5432 DB_NAME=mindcanvas DB_USER=mindcanvas DB_PASSWORD=ci-smoke-pass \
+            REDIS_ADDR=127.0.0.1:6379 \
+            JWT_SECRET=ci-smoke-jwt-secret-not-for-production \
+            PROFANITY_DICT_PATH="$GITHUB_WORKSPACE/configs/profanity_words.txt" \
+            PARSER_URL=http://127.0.0.1:1 \
+            nohup "$RUNNER_TEMP/mindcanvas-server" > "$RUNNER_TEMP/server.log" 2>&1 &
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health > /dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" != "1" ]; then
+            echo "❌ 后端 30 秒内没有起来"
+            exit 1
+          fi
+          echo "✅ 后端已就绪"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 冒烟：教师 + 学生 WebSocket 答题链路
+        run: node scripts/ci/smoke_ws.mjs
+
+      - name: 失败时打印后端日志（尾部 200 行）
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/server.log" || true
