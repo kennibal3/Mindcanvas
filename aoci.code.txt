@@ -12,7 +12,7 @@ test_phase8_full.sh[TB6L]: F:Phase8-v2 全量回归：Phase4-8 全部功能，�
 缺陷清单_AOCI审计.md[SG7S]: F:AOCI-CODE 索引构建时对全仓 223 个源文件逐文件阅读产出的缺陷清单：功能缺陷/安全隐私/数据一致性/死代码/健壮性五类，另附索引自身遗留项 | R:- | A:- | S:-
 
 ===/Users/kdongnmt.edu/Desktop/mind/.github/workflows/===
-ci.yml[OV6T]: F:main推送与PR触发，后端go build/vet/test、前端npm ci+build、前端契约测试三作业并行 | R:code:contracts/room_sync.json | A:- | S:go test 是 2026-08-05 才补，先本地全绿再入 CI 免卡死 PR；契约测试用 glob 跑 web/tests/*.test.mts，传目录报 MODULE_NOT_FOUND；build 已含 tsc 不另设
+ci.yml[OV6T]: F:main推送与PR触发，后端gofmt检查加go build/vet/test、前端npm ci+build、前端契约测试三作业并行 | R:code:contracts/room_sync.json | A:- | S:gofmt -l 非空即红，须先全仓清零再加检查；先本地全绿再入 CI 免卡死 PR；契约测试用 glob 传 web/tests/*.test.mts，传目录报 MODULE_NOT_FOUND
 
 ===/Users/kdongnmt.edu/Desktop/mind/configs/===
 001_init.sql[PB9M]: F:初始化六张核心表 tenants/users/rooms/room_elements/widget_interactions/room_sessions 及索引 | R:code:configs/002_dropzone.sql,code:configs/004_scene_persistence.sql,code:configs/011_avatar.sql,code:configs/012_chat.sql | A:- | S:idx_wi_no_duplicate_vote 是仅对 action_type='vote' 的部分唯一索引，用数据库原子性替代应用层计数防重复投票，词云与问答不受限；chk_tenant_role 要求 superadmin 的 tenant_id 为 NULL 而 admin/teacher 非空；room_elements 用 is_deleted 软删除以支持撤销；学生无账号不入 users 表
