@@ -42,6 +42,23 @@ function getSavedUUID(assignmentId: string): string {
   }
 }
 
+/** 保存学生姓名到LocalStorage——仅作为下次自动填充的便利提示，
+ *  BUG-053 修复后不再作为身份判定依据（身份判定改为每次向服务端按姓名反查）*/
+function saveStudentName(name: string, assignmentId: string) {
+  try {
+    localStorage.setItem(`submit_name_${assignmentId}`, name);
+  } catch {}
+}
+
+/** 读取上次保存的姓名（仅用于预填输入框） */
+function getSavedName(assignmentId: string): string {
+  try {
+    return localStorage.getItem(`submit_name_${assignmentId}`) || '';
+  } catch {
+    return '';
+  }
+}
+
 // =============================================================
 // 子组件：步骤进度指示器
 // =============================================================
@@ -134,6 +151,8 @@ const SubmitPage: React.FC = () => {
   // 学生身份
   const [studentName, setStudentName] = useState('');
   const [studentUUID, setStudentUUID] = useState('');
+  // BUG-053：确认姓名时要向服务端反查一次，期间禁用按钮、避免重复提交
+  const [checkingName, setCheckingName] = useState(false);
 
   // 提交内容 - 支持文字/文件/链接三种模式
   const [contentText, setContentText] = useState('');
@@ -242,15 +261,11 @@ const SubmitPage: React.FC = () => {
         return;
       }
 
-      // 通用码：先检查 LocalStorage 是否有保存的 UUID（有＝这台设备提交过）
-      const savedUUID = getSavedUUID(result.assignment_id);
-      if (savedUUID) {
-        setStudentUUID(savedUUID);
-        setStep('my_work');
-        fetchFeedback(result.assignment_id, savedUUID, token);
-        return;
-      }
-
+      // BUG-053：不再靠 localStorage 里存的 uuid 免验证直接跳"我的作业"——
+      // 同一台设备换个人用会顶错身份。姓名只用来预填输入框，真正的身份判定
+      // 交给 handleConfirmName 里按姓名向服务端反查（服务端按 token+姓名
+      // 派生身份，姓名不同天然是不同学生）。
+      setStudentName(getSavedName(result.assignment_id));
       setStep('fill_name');
     } catch (e: any) {
       setError(e.message || '验证失败，请检查网络');
@@ -261,12 +276,38 @@ const SubmitPage: React.FC = () => {
   // =============================================================
   // 步骤2（通用码）：确认姓名
   // =============================================================
-  const handleConfirmName = () => {
-    if (!studentName.trim()) {
+  // BUG-053：确认姓名后先向服务端按"token+姓名"反查是否已提交过，而不是
+  // 直接放行——姓名不同，服务端派生出的身份就不同，共享设备换个人用只要老实
+  // 填自己的名字，就不会看到/顶到别人的提交与反馈。查询本身不写数据，查不到
+  // 就当新学生处理，走正常填写流程。
+  const handleConfirmName = async () => {
+    const name = studentName.trim();
+    if (!name) {
       setError('请输入你的姓名');
       return;
     }
+    if (!verifyResult) return;
     setError('');
+    setStudentName(name);
+    saveStudentName(name, verifyResult.assignment_id);
+
+    setCheckingName(true);
+    try {
+      const token = (verifyResult.token || tokenInput).trim().toUpperCase();
+      const result = await verifyToken(token, name);
+      if (result.valid && result.existing_submission) {
+        setVerifyResult(result);
+        setStudentUUID(result.student_uuid || '');
+        setContentText(result.existing_submission.content_text || '');
+        setCheckingName(false);
+        setStep('my_work');
+        fetchFeedback(result.assignment_id, result.student_uuid || '', token);
+        return;
+      }
+    } catch {
+      // 反查失败不阻断——当新学生处理，走正常填写流程
+    }
+    setCheckingName(false);
     setStep('write_content');
   };
 
@@ -515,11 +556,20 @@ const SubmitPage: React.FC = () => {
                 </button>
                 <button
                   onClick={handleConfirmName}
-                  disabled={!studentName.trim()}
+                  disabled={!studentName.trim() || checkingName}
                   className="flex-1 bg-amber-700 hover:bg-amber-800 disabled:opacity-50
-                             text-white font-semibold py-3 rounded-xl transition-colors"
+                             text-white font-semibold py-3 rounded-xl transition-colors
+                             flex items-center justify-center gap-1.5"
                 >
-                  继续 <ChevronRight size={16} className="inline" />
+                  {checkingName ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> 查询中…
+                    </>
+                  ) : (
+                    <>
+                      继续 <ChevronRight size={16} className="inline" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>

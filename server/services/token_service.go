@@ -179,11 +179,19 @@ func generateTokenString(n int) (string, error) {
 // =============================================================
 
 // VerifyToken 验证作业码，返回作业信息和学生身份
-func (s *TokenService) VerifyToken(tokenStr string) (*models.TokenVerifyResult, error) {
+//
+// studentName 仅对通用码有意义（BUG-053）：通用码本身不绑定具体学生，此前
+// 前端靠 localStorage 里存的 uuid 免验证判断"这台设备是哪个学生"，同一台
+// 共享设备换个人用会顶错身份、看到别人的提交和反馈。改法是按学生刚输入的
+// 姓名，用与 SubmitByToken 完全相同的公式（token-<码>-<姓名>）派生出稳定
+// uuid 再反查是否已提交过——姓名不同天然是不同身份，不再靠客户端单点信任。
+// 专属码固定传空字符串即可，不影响其身份判定（走 token 行自带的 uuid）。
+func (s *TokenService) VerifyToken(tokenStr string, studentName string) (*models.TokenVerifyResult, error) {
 	tokenStr = strings.ToUpper(strings.TrimSpace(tokenStr))
 	if tokenStr == "" {
 		return nil, fmt.Errorf("作业码不能为空")
 	}
+	studentName = strings.TrimSpace(studentName)
 
 	// 查询token + 作业基本信息
 	var t models.AssignmentToken
@@ -248,6 +256,17 @@ func (s *TokenService) VerifyToken(tokenStr string) (*models.TokenVerifyResult, 
 	result.AssignmentID = t.AssignmentID
 	result.StudentUUID = t.StudentUUID
 	result.StudentName = t.StudentName
+
+	// BUG-053：通用码按姓名派生 uuid 反查（见函数头注释）。只在真正是通用码
+	// 时生效——专属码走下面 t.SubmissionID 分支，两者不会重叠。
+	if t.TokenType == models.TokenTypeUniversal && studentName != "" {
+		derivedUUID := fmt.Sprintf("token-%s-%s", t.Token, studentName)
+		if sub := s.findLatestSubmission(t.AssignmentID, derivedUUID); sub != nil {
+			result.StudentUUID = derivedUUID
+			result.StudentName = studentName
+			result.ExistingSubmission = sub
+		}
+	}
 
 	// 如果已提交，返回已有提交信息（用于allow_resubmit场景）
 	if t.SubmissionID != nil {
@@ -660,8 +679,11 @@ func (s *TokenService) ExportTokensCSV(assignmentID string) ([]byte, error) {
 // SubmitByToken 学生凭作业码提交作业
 // 返回：submissionID, studentUUID, error
 func (s *TokenService) SubmitByToken(req models.SubmitByTokenRequest) (string, string, error) {
-	// 1. 验证作业码
-	verifyResult, err := s.VerifyToken(req.Token)
+	// 1. 验证作业码（BUG-053：带上学生自填姓名，通用码才能反查到已提交记录，
+	// 使下面"不允许重复提交"的判断对通用码同样生效——此前这个判断对通用码
+	// 从未真正生效过，因为老的 VerifyToken(token) 拿不到姓名，永远查不到
+	// 已有提交，等于形同虚设）
+	verifyResult, err := s.VerifyToken(req.Token, req.StudentName)
 	if err != nil {
 		return "", "", err
 	}

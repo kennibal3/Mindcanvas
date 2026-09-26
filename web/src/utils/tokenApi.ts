@@ -112,12 +112,17 @@ export async function deleteRosterEntry(
 // 公开端：学生凭作业码提交
 // =============================================================
 
-/** 验证作业码（第一步：获取作业信息）*/
-export async function verifyToken(token: string): Promise<TokenVerifyResult> {
+/**
+ * 验证作业码（第一步：获取作业信息）。
+ * BUG-053：studentName 可选，通用码在学生填完姓名后应该再调一次带上它——
+ * 服务端会按 token-<码>-<姓名> 同一套公式反查是否已提交过，不传时行为
+ * 与之前完全一样（第一次验证码，还不知道姓名）。
+ */
+export async function verifyToken(token: string, studentName?: string): Promise<TokenVerifyResult> {
   const res = await fetch('/api/submit/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify(studentName ? { token, student_name: studentName } : { token }),
   });
   const data = await res.json();
   // 验证失败时返回 valid:false 而非抛出异常
