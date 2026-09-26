@@ -87,8 +87,17 @@ COMMENT ON TABLE chat_memory_files IS '永久文件记忆库，上传的MD/Word�
 -- 实际密码hash需要在应用启动后通过初始化脚本设置
 -- 先插入占位，启动时检测并更新密码
 
+-- BUG-052（2026-09-26 修复）：teacher 角色必须带 tenant_id（见 001_init.sql
+-- 的 chk_tenant_role 约束），这里此前没设，导致在空库上从 001 之后直接跑本
+-- 迁移会违反约束报错——「从迁移文件重建」这条路径走不通。生产库不受影响
+-- （Victoria 那行早已被人补上租户）。改法：自动取当前最早的一个租户；如果
+-- 一个租户都没有（真正从零开始、001 之后还没建过任何租户），就先跳过，等
+-- 有租户以后这条 INSERT 仍会在下次执行 012 时补上（WHERE NOT EXISTS 只挡
+-- 已存在的 Victoria，不挡"当时没有租户"这种情况——但迁移只在建库时跑一次，
+-- 实际含义是：真正从零建库时至少要先有一个租户，这条路径本来就需要种子数据，
+-- 与 CI 冒烟用的种子（先插一个租户）是同一个前提）。
 INSERT INTO users (
-  id, username, password, display_name, role,
+  id, username, password, display_name, role, tenant_id,
   is_active, chat_enabled, created_at, updated_at
 )
 SELECT
@@ -97,12 +106,16 @@ SELECT
   '$placeholder$',  -- 启动时由Go代码替换为真实bcrypt hash
   'Victoria',
   'teacher',
+  (SELECT id FROM tenants ORDER BY created_at LIMIT 1),
   true,
   true,
   NOW(),
   NOW()
 WHERE NOT EXISTS (
   SELECT 1 FROM users WHERE username = 'Victoria'
+)
+AND EXISTS (
+  SELECT 1 FROM tenants
 );
 
 COMMENT ON TABLE chat_memory_files IS '永久文件记忆库，支持Markdown和Word文件';
