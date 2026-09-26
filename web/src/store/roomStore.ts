@@ -138,7 +138,12 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     return { elements: [...filtered, element] };
   }),
 
-  /** 更新元素的 payload */
+  /** 更新元素的 payload（浅合并进 payload 顶层）。
+   *  2026-09-24 Batch 5 设计复核确认：全项目唯一调用来源是 useWebSocket.ts，
+   *  且所有消息类型都传服务端权威的完整 payload（仅 card_like 是有意的单字段
+   *  合并），浅合并目前安全。但如果以后新增只发『嵌套对象里的增量字段』的
+   *  调用点，这里会把整个嵌套对象换掉而不是合并进去，届时会静默丢字段——
+   *  新增调用点前务必确认对方给的是完整 payload 还是嵌套增量。 */
   updateElement: (id, payload) => set((state) => ({
     elements: state.elements.map((e) =>
       e.id === id
@@ -147,7 +152,12 @@ export const useRoomStore = create<RoomState>((set, get) => ({
     ),
   })),
 
-  /** 软删除元素 */
+  /** 从本地元素列表移除（是本地视图状态的硬删除，不是软删除——
+   *  2026-09-24 订正：此前注释写『软删除』但代码一直是 .filter() 物理
+   *  移除，与实际行为不符。真正的软删除权威在服务端 SoftDeleteElement
+   *  〔DB is_deleted=TRUE〕，这里只是本地缓存跟着服务端已删除的判断走，
+   *  全项目只有 element_delete 消息这一个调用点，删除后没有地方需要
+   *  再读到这个元素，硬删除本地数组是安全的）。 */
   removeElement: (id) => set((state) => ({
     elements: state.elements.filter((e) => e.id !== id),
   })),
