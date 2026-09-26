@@ -278,13 +278,17 @@ func (h *TokenHandler) DeleteRosterEntry(c *gin.Context) {
 func (h *TokenHandler) VerifyToken(c *gin.Context) {
 	var req struct {
 		Token string `json:"token" binding:"required"`
+		// BUG-053：通用码这一步可选带上学生刚输入的姓名，服务端按
+		// token-<码>-<姓名> 同一套公式反查是否已提交过。不传时行为不变
+		// （第一次验证码，还不知道姓名）。
+		StudentName string `json:"student_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入作业码"})
 		return
 	}
 
-	result, err := h.svc.VerifyToken(req.Token)
+	result, err := h.svc.VerifyToken(req.Token, req.StudentName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"valid": false,

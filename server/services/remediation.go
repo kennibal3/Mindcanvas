@@ -623,7 +623,9 @@ func (s *AssignmentService) GetStudentRemediationPublic(ctx context.Context, ass
 	}
 
 	ts := NewTokenService(s.db)
-	vr, err := ts.VerifyToken(tokenStr)
+	// 这里不需要按姓名反查已提交记录（下面用 uuid 前缀/相等自己校验身份），
+	// 传空字符串即可，行为与改动前一致。
+	vr, err := ts.VerifyToken(tokenStr, "")
 	if err != nil || vr == nil || !vr.Valid {
 		return nil, fmt.Errorf("作业码无效或已过期")
 	}
