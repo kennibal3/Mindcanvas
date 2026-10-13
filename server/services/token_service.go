@@ -178,6 +178,19 @@ func generateTokenString(n int) (string, error) {
 // 作业码验证（学生提交入口）
 // =============================================================
 
+// universalStudentUUID 通用码学生的确定性身份：token-<码>-<姓名>。
+//
+// BUG-054：此前 VerifyToken（反查）和 SubmitByToken（落库）各自手写这个公式，
+// 前者用库里固定大写的码 + 去空格的姓名，后者用请求原样的码和姓名——只要
+// 学生提交时码不是全大写、或姓名首尾带空格（手机输入法常见），两边算出的
+// uuid 就对不上，该生之后永远查不到自己的历史提交。现在两处都只走这一个
+// 函数，并在函数内部统一规范化，调用方传什么大小写/空格都得到同一个结果。
+func universalStudentUUID(token, studentName string) string {
+	return fmt.Sprintf("token-%s-%s",
+		strings.ToUpper(strings.TrimSpace(token)),
+		strings.TrimSpace(studentName))
+}
+
 // VerifyToken 验证作业码，返回作业信息和学生身份
 //
 // studentName 仅对通用码有意义（BUG-053）：通用码本身不绑定具体学生，此前
@@ -260,7 +273,7 @@ func (s *TokenService) VerifyToken(tokenStr string, studentName string) (*models
 	// BUG-053：通用码按姓名派生 uuid 反查（见函数头注释）。只在真正是通用码
 	// 时生效——专属码走下面 t.SubmissionID 分支，两者不会重叠。
 	if t.TokenType == models.TokenTypeUniversal && studentName != "" {
-		derivedUUID := fmt.Sprintf("token-%s-%s", t.Token, studentName)
+		derivedUUID := universalStudentUUID(t.Token, studentName)
 		if sub := s.findLatestSubmission(t.AssignmentID, derivedUUID); sub != nil {
 			result.StudentUUID = derivedUUID
 			result.StudentName = studentName
@@ -697,12 +710,13 @@ func (s *TokenService) SubmitByToken(req models.SubmitByTokenRequest) (string, s
 
 	// 通用码：使用学生自填姓名
 	if verifyResult.TokenType == models.TokenTypeUniversal {
-		if req.StudentName == "" {
+		// BUG-054：姓名去首尾空格后再判空、再落库，与 VerifyToken 反查口径一致
+		studentName = strings.TrimSpace(req.StudentName)
+		if studentName == "" {
 			return "", "", fmt.Errorf("通用码提交需要填写姓名")
 		}
-		studentName = req.StudentName
 		// 通用码没有预设uuid，生成一个基于作业码+姓名的稳定uuid
-		studentUUID = fmt.Sprintf("token-%s-%s", req.Token, req.StudentName)
+		studentUUID = universalStudentUUID(verifyResult.Token, studentName)
 	}
 
 	// 2. 检查是否已提交（不允许重复提交时）
@@ -765,11 +779,13 @@ func (s *TokenService) SubmitByToken(req models.SubmitByTokenRequest) (string, s
 	// 4. 绑定token与提交
 	// BUG-013：绑定失败会导致该生此后进不了「我的作业」，这里重试一次并记 WARN；
 	// 即使仍失败也不阻断提交——VerifyToken 已有反查自愈兜底。
-	if err := s.BindTokenToSubmission(req.Token, subID); err != nil {
-		log.Printf("[BUG-013][WARN] 绑定token失败(第1次) token=%s submission=%s: %v", req.Token, subID, err)
-		if err2 := s.BindTokenToSubmission(req.Token, subID); err2 != nil {
+	// BUG-054：用 VerifyToken 规范化后的码（库里是大写），原样的 req.Token
+	// 若含小写，WHERE token = $3 会静默匹配 0 行、也不报错。
+	if err := s.BindTokenToSubmission(verifyResult.Token, subID); err != nil {
+		log.Printf("[BUG-013][WARN] 绑定token失败(第1次) token=%s submission=%s: %v", verifyResult.Token, subID, err)
+		if err2 := s.BindTokenToSubmission(verifyResult.Token, subID); err2 != nil {
 			log.Printf("[BUG-013][WARN] 绑定token重试仍失败 token=%s submission=%s: %v（将由 VerifyToken 反查自愈）",
-				req.Token, subID, err2)
+				verifyResult.Token, subID, err2)
 		}
 	}
 
