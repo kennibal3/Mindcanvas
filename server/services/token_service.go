@@ -178,6 +178,17 @@ func generateTokenString(n int) (string, error) {
 // 作业码验证（学生提交入口）
 // =============================================================
 
+// tokenBindsSubmission 作业码这一行能否绑定「某一份提交」（submission_id）。
+//
+// BUG-055：只有专属码（一码一人）才有意义。通用码是全班共用的一个码，
+// 此前第一个学生提交后码就绑死在他那份提交上，之后所有用这个码的学生
+// 在 VerifyToken 里都会被带回那份提交——看到别人的内容；允许重交时再提交
+// 还会直接 UPDATE 覆盖掉别人的作业，不允许重交时则被拦成「已提交过」。
+// 通用码学生一律只按 universalStudentUUID（码+姓名）识别。
+func tokenBindsSubmission(tokenType string) bool {
+	return tokenType != models.TokenTypeUniversal
+}
+
 // universalStudentUUID 通用码学生的确定性身份：token-<码>-<姓名>。
 //
 // BUG-054：此前 VerifyToken（反查）和 SubmitByToken（落库）各自手写这个公式，
@@ -271,7 +282,8 @@ func (s *TokenService) VerifyToken(tokenStr string, studentName string) (*models
 	result.StudentName = t.StudentName
 
 	// BUG-053：通用码按姓名派生 uuid 反查（见函数头注释）。只在真正是通用码
-	// 时生效——专属码走下面 t.SubmissionID 分支，两者不会重叠。
+	// 时生效——专属码走下面 t.SubmissionID 分支，两者不会重叠（BUG-055 起
+	// 该分支对通用码显式关闭，见 tokenBindsSubmission）。
 	if t.TokenType == models.TokenTypeUniversal && studentName != "" {
 		derivedUUID := universalStudentUUID(t.Token, studentName)
 		if sub := s.findLatestSubmission(t.AssignmentID, derivedUUID); sub != nil {
@@ -281,8 +293,9 @@ func (s *TokenService) VerifyToken(tokenStr string, studentName string) (*models
 		}
 	}
 
-	// 如果已提交，返回已有提交信息（用于allow_resubmit场景）
-	if t.SubmissionID != nil {
+	// 如果已提交，返回已有提交信息（用于allow_resubmit场景）。
+	// BUG-055：仅限专属码；通用码即使库里残留旧绑定也不读，防串号。
+	if t.SubmissionID != nil && tokenBindsSubmission(t.TokenType) {
 		sub, err := s.getSubmissionByID(*t.SubmissionID)
 		if err == nil {
 			result.ExistingSubmission = sub
@@ -359,7 +372,17 @@ func (s *TokenService) getSubmissionByID(subID string) (*models.AssignmentSubmis
 	return &sub, nil
 }
 
-// BindTokenToSubmission 提交成功后将token与提交关联
+// MarkTokenUsed 只记首次使用时间、不绑定提交（BUG-055：通用码专用）
+func (s *TokenService) MarkTokenUsed(tokenStr string) error {
+	_, err := s.db.Exec(`
+		UPDATE assignment_tokens
+		SET used_at = COALESCE(used_at, NOW())
+		WHERE token = $1
+	`, tokenStr)
+	return err
+}
+
+// BindTokenToSubmission 提交成功后将token与提交关联（仅专属码，见 tokenBindsSubmission）
 func (s *TokenService) BindTokenToSubmission(tokenStr, submissionID string) error {
 	now := time.Now()
 	_, err := s.db.Exec(`
@@ -781,7 +804,12 @@ func (s *TokenService) SubmitByToken(req models.SubmitByTokenRequest) (string, s
 	// 即使仍失败也不阻断提交——VerifyToken 已有反查自愈兜底。
 	// BUG-054：用 VerifyToken 规范化后的码（库里是大写），原样的 req.Token
 	// 若含小写，WHERE token = $3 会静默匹配 0 行、也不报错。
-	if err := s.BindTokenToSubmission(verifyResult.Token, subID); err != nil {
+	// BUG-055：通用码不绑定提交，只记「已使用」时间（教师端作业码徽章靠它）。
+	if !tokenBindsSubmission(verifyResult.TokenType) {
+		if err := s.MarkTokenUsed(verifyResult.Token); err != nil {
+			log.Printf("[BUG-055][WARN] 标记通用码已使用失败 token=%s: %v", verifyResult.Token, err)
+		}
+	} else if err := s.BindTokenToSubmission(verifyResult.Token, subID); err != nil {
 		log.Printf("[BUG-013][WARN] 绑定token失败(第1次) token=%s submission=%s: %v", verifyResult.Token, subID, err)
 		if err2 := s.BindTokenToSubmission(verifyResult.Token, subID); err2 != nil {
 			log.Printf("[BUG-013][WARN] 绑定token重试仍失败 token=%s submission=%s: %v（将由 VerifyToken 反查自愈）",
