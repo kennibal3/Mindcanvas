@@ -399,6 +399,7 @@ func main() {
 		// 场控
 		rooms.PUT("/:id/lock", roomHandler.LockRoom)
 		rooms.PUT("/:id/readonly", roomHandler.SetReadOnly)
+		rooms.POST("/:id/invite-code/reset", roomHandler.ResetInviteCode) // BUG-056
 		rooms.POST("/:id/kick", roomHandler.KickMember)
 		rooms.POST("/:id/ban", roomHandler.BanMember)                   // BUG-044：封禁（拒绝重连）
 		rooms.POST("/:id/unban", roomHandler.UnbanMember)               // BUG-044：解封

@@ -298,6 +298,9 @@ const RoomPage = () => {
   // REQ-051 二期：房间内分享(链接+二维码)弹层
   const [showShare, setShowShare]             = useState(false);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  // BUG-056：重置入场链接（旧链接失效）。两步确认：idle → confirm → loading
+  const [resetStage, setResetStage] = useState<'idle' | 'confirm' | 'loading'>('idle');
+  const [resetMsg, setResetMsg]     = useState('');
   const [qrDataUrl, setQrDataUrl]             = useState('');
   const [isGathered, setIsGathered]       = useState(false);
   const [showMembers, setShowMembers]     = useState(false);
@@ -571,6 +574,27 @@ const RoomPage = () => {
     });
   }, [joinLink]);
 
+  // BUG-056：重新生成邀请码，已经发出去的旧入场链接随即失效（已在房间里的人不受影响）
+  const handleResetInviteCode = useCallback(async () => {
+    if (!roomId || !currentRoom) return;
+    setResetStage('loading');
+    setResetMsg('');
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/invite-code/reset`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.invite_code) throw new Error(data.error || '重置失败');
+      setCurrentRoom({ ...currentRoom, invite_code: data.invite_code });
+      setResetMsg('已重置，旧链接已失效');
+    } catch (err) {
+      setResetMsg(err instanceof Error ? err.message : '重置失败');
+    } finally {
+      setResetStage('idle');
+    }
+  }, [roomId, currentRoom, setCurrentRoom]);
+
   const handleReadOnlyChange = useCallback(async (readonly: boolean) => {
     if (!roomId) return;
     try {
@@ -802,6 +826,31 @@ const RoomPage = () => {
                 ? <><Check size={13} /> 链接已复制</>
                 : <><Copy size={13} /> 复制入场链接</>}
             </button>
+            {/* BUG-056：重置入场链接——让已经发出去的旧链接失效 */}
+            {resetStage === 'confirm' ? (
+              <div className="w-full rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                <div className="mb-2 leading-relaxed">旧链接和旧房间码将立即失效，需要把新链接重新发给要进来的人。已在房间里的人不受影响。</div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleResetInviteCode}
+                    className="flex-1 rounded-md bg-red-500 py-1.5 font-medium text-white hover:bg-red-600"
+                  >确认重置</button>
+                  <button
+                    onClick={() => setResetStage('idle')}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-1.5 text-gray-600 hover:bg-gray-50"
+                  >取消</button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setResetMsg(''); setResetStage('confirm'); }}
+                disabled={resetStage === 'loading'}
+                className="w-full flex items-center justify-center gap-1.5 text-xs rounded-lg py-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+              >
+                <RotateCw size={12} /> {resetStage === 'loading' ? '重置中…' : '重置入场链接（旧链接失效）'}
+              </button>
+            )}
+            {resetMsg && <div className="text-xs text-gray-500">{resetMsg}</div>}
           </div>
         </div>
       )}

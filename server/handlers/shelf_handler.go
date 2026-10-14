@@ -116,6 +116,14 @@ func (h *ShelfHandler) CreateShelfCard(c *gin.Context) {
 		return
 	}
 
+	// BUG-056：只读/锁定房间里，学生（未登录访客）不能往协作墙发卡片；老师/管理员不受限。
+	if r := middleware.GetRole(c); r != "teacher" && r != "admin" && r != "superadmin" {
+		if roomIsRestricted(db, roomID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "房间当前为只读/锁定状态，不能发布"})
+			return
+		}
+	}
+
 	authorUUID := req.AuthorUUID
 	authorName := req.AuthorName
 	if uid, ok := c.Get("user_id"); ok {

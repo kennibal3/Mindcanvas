@@ -124,21 +124,9 @@ func (s *RoomService) CreateRoom(teacherID, tenantID string, req models.CreateRo
 	}
 
 	// 生成唯一邀请码（最多尝试5次）
-	var inviteCode string
-	for i := 0; i < 5; i++ {
-		inviteCode = utils.GenerateInviteCode()
-		var exists bool
-		if err := s.db.QueryRow(
-			"SELECT EXISTS(SELECT 1 FROM rooms WHERE invite_code = $1)", inviteCode,
-		).Scan(&exists); err != nil {
-			return nil, fmt.Errorf("检查邀请码失败: %w", err)
-		}
-		if !exists {
-			break
-		}
-		if i == 4 {
-			return nil, fmt.Errorf("邀请码生成失败，请重试")
-		}
+	inviteCode, err := s.generateUniqueInviteCode()
+	if err != nil {
+		return nil, err
 	}
 
 	// REQ-045：仅 roster 形态绑定班级，且班级须归当前教师所有
@@ -172,6 +160,40 @@ func (s *RoomService) CreateRoom(teacherID, tenantID string, req models.CreateRo
 	log.Printf("[房间] 创建成功 - ID:%s 标题:%s 模式:%s 邀请码:%s (%d/%d)",
 		room.ID, room.Title, room.RoomMode, room.InviteCode, currentCount+1, maxRooms)
 	return room, nil
+}
+
+// generateUniqueInviteCode 生成一个库里不存在的邀请码（最多尝试 5 次）。
+// 从 CreateRoom 抽出，供 ResetInviteCode（BUG-056）共用。
+func (s *RoomService) generateUniqueInviteCode() (string, error) {
+	for i := 0; i < 5; i++ {
+		code := utils.GenerateInviteCode()
+		var exists bool
+		if err := s.db.QueryRow(
+			"SELECT EXISTS(SELECT 1 FROM rooms WHERE invite_code = $1)", code,
+		).Scan(&exists); err != nil {
+			return "", fmt.Errorf("检查邀请码失败: %w", err)
+		}
+		if !exists {
+			return code, nil
+		}
+	}
+	return "", fmt.Errorf("邀请码生成失败，请重试")
+}
+
+// ResetInviteCode BUG-056：给房间换一个新邀请码，旧入场链接随之失效。
+func (s *RoomService) ResetInviteCode(roomID string) (string, error) {
+	code, err := s.generateUniqueInviteCode()
+	if err != nil {
+		return "", err
+	}
+	res, err := s.db.Exec(`UPDATE rooms SET invite_code = $1, updated_at = NOW() WHERE id = $2`, code, roomID)
+	if err != nil {
+		return "", fmt.Errorf("更新邀请码失败: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return "", fmt.Errorf("房间不存在")
+	}
+	return code, nil
 }
 
 // GetRoom 根据 ID 获取房间（handler 层调用名称）

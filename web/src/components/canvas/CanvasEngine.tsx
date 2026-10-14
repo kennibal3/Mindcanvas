@@ -132,7 +132,9 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
   }, [isTeacher]);
 
   const getViewMode = (): boolean => {
-    if (isLocked || isReadOnly) return true;
+    // BUG-056：只读/锁定只限制学生。此前老师也被锁住，打开只读后老师自己都改不了，
+    // 按钮说明「学生只能浏览画布」与实际行为不符。服务端同步拦学生修改（ws_room_restrict.go）。
+    if ((isLocked || isReadOnly) && !isTeacher) return true;
     if (roomMode === 'cards' && !isTeacher) return true;
     return false;
   };
