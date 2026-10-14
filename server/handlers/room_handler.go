@@ -246,6 +246,7 @@ func (h *RoomHandler) LockRoom(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	invalidateRoomRestrict(roomID) // BUG-056
 	// REQ-005：扁平格式，前端直接读msg.is_locked
 	msgBytes, _ := json.Marshal(map[string]interface{}{
 		"type":      "ctrl_lockdown",
@@ -277,6 +278,7 @@ func (h *RoomHandler) SetReadOnly(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	invalidateRoomRestrict(roomID) // BUG-056
 	// REQ-005：扁平格式
 	msgBytes, _ := json.Marshal(map[string]interface{}{
 		"type":        "ctrl_readonly",
@@ -286,6 +288,27 @@ func (h *RoomHandler) SetReadOnly(c *gin.Context) {
 		room.BroadcastRaw(msgBytes)
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "操作成功", "is_readonly": req.IsReadOnly})
+}
+
+// ResetInviteCode POST /api/rooms/:id/invite-code/reset
+// BUG-056（2026-10-14 用户要求）：重新生成邀请码，让已经发出去的旧入场链接 /join/{旧码} 失效。
+// 已在房间里的人不受影响（不踢人）；只是此后用旧链接/旧码进不来。
+func (h *RoomHandler) ResetInviteCode(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := middleware.GetUserID(c)
+	role := middleware.GetRole(c)
+	tenantID := middleware.GetTenantID(c)
+	if err := h.roomService.CheckRoomOwnership(roomID, userID, role, tenantID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	code, err := h.roomService.ResetInviteCode(roomID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("[房间] 重置邀请码 room:%s by:%s", roomID, userID)
+	c.JSON(http.StatusOK, gin.H{"message": "邀请码已重置，旧链接已失效", "invite_code": code})
 }
 
 // KickMember POST /api/rooms/:id/kick

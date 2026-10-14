@@ -473,7 +473,7 @@ const ControlPanel = ({
   const handleSetReadOnly = useCallback(() => {
     setConfirmModal({
       title: '设为只读模式',
-      description: '课程结束后学生只能浏览画布，无法继续编辑。确定要设为只读模式吗？',
+      description: '学生（含通过入场链接进来的人）只能浏览画布，不能编辑，也不能投票、答题、交作品；你自己仍可正常编辑。确定要设为只读模式吗？',
       confirmText: '确认只读',
       confirmClass: 'bg-orange-500 hover:bg-orange-600 text-white',
       onConfirm: async () => {

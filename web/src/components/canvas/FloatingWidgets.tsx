@@ -126,6 +126,8 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 }) => {
   const updateElement = useRoomStore((s) => s.updateElement);
   const removeElement = useRoomStore((s) => s.removeElement);
+  // BUG-056：只读/锁定只限制学生，老师照常拖动、缩放、管理组件
+  const studentBlocked = !isTeacher && (isLocked || isReadOnly);
   const transform     = useCanvasStore((s) => s.transform);
 
   const [dragging, setDragging] = useState<string | null>(null);
@@ -184,7 +186,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
   const handleDragStart = useCallback((
     e: React.MouseEvent, elementId: string, elemX: number, elemY: number,
   ) => {
-    if (isLocked || isReadOnly) return;
+    if (studentBlocked) return;
     e.preventDefault();
     e.stopPropagation();
     setDragging(elementId);
@@ -230,7 +232,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
-  }, [isLocked, isReadOnly, sendMessage, updateElement]);
+  }, [studentBlocked, sendMessage, updateElement]);
 
   /**
    * REQ-035-c：右下角缩放把手。交互模式与移动把手完全一致——
@@ -241,7 +243,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
   const handleResizeStart = useCallback((
     e: React.MouseEvent, elementId: string, elemType: string, elemW: number, elemH: number,
   ) => {
-    if (isLocked || isReadOnly) return;
+    if (studentBlocked) return;
     e.preventDefault();
     e.stopPropagation();
     setResizing(elementId);
@@ -290,7 +292,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', handleUp);
-  }, [isLocked, isReadOnly, sendMessage, updateElement]);
+  }, [studentBlocked, sendMessage, updateElement]);
 
   if (floatingElements.length === 0) return null;
 
@@ -346,7 +348,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
             }}
           >
             {/* 拖拽把手：放在 scale 容器外层，避免把手本身也被缩放 */}
-            {isTeacher && !isLocked && !isReadOnly && (
+            {isTeacher && (
               <div
                 onMouseDown={(e) => handleDragStart(e, element.id, x, y)}
                 style={{
@@ -371,7 +373,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 
             {/* REQ-035-c：右下角缩放把手（教师专属，放 scale 容器外不被缩放，
                 定位用 screenW/screenH 跟随缩放后的实际角点） */}
-            {isTeacher && !isLocked && !isReadOnly && (
+            {isTeacher && (
               <div
                 onMouseDown={(e) => handleResizeStart(e, element.id, element.type, width, height)}
                 style={{
@@ -441,7 +443,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                       id={element.id}
                       payload={element.payload}
                       isTeacher={isTeacher}
-                      isLocked={isLocked || isReadOnly}
+                      isLocked={studentBlocked}
                       onUpdate={(p) => handleElementUpdate(element.id, p)}
                       onSubmit={(a, d) => handleWidgetSubmit(element.id, a, d)}
                     />
@@ -452,7 +454,7 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                     id={element.id}
                     payload={element.payload}
                     isTeacher={isTeacher}
-                    isLocked={isLocked || isReadOnly}
+                    isLocked={studentBlocked}
                     onUpdate={(p) => handleElementUpdate(element.id, p)}
                   />
                 );

@@ -286,7 +286,8 @@ const WidgetToolbar: React.FC<WidgetToolbarProps> = ({
     setShowDropzoneModal(false);
   }, [createWidget]);
 
-  if (isLocked || isReadOnly) return null;
+  // BUG-056：只读/锁定只限制学生；本工具栏只有老师看得到，老师照常可以添加组件。
+  void isLocked; void isReadOnly;
 
   return (
     <>

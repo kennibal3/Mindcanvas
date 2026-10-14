@@ -444,6 +444,16 @@ func (h *WSHandler) SetupMessageHandler() {
 		roomID := room.ID
 		senderUUID := client.UUID
 
+		// BUG-056：房间只读/锁定时拦下学生的修改与互动（老师不受限）。见 ws_room_restrict.go。
+		if studentWriteBlocked(client.Role, msg.Type, func() bool { return roomIsRestricted(h.db, roomID) }) {
+			log.Printf("[只读校验] 拦截学生修改 room:%s uuid:%s type:%s", roomID, senderUUID, msg.Type)
+			errBytes, _ := json.Marshal(map[string]interface{}{
+				"type": "widget_error", "error": "房间当前为只读/锁定状态，只能浏览，修改未保存",
+			})
+			client.Send <- errBytes
+			return
+		}
+
 		switch msg.Type {
 
 		case ws.MsgSceneUpdate:
@@ -826,6 +836,16 @@ func (h *WSHandler) handleWidgetSubmit(room *ws.Room, client *ws.Client, msg *ws
 		Data       json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(msg.Payload, &submitData); err != nil {
+		return
+	}
+
+	// BUG-056：只读/锁定房间里学生不能投票/答题/写词云（html_event 放行，见 widgetActionBlocked）
+	if widgetActionBlocked(client.Role, submitData.ActionType, func() bool { return roomIsRestricted(h.db, room.ID) }) {
+		log.Printf("[只读校验] 拦截学生组件提交 room:%s uuid:%s action:%s", room.ID, client.UUID, submitData.ActionType)
+		errBytes, _ := json.Marshal(map[string]interface{}{
+			"type": "widget_error", "error": "房间当前为只读/锁定状态，不能提交",
+		})
+		client.Send <- errBytes
 		return
 	}
 
