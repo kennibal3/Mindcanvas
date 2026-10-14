@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { Room, CollabMode } from '@/types/room';
 import { ROOM_MODE_LABELS, COLLAB_MODE_OPTIONS } from '@/types/room';
+import { formatRelativeTime } from '@/utils/relativeTime';
 import { listClasses, type Class } from '@/utils/classApi';
 // BUG-035：护眼模式开关
 import { getEyeCareMode, setEyeCareMode } from '@/utils/eyeCareMode';
@@ -743,8 +744,17 @@ const DashboardPage = () => {
                         : <><Link2 size={13} /> 复制学生入场链接</>}
                     </button>
 
-                    <div className="mt-3 text-xs text-gray-400">
-                      创建于 {new Date(room.created_at).toLocaleString('zh-CN')}
+                    {/* REQ-065：最近修改（悬停看具体时间）+ 创建时间 */}
+                    <div className="mt-3 flex items-center justify-between gap-2 text-xs text-gray-400">
+                      <span
+                        className="text-gray-600"
+                        title={room.last_modified_at
+                          ? `最近修改：${new Date(room.last_modified_at).toLocaleString('zh-CN')}`
+                          : undefined}
+                      >
+                        最近修改 {formatRelativeTime(room.last_modified_at || room.created_at)}
+                      </span>
+                      <span>创建于 {new Date(room.created_at).toLocaleDateString('zh-CN')}</span>
                     </div>
                   </div>
                 ))}

@@ -39,6 +39,7 @@ export interface Room {
   created_at: string;
   updated_at: string;
   finished_at?: string;
+  last_modified_at?: string; // REQ-065：最近修改时间（画布内容/新建组件），列表接口按它倒序
 }
 
 export interface CreateRoomRequest {

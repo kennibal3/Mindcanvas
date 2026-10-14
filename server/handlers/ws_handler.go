@@ -172,16 +172,22 @@ func (h *WSHandler) persistSceneDB(roomID string, sceneJSON []byte, savedBy stri
 	if h.db == nil || len(sceneJSON) == 0 {
 		return
 	}
+	// REQ-065：content_updated_at 按元素自带的修改时间算，不按落库时刻算。
+	// $5 为 0（解析不出时间）时写 NULL，GREATEST 忽略 NULL → 保留旧值；
+	// LEAST(…, NOW()) 防时钟偏快的设备写出未来时间；GREATEST 保证只增不减。
+	contentMs := sceneContentUpdatedMs(sceneJSON)
 	_, err := h.db.Exec(`
-		INSERT INTO room_scenes (room_id, scene_data, data_size, version, saved_by, updated_at)
-		VALUES ($1, $2::JSONB, $3, 1, $4, NOW())
+		INSERT INTO room_scenes (room_id, scene_data, data_size, version, saved_by, updated_at, content_updated_at)
+		VALUES ($1, $2::JSONB, $3, 1, $4, NOW(),
+			CASE WHEN $5::BIGINT > 0 THEN LEAST(NOW(), to_timestamp($5::BIGINT / 1000.0)) END)
 		ON CONFLICT (room_id) DO UPDATE SET
 			scene_data = EXCLUDED.scene_data,
 			data_size  = EXCLUDED.data_size,
 			version    = room_scenes.version + 1,
 			saved_by   = EXCLUDED.saved_by,
-			updated_at = NOW()
-	`, roomID, string(sceneJSON), len(sceneJSON), savedBy)
+			updated_at = NOW(),
+			content_updated_at = GREATEST(room_scenes.content_updated_at, EXCLUDED.content_updated_at)
+	`, roomID, string(sceneJSON), len(sceneJSON), savedBy, contentMs)
 	if err != nil {
 		log.Printf("[场景持久化] DB写入失败 room:%s err:%v", roomID, err)
 	}

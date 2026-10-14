@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"mindcanvas-server/models"
 	"mindcanvas-server/utils"
@@ -44,6 +45,23 @@ func scanRoom(scanner interface{ Scan(...interface{}) error }) (*models.Room, er
 		&room.MaxCapacity, &room.Status, &room.RoomMode, &room.CollabMode,
 		&room.CreatedAt, &room.UpdatedAt, &room.FinishedAt, &room.ClassID,
 	)
+	return room, err
+}
+
+// scanRoomWithLastModified 列表查询专用：roomSelectFields + last_modified_at（REQ-065）
+func scanRoomWithLastModified(scanner interface{ Scan(...interface{}) error }) (*models.Room, error) {
+	room := &models.Room{}
+	var lastModified time.Time
+	err := scanner.Scan(
+		&room.ID, &room.TeacherID, &room.TenantID, &room.Title,
+		&room.InviteCode, &room.IsLocked, &room.IsReadOnly,
+		&room.MaxCapacity, &room.Status, &room.RoomMode, &room.CollabMode,
+		&room.CreatedAt, &room.UpdatedAt, &room.FinishedAt, &room.ClassID,
+		&lastModified,
+	)
+	if err == nil {
+		room.LastModifiedAt = &lastModified
+	}
 	return room, err
 }
 
@@ -191,7 +209,21 @@ func (s *RoomService) GetRoomByInviteCode(code string) (*models.Room, error) {
 
 // listRoomsQuery 通用列表查询（内部）
 func (s *RoomService) listRoomsQuery(where string, args ...interface{}) ([]models.Room, error) {
-	query := `SELECT ` + roomSelectFields + ` FROM rooms WHERE ` + where + ` ORDER BY created_at DESC`
+	// REQ-065：附带「最近修改时间」并按它倒序（最近在动的房间排最上面）。
+	//   · 画布部分取 room_scenes.content_updated_at（元素自带修改时间，见迁移 028），
+	//     不取 room_scenes.updated_at——后者会被「最后一人离开房间时的强制落库」刷新。
+	//   · 浮动组件（投票/问答/HTML 课件等）只取「新建」时间：room_elements.updated_at
+	//     在学生投票、提交词云时也会刷新，用它会让上课答题把「最近修改」刷成现在。
+	//   · 用相关子查询而不是 JOIN：roomSelectFields 里的 id/created_at/updated_at
+	//     与 room_scenes 同名列会撞成歧义，外层 where 也是不带表前缀写的。
+	query := `SELECT * FROM (
+		SELECT ` + roomSelectFields + `,
+			COALESCE(GREATEST(
+				(SELECT rs.content_updated_at FROM room_scenes rs WHERE rs.room_id = rooms.id),
+				(SELECT max(re.created_at) FROM room_elements re WHERE re.room_id = rooms.id AND re.is_deleted = FALSE)
+			), created_at) AS last_modified_at
+		FROM rooms WHERE ` + where + `
+	) t ORDER BY t.last_modified_at DESC, t.created_at DESC`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("查询房间列表失败: %w", err)
@@ -200,7 +232,7 @@ func (s *RoomService) listRoomsQuery(where string, args ...interface{}) ([]model
 
 	var rooms []models.Room
 	for rows.Next() {
-		room, err := scanRoom(rows)
+		room, err := scanRoomWithLastModified(rows)
 		if err != nil {
 			return nil, fmt.Errorf("扫描房间数据失败: %w", err)
 		}
