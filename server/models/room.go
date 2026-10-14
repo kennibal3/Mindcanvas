@@ -24,6 +24,9 @@ type Room struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+	// REQ-065：最近修改时间，只在房间列表接口里填（见 RoomService.listRoomsQuery）。
+	// = max(画布内容修改时间, 最近一次新建浮动组件的时间)，都没有时回落到创建时间。
+	LastModifiedAt *time.Time `json:"last_modified_at,omitempty"`
 }
 
 // 房间模式常量（画布形态维度）

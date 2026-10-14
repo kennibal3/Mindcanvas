@@ -17,6 +17,15 @@ import { useRoomStore } from '@/store/roomStore';
 import { useImageUpload } from '@/hooks/useImageUpload';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import type { RoomMode } from '@/types/room';
+import { Clock, Maximize } from 'lucide-react';
+import {
+  type EnterViewMode,
+  ENTER_VIEW_ZOOM,
+  loadEnterViewMode,
+  saveEnterViewMode,
+  findMostRecentElement,
+  centerViewportOn,
+} from '@/utils/enterView';
 
 interface Props {
   sendMessage: (type: string, payload: Record<string, any>) => void;
@@ -80,6 +89,10 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
   const bypassDeleteConfirmIdsRef = useRef<Set<string>>(new Set());
   // 等待用户确认/取消的批量删除；非空时渲染 DeleteConfirmModal。
   const [pendingBulkDelete, setPendingBulkDelete] = useState<{ ids: string[]; count: number } | null>(null);
+  // REQ-064：进房定位。只在本页面第一次收到画布内容时自动定位一次；
+  // 断线重连也会再推 room_sync，那时不能把正在画的人的视角拽走。
+  const initialPositionedRef = useRef(false);
+  const [enterViewMode, setEnterViewMode] = useState<EnterViewMode>(loadEnterViewMode);
 
   // =============================================================
   // 需求1修复：监听 theme 变化，实时更新 Excalidraw 主题
@@ -245,6 +258,38 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
   }, []);
 
   // =============================================================
+  // REQ-064：按「最近修改 / 全景」移动视角（只动视角，不改任何元素）
+  // =============================================================
+  const applyEnterView = useCallback((mode: EnterViewMode) => {
+    const api = apiRef.current;
+    if (!api) return;
+    try {
+      const els: any[] = (api.getSceneElements() || []).filter((e: any) => !e.isDeleted);
+      if (els.length === 0) return;
+      if (mode === 'overview') {
+        api.scrollToContent(els, { fitToContent: true, animate: false });
+        return;
+      }
+      const target = findMostRecentElement(els);
+      if (!target) return;
+      const st = api.getAppState();
+      const { scrollX, scrollY } = centerViewportOn(target, st.width, st.height, ENTER_VIEW_ZOOM);
+      api.updateScene({
+        appState: { zoom: { value: ENTER_VIEW_ZOOM as any }, scrollX, scrollY },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    } catch (err) {
+      console.warn('[Canvas] 进房定位失败:', err);
+    }
+  }, []);
+
+  const handleEnterViewClick = useCallback((mode: EnterViewMode) => {
+    setEnterViewMode(mode);
+    saveEnterViewMode(mode);
+    applyEnterView(mode);
+  }, [applyEnterView]);
+
+  // =============================================================
   // applyRemote：合并远程元素到本地画布
   // =============================================================
   const applyRemote = useCallback((detail: any) => {
@@ -254,6 +299,11 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
     const remoteElements: any[] = Array.isArray(detail)
       ? detail
       : (detail?.elements || []);
+
+    // REQ-064：本页第一次真正应用到画布的远端内容＝进房时的 room_sync 场景。
+    // 空房间也要把标记置上，否则之后别人画的第一笔会把视角拽过去。
+    const isFirstSync = !initialPositionedRef.current;
+    initialPositionedRef.current = true;
 
     if (!remoteElements || remoteElements.length === 0) return;
 
@@ -323,13 +373,20 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
         const ndel = new Set<string>();
         for (const el of merged) if (el.isDeleted) ndel.add(el.id);
         prevDeletedIdsRef.current = ndel;
+
+        // REQ-064：进房定位。学生端若已处于跟随模式，以老师视角为准，不抢。
+        // 同步执行（不放 setTimeout）：保证发生在之后到达的跟随/集合消息之前，
+        // 不会把老师刚下发的视角覆盖掉。
+        if (isFirstSync && !useCanvasStore.getState().isFollowMode) {
+          applyEnterView(loadEnterViewMode());
+        }
       }
     } catch (err) {
       console.warn('[Canvas] 合并失败:', err);
     } finally {
       setTimeout(() => { isApplyingRemoteRef.current = false; }, 100);
     }
-  }, []);
+  }, [applyEnterView]);
 
   // =============================================================
   // handleAPI：Excalidraw API 就绪
@@ -555,6 +612,30 @@ const CanvasEngine: React.FC<Props> = ({ sendMessage, isTeacher, roomMode = 'whi
           initialData={{ elements: [], appState: { viewBackgroundColor: backgroundColor } }}
           UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }}
         />
+      </div>
+      {/* REQ-064：进房定位切换。放右下角帮助按钮左侧，学生只读模式下也可用。 */}
+      <div
+        style={{ position: 'absolute', right: 64, bottom: 16, zIndex: 5 }}
+        className="flex items-center gap-0.5 rounded-lg bg-white/95 shadow-md border border-gray-200 p-0.5 text-xs"
+      >
+        {([
+          { mode: 'recent' as const, label: '最近修改', Icon: Clock, tip: '跳到最近一次修改的位置（50%）' },
+          { mode: 'overview' as const, label: '全景', Icon: Maximize, tip: '缩放到能看见全部内容' },
+        ]).map(({ mode, label, Icon, tip }) => (
+          <button
+            key={mode}
+            type="button"
+            title={`${tip}；进房间时也按此方式定位`}
+            onClick={() => handleEnterViewClick(mode)}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-md transition-colors ${
+              enterViewMode === mode
+                ? 'bg-amber-100 text-amber-800 font-medium'
+                : 'text-gray-500 hover:bg-gray-100'
+            }`}
+          >
+            <Icon size={13} /> {label}
+          </button>
+        ))}
       </div>
       {pendingBulkDelete && (
         <DeleteConfirmModal
