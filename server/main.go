@@ -190,6 +190,7 @@ func main() {
 	insightHandler := handlers.NewInsightHandler(insightService)
 	reviewHandler := handlers.NewReviewHandler(reviewService)
 	shareHandler := handlers.NewShareHandler(shareService)
+	dashboardShareHandler := handlers.NewDashboardShareHandler(services.NewDashboardShareService(db), roomService) // REQ-066
 	assignmentHandler := handlers.NewAssignmentHandler(assignmentService, roomService)
 	tokenHandler := handlers.NewTokenHandler(tokenService)
 	shelfHandler := handlers.NewShelfHandler(roomService, hub)
@@ -305,6 +306,9 @@ func main() {
 		sharePublic.POST("/:token/verify", shareHandler.VerifySharePassword)
 		sharePublic.GET("/:token/data", shareHandler.GetShareData)
 	}
+
+	// REQ-066 看板分享公开页接口（无需认证，限流防刷）
+	r.GET("/api/board/:token", middleware.APIRateLimit(), dashboardShareHandler.GetPublicBoard)
 
 	// Phase8 学生提交作业（原有UUID鉴权方式，保留兼容）
 	r.POST("/api/assignments/:aid/submit", assignmentHandler.StudentSubmit)
@@ -459,6 +463,10 @@ func main() {
 		rooms.POST("/:id/share", shareHandler.PublishShare)
 		rooms.GET("/:id/share", shareHandler.GetRoomShares)
 		rooms.DELETE("/:id/share/:sid", shareHandler.DeleteShare)
+		// REQ-066 看板分享（与上面的「发布分享」并存）
+		rooms.GET("/:id/dashboard-share", dashboardShareHandler.GetRoomDashboardShare)
+		rooms.PUT("/:id/dashboard-share", dashboardShareHandler.PutRoomDashboardShare)
+		rooms.DELETE("/:id/dashboard-share", dashboardShareHandler.DeleteRoomDashboardShare)
 
 		// Phase7 模板管理
 		rooms.POST("/:id/templates", shareHandler.SaveTemplate)

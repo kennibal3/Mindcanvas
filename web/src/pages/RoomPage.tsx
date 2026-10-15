@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 // REQ-051 二期：房间内分享——生成邀请链接二维码
 import QRCode from 'qrcode';
+import DashboardShareModal from '@/components/share/DashboardShareModal'; // REQ-066
 import { useRoomStore } from '@/store/roomStore';
 import { useCanvasStore } from '@/store/canvasStore';
 import { useWidgetStore } from '@/store/widgetStore';
@@ -301,6 +302,8 @@ const RoomPage = () => {
   // BUG-056：重置入场链接（旧链接失效）。两步确认：idle → confirm → loading
   const [resetStage, setResetStage] = useState<'idle' | 'confirm' | 'loading'>('idle');
   const [resetMsg, setResetMsg]     = useState('');
+  // REQ-066：领导看板链接弹窗
+  const [showBoardShare, setShowBoardShare] = useState(false);
   const [qrDataUrl, setQrDataUrl]             = useState('');
   const [isGathered, setIsGathered]       = useState(false);
   const [showMembers, setShowMembers]     = useState(false);
@@ -851,8 +854,21 @@ const RoomPage = () => {
               </button>
             )}
             {resetMsg && <div className="text-xs text-gray-500">{resetMsg}</div>}
+            {/* REQ-066：领导看板链接（与上面的学生入场链接是两回事）*/}
+            <div className="w-full border-t border-gray-100 pt-3">
+              <button
+                onClick={() => { setShowShare(false); setShowBoardShare(true); }}
+                className="w-full flex items-center justify-center gap-1.5 text-xs font-medium rounded-lg py-2 border border-amber-200 text-amber-700 hover:bg-amber-50 transition-colors"
+              >
+                📊 领导看板链接（免登录只看）
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {isTeacher && showBoardShare && roomId && (
+        <DashboardShareModal roomId={roomId} onClose={() => setShowBoardShare(false)} />
       )}
 
       {/* 学生端状态提示横幅 */}
