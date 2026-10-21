@@ -31,6 +31,7 @@ import RoomPage             from '@/pages/RoomPage';
 import AdminPage            from '@/pages/AdminPage';
 import SharePage            from '@/pages/SharePage';
 import BoardSharePage       from '@/pages/BoardSharePage'; // REQ-066 看板分享
+import HtmlViewPage         from '@/pages/HtmlViewPage'; // REQ-067 HTML 组件新标签页
 import SubmitPage           from '@/pages/SubmitPage';
 // Phase8：作业评价中心
 import AssignmentPage       from '@/pages/AssignmentPage';
@@ -127,6 +128,7 @@ const App = () => {
       <Route path="/share/:token" element={<SharePage />} />
       {/* REQ-066：看板分享页（免登录，展示房间指定 HTML 看板的最新版本）*/}
       <Route path="/board/:token" element={<BoardSharePage />} />
+      <Route path="/view/html/:roomId/:eid" element={<HtmlViewPage />} />
 
       {/* Phase8-v2：学生作业提交页（凭作业码，无需登录）*/}
       <Route path="/submit" element={<SubmitPage />} />

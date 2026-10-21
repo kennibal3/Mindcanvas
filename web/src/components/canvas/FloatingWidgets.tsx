@@ -56,6 +56,10 @@ const HEADER_HEIGHT = 44;
 const RESIZE_MIN_DEFAULT = { w: 260, h: 260 };
 const RESIZE_MIN_SHELF   = { w: 480, h: 360 };
 const RESIZE_MAX         = { w: 1600, h: 1200 };
+// REQ-067：HTML 展示组件承载整堂课件，常需接近整屏甚至更大，上限单独放宽（服务端无尺寸校验）
+const RESIZE_MAX_HTML    = { w: 4000, h: 3000 };
+// HTML 组件标题栏高度（px），16:9 / 4:3 预设按「内容区」比例算，需把它加回总高度
+const HTML_HEADER_H      = 40;
 
 function clampSize(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -235,6 +239,33 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
   }, [studentBlocked, sendMessage, updateElement]);
 
   /**
+   * REQ-067：HTML 组件尺寸预设（铺满视野 / 16:9 / 4:3）。
+   * 与缩放把手同一条广播链路（标准两层结构 + type），只是尺寸（铺满时连位置）由按钮算出。
+   */
+  const applyHtmlSize = useCallback((elementId: string, mode: 'fit' | '16:9' | '4:3') => {
+    if (studentBlocked) return;
+    const currentEl = useRoomStore.getState().elements.find(el => el.id === elementId);
+    if (!currentEl) return;
+    const pos = extractPosition(currentEl.payload ?? {});
+    const { zoom: z, scrollX: sx, scrollY: sy } = useCanvasStore.getState().transform;
+    let { x, y, width: w, height: h } = pos;
+    if (mode === 'fit') {
+      // 视口左上角的画布坐标 = (-scroll)；视口高度要扣掉顶部导航栏
+      x = Math.round(-sx);
+      y = Math.round(-sy);
+      w = window.innerWidth / z;
+      h = (window.innerHeight - HEADER_HEIGHT) / z;
+    } else {
+      h = w * (mode === '16:9' ? 9 / 16 : 3 / 4) + HTML_HEADER_H;
+    }
+    w = Math.round(clampSize(w, RESIZE_MIN_DEFAULT.w, RESIZE_MAX_HTML.w));
+    h = Math.round(clampSize(h, RESIZE_MIN_DEFAULT.h, RESIZE_MAX_HTML.h));
+    const newPayload = { x, y, width: w, height: h, payload: extractBusinessFields(currentEl.payload ?? {}) };
+    updateElement(elementId, newPayload);
+    sendMessage('element_update', { id: elementId, type: currentEl.type ?? '', payload: newPayload });
+  }, [studentBlocked, sendMessage, updateElement]);
+
+  /**
    * REQ-035-c：右下角缩放把手。交互模式与移动把手完全一致——
    * 按下快照 zoom 与起始宽高；拖动中屏幕位移除以 zoom 得画布尺寸增量，
    * 只更新本地 store 即时预览；抬起时按标准两层结构广播 element_update。
@@ -251,13 +282,14 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
     // 快照 zoom，避免缩放过程中画布 zoom 变化导致尺寸跳变
     const z = useCanvasStore.getState().transform.zoom;
     const min = elemType === 'shelf_widget' ? RESIZE_MIN_SHELF : RESIZE_MIN_DEFAULT;
+    const max = elemType === ELEMENT_TYPES.HTML_WIDGET ? RESIZE_MAX_HTML : RESIZE_MAX;
 
     const calcSize = (me: MouseEvent) => {
       const dw = (me.clientX - resizeStartRef.current!.mouseX) / z;
       const dh = (me.clientY - resizeStartRef.current!.mouseY) / z;
       return {
-        w: Math.round(clampSize(resizeStartRef.current!.elemW + dw, min.w, RESIZE_MAX.w)),
-        h: Math.round(clampSize(resizeStartRef.current!.elemH + dh, min.h, RESIZE_MAX.h)),
+        w: Math.round(clampSize(resizeStartRef.current!.elemW + dw, min.w, max.w)),
+        h: Math.round(clampSize(resizeStartRef.current!.elemH + dh, min.h, max.h)),
       };
     };
 
@@ -368,6 +400,29 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                 className="opacity-50 hover:opacity-100 transition-opacity"
               >
                 <div className="w-16 h-2 bg-gray-400 rounded-full" />
+              </div>
+            )}
+
+            {/* REQ-067：HTML 组件尺寸预设条（教师专属，放 scale 容器外，任何画布缩放下字号都不变） */}
+            {isTeacher && !studentBlocked && element.type === ELEMENT_TYPES.HTML_WIDGET && (
+              <div
+                style={{ position: 'absolute', top: -26, left: 0, zIndex: 30, pointerEvents: 'auto' }}
+                className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity"
+              >
+                {([
+                  ['fit', '铺满视野', '放大到当前整个视野'],
+                  ['16:9', '16:9', '宽度不变，按 16:9 调整高度'],
+                  ['4:3', '4:3', '宽度不变，按 4:3 调整高度'],
+                ] as const).map(([mode, label, tip]) => (
+                  <button
+                    key={mode}
+                    title={tip}
+                    onClick={() => applyHtmlSize(element.id, mode)}
+                    className="px-2 py-0.5 text-[11px] leading-4 rounded bg-white border border-gray-300 text-gray-600 shadow-sm hover:text-amber-700 hover:border-amber-400"
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
             )}
 

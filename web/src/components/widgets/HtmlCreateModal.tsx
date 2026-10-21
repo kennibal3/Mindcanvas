@@ -39,6 +39,54 @@ const PLACEHOLDER = `在此粘贴 HTML 代码，例如：
 </body>
 </html>`;
 
+// REQ-067：示例模板。都是极小的单文件页面，点一下填进输入框，老师再改成自己的内容。
+const TEMPLATES: { name: string; html: string }[] = [
+  {
+    name: '点击计数器',
+    html: PLACEHOLDER.split('\n').slice(2).join('\n'),
+  },
+  {
+    name: '倒计时',
+    html: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body { font-family: sans-serif; text-align: center; padding: 32px; }
+  #t { font-size: 96px; font-weight: bold; margin: 24px 0; }
+  button { font-size: 20px; padding: 8px 20px; margin: 0 6px; }
+</style></head>
+<body>
+  <h2>课堂倒计时</h2>
+  <div id="t">05:00</div>
+  <button onclick="start()">开始</button><button onclick="reset()">重置</button>
+<script>
+  var total = 300, left = total, h = null;
+  function show(){ var m=Math.floor(left/60), s=left%60;
+    document.getElementById('t').innerText=(m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
+  function start(){ if(h) return; h=setInterval(function(){ if(left>0){left--;show();} else {clearInterval(h);h=null;} },1000); }
+  function reset(){ clearInterval(h); h=null; left=total; show(); }
+</script></body></html>`,
+  },
+  {
+    name: '单选题',
+    html: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  body { font-family: sans-serif; padding: 32px; max-width: 720px; margin: 0 auto; }
+  .opt { display: block; width: 100%; text-align: left; font-size: 20px; padding: 12px 16px; margin: 10px 0;
+         border: 2px solid #d1d5db; border-radius: 10px; background: #fff; cursor: pointer; }
+  .ok { border-color: #16a34a; background: #dcfce7; } .no { border-color: #dc2626; background: #fee2e2; }
+</style></head>
+<body>
+  <h2>下列哪一项属于可再生能源？</h2>
+  <button class="opt" onclick="pick(this,false)">A. 煤炭</button>
+  <button class="opt" onclick="pick(this,true)">B. 太阳能</button>
+  <button class="opt" onclick="pick(this,false)">C. 天然气</button>
+  <p id="r" style="font-size:20px"></p>
+<script>
+  function pick(el, ok){ el.className = 'opt ' + (ok ? 'ok' : 'no');
+    document.getElementById('r').innerText = ok ? '回答正确！' : '再想想看。'; }
+</script></body></html>`,
+  },
+];
+
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   return `${(n / 1024).toFixed(1)} KB`;
@@ -57,6 +105,8 @@ export const HtmlCreateModal: React.FC<Props> = ({
   const [zipErr, setZipErr] = useState('');
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // REQ-067：粘贴后先在弹窗里看效果再插入画布（预览同样是 sandbox="allow-scripts" 的隔离 iframe）
+  const [showPreview, setShowPreview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const byteSize = new Blob([html]).size;
@@ -219,6 +269,32 @@ export const HtmlCreateModal: React.FC<Props> = ({
                 {formatBytes(byteSize)} / 512 KB
               </span>
             </div>
+            {/* REQ-067：示例模板，点一下填入输入框（输入框已有内容时先确认，防止误覆盖） */}
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
+              <span className="text-xs text-gray-400">示例模板：</span>
+              {TEMPLATES.map(t => (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() => {
+                    if (html.trim() && !window.confirm('输入框里已有内容，用示例模板替换吗？')) return;
+                    setHtml(t.html);
+                    setShowPreview(true);
+                  }}
+                  className="px-2 py-0.5 text-xs rounded-full border border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-700"
+                >
+                  {t.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={!html.trim()}
+                onClick={() => setShowPreview(v => !v)}
+                className="ml-auto px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-40"
+              >
+                {showPreview ? '收起预览' : '预览效果'}
+              </button>
+            </div>
             <textarea
               className="w-full h-64 text-xs font-mono border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2
                          bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 outline-none focus:border-amber-400 resize-y"
@@ -229,6 +305,19 @@ export const HtmlCreateModal: React.FC<Props> = ({
             />
             {overLimit && (
               <p className="text-xs text-red-500 mt-1">代码超过 512KB 上限，请精简后再试。</p>
+            )}
+            {showPreview && html.trim() && (
+              <div className="mt-2 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+                <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-600">
+                  预览（与画布上的运行环境相同，可直接点击试用）
+                </div>
+                <iframe
+                  title="预览"
+                  sandbox="allow-scripts"
+                  srcDoc={html}
+                  className="w-full h-72 border-0 block bg-white"
+                />
+              </div>
             )}
           </div>
           )}

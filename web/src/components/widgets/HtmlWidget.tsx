@@ -11,7 +11,7 @@
 //   经既有 element_update 广播链路触发全端重新拉取，无需新增 WS 桥接。
 // =============================================================
 import React, { useState, useEffect, useRef } from 'react';
-import { Code2, Trash2, Loader2, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
+import { Code2, Trash2, Loader2, AlertTriangle, Maximize2, Minimize2, RotateCw, ExternalLink } from 'lucide-react';
 import { useRoomStore } from '@/store/roomStore';
 import HtmlCreateModal from './HtmlCreateModal';
 
@@ -77,6 +77,22 @@ export const HtmlWidget: React.FC<Props> = ({
     };
   }, []);
 
+  // REQ-067：刷新（重挂 iframe，课件回到初始状态）与快捷键 F（鼠标悬停在组件上时全屏/退出）
+  const [reloadKey, setReloadKey] = useState(0);
+  const hoverRef = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!hoverRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== 'f' && e.key !== 'F') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      toggleFullscreenRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const toggleFullscreen = () => {
     const el = containerRef.current as (HTMLDivElement & {
       webkitRequestFullscreen?: () => void;
@@ -90,6 +106,16 @@ export const HtmlWidget: React.FC<Props> = ({
     } else if (el) {
       (el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el))?.();
     }
+  };
+
+  const toggleFullscreenRef = useRef(toggleFullscreen);
+  toggleFullscreenRef.current = toggleFullscreen;
+
+  // REQ-067：新标签页打开。不能直接打开课件文件地址——顶层页面是本站同源，课件脚本就能读登录信息；
+  // 所以打开的是一个专用页面，里面仍是 sandbox="allow-scripts" 的 iframe，安全模型不变。
+  const openInNewTab = () => {
+    if (!roomID) return;
+    window.open(`/view/html/${roomID}/${id}`, '_blank', 'noopener');
   };
 
   // 拉取内容：id/房间/版本变化时重取（htmlVersion 变化 = 老师改了代码）
@@ -196,6 +222,8 @@ export const HtmlWidget: React.FC<Props> = ({
       ref={containerRef}
       className="bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col h-full overflow-hidden"
       style={{ color: '#1f2937' }}
+      onMouseEnter={() => { hoverRef.current = true; }}
+      onMouseLeave={() => { hoverRef.current = false; }}
     >
       {/* 头部 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 flex-shrink-0">
@@ -204,13 +232,29 @@ export const HtmlWidget: React.FC<Props> = ({
           <span className="font-semibold text-gray-800 text-sm truncate">{title}</span>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* REQ-042：全屏播放，师生均可用 */}
+          {/* REQ-067：刷新 / 新标签页打开，师生均可用 */}
           <button
-            onClick={toggleFullscreen}
-            title={isFullscreen ? '退出全屏' : '全屏播放'}
+            onClick={() => setReloadKey(k => k + 1)}
+            title="刷新（课件回到初始状态）"
             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
           >
-            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+            <RotateCw size={14} />
+          </button>
+          <button
+            onClick={openInNewTab}
+            title="在新标签页打开"
+            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-amber-700 transition-colors"
+          >
+            <ExternalLink size={14} />
+          </button>
+          {/* REQ-042：全屏播放，师生均可用。REQ-067：做成带文字的琥珀色按钮，老师一眼能找到 */}
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? '退出全屏（Esc）' : '全屏播放（鼠标悬停时按 F）'}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+          >
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFullscreen ? '退出全屏' : '全屏'}
           </button>
           {isTeacher && !isLocked && !isFullscreen && (
             <>
@@ -259,8 +303,21 @@ export const HtmlWidget: React.FC<Props> = ({
             // sandbox 标志还会被课件内部那层 iframe 继承，孙子拿不到更多权限。
             sandbox="allow-scripts"
             {...(isZip ? { src: entryUrl } : { srcDoc: html })}
+            key={reloadKey}
             className="w-full h-full border-0 block"
           />
+        )}
+        {/* REQ-067：内容区右上角常驻的大号全屏按钮（半透明，悬停变实），不再只靠标题栏小图标 */}
+        {!loading && !error && !isFullscreen && (
+          <button
+            onClick={toggleFullscreen}
+            title="全屏播放（鼠标悬停时按 F）"
+            className="absolute top-2 right-2 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
+                       bg-black/50 text-white opacity-60 hover:opacity-100 hover:bg-black/70 transition-opacity shadow"
+          >
+            <Maximize2 size={16} />
+            全屏
+          </button>
         )}
       </div>
 
