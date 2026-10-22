@@ -141,6 +141,8 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 
   // REQ-035-c：右下角缩放把手状态
   const [resizing, setResizing] = useState<string | null>(null);
+  // REQ-067：点尺寸预设前的原始位置/大小（按元素 id），用于「还原」按钮
+  const [savedSizes, setSavedSizes] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
   const resizeStartRef = useRef<{
     mouseX: number; mouseY: number; elemW: number; elemH: number;
   } | null>(null);
@@ -242,28 +244,43 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
    * REQ-067：HTML 组件尺寸预设（铺满视野 / 16:9 / 4:3）。
    * 与缩放把手同一条广播链路（标准两层结构 + type），只是尺寸（铺满时连位置）由按钮算出。
    */
-  const applyHtmlSize = useCallback((elementId: string, mode: 'fit' | '16:9' | '4:3') => {
+  const applyHtmlSize = useCallback((elementId: string, mode: 'fit' | '16:9' | '4:3' | 'restore') => {
     if (studentBlocked) return;
     const currentEl = useRoomStore.getState().elements.find(el => el.id === elementId);
     if (!currentEl) return;
     const pos = extractPosition(currentEl.payload ?? {});
     const { zoom: z, scrollX: sx, scrollY: sy } = useCanvasStore.getState().transform;
     let { x, y, width: w, height: h } = pos;
-    if (mode === 'fit') {
-      // 视口左上角的画布坐标 = (-scroll)；视口高度要扣掉顶部导航栏
-      x = Math.round(-sx);
-      y = Math.round(-sy);
-      w = window.innerWidth / z;
-      h = (window.innerHeight - HEADER_HEIGHT) / z;
+    if (mode === 'restore') {
+      // 还原到点预设之前的位置和大小
+      const prev = savedSizes[elementId];
+      if (!prev) return;
+      ({ x, y, width: w, height: h } = prev);
+      setSavedSizes(m => { const { [elementId]: _gone, ...rest } = m; return rest; });
     } else {
-      h = w * (mode === '16:9' ? 9 / 16 : 3 / 4) + HTML_HEADER_H;
+      // 第一次点预设时记下原始尺寸，供「还原」使用（连续点多个预设仍还原到最初的样子）
+      setSavedSizes(m => (m[elementId] ? m : { ...m, [elementId]: pos }));
+      // 视口在画布坐标系里的左上角 = (-scroll)，尺寸要扣掉顶部导航栏并除以 zoom
+      const availW = window.innerWidth / z;
+      const availH = (window.innerHeight - HEADER_HEIGHT) / z;
+      if (mode === 'fit') {
+        x = -sx; y = -sy; w = availW; h = availH;
+      } else {
+        // 16:9 / 4:3：在当前视野里放到最大并居中（内容区保持该比例，另加标题栏高度）
+        const r = mode === '16:9' ? 9 / 16 : 3 / 4;
+        w = Math.min(availW, (availH - HTML_HEADER_H) / r);
+        h = w * r + HTML_HEADER_H;
+        x = -sx + (availW - w) / 2;
+        y = -sy + (availH - h) / 2;
+      }
     }
     w = Math.round(clampSize(w, RESIZE_MIN_DEFAULT.w, RESIZE_MAX_HTML.w));
     h = Math.round(clampSize(h, RESIZE_MIN_DEFAULT.h, RESIZE_MAX_HTML.h));
+    x = Math.round(x); y = Math.round(y);
     const newPayload = { x, y, width: w, height: h, payload: extractBusinessFields(currentEl.payload ?? {}) };
     updateElement(elementId, newPayload);
     sendMessage('element_update', { id: elementId, type: currentEl.type ?? '', payload: newPayload });
-  }, [studentBlocked, sendMessage, updateElement]);
+  }, [studentBlocked, sendMessage, updateElement, savedSizes]);
 
   /**
    * REQ-035-c：右下角缩放把手。交互模式与移动把手完全一致——
@@ -417,8 +434,9 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
               >
                 {([
                   ['fit', '铺满视野', '放大到当前整个视野'],
-                  ['16:9', '16:9', '宽度不变，按 16:9 调整高度'],
-                  ['4:3', '4:3', '宽度不变，按 4:3 调整高度'],
+                  ['16:9', '16:9', '按 16:9 放到当前视野里最大'],
+                  ['4:3', '4:3', '按 4:3 放到当前视野里最大'],
+                  ...(savedSizes[element.id] ? [['restore', '↩ 还原', '回到点预设之前的位置和大小'] as const] : []),
                 ] as const).map(([mode, label, tip]) => (
                   <button
                     key={mode}
