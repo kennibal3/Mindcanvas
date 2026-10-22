@@ -425,9 +425,11 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
               <div
                 style={{
                   position: 'absolute',
-                  // 组件顶边贴近房间顶栏时（如点了「铺满视野」），上方 26px 会被顶栏盖住——改放到组件内标题栏下方
-                  top: screenY < HEADER_HEIGHT + 26 ? 44 : -26,
-                  left: screenY < HEADER_HEIGHT + 26 ? 8 : 0,
+                  // 预设条始终钉在可见区域内：默认在组件上方 26px；组件顶边贴近/超出房间顶栏
+                  // （铺满视野、或组件比视野还大）时，下移到顶栏正下方；左边超出视口时同理右移。
+                  // 这样无论组件多大、滚到哪，都点得到「还原」。
+                  top: Math.max(-26, HEADER_HEIGHT + 4 - screenY),
+                  left: Math.max(0, 8 - screenX),
                   zIndex: 30, pointerEvents: 'auto',
                 }}
                 className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity"
