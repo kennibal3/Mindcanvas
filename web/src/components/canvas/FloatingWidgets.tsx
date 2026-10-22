@@ -406,7 +406,13 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
             {/* REQ-067：HTML 组件尺寸预设条（教师专属，放 scale 容器外，任何画布缩放下字号都不变） */}
             {isTeacher && !studentBlocked && element.type === ELEMENT_TYPES.HTML_WIDGET && (
               <div
-                style={{ position: 'absolute', top: -26, left: 0, zIndex: 30, pointerEvents: 'auto' }}
+                style={{
+                  position: 'absolute',
+                  // 组件顶边贴近房间顶栏时（如点了「铺满视野」），上方 26px 会被顶栏盖住——改放到组件内标题栏下方
+                  top: screenY < HEADER_HEIGHT + 26 ? 44 : -26,
+                  left: screenY < HEADER_HEIGHT + 26 ? 8 : 0,
+                  zIndex: 30, pointerEvents: 'auto',
+                }}
                 className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity"
               >
                 {([
