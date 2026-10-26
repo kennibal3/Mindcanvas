@@ -58,8 +58,6 @@ const RESIZE_MIN_SHELF   = { w: 480, h: 360 };
 const RESIZE_MAX         = { w: 1600, h: 1200 };
 // REQ-067：HTML 展示组件承载整堂课件，常需接近整屏甚至更大，上限单独放宽（服务端无尺寸校验）
 const RESIZE_MAX_HTML    = { w: 4000, h: 3000 };
-// HTML 组件标题栏高度（px），16:9 / 4:3 预设按「内容区」比例算，需把它加回总高度
-const HTML_HEADER_H      = 40;
 
 function clampSize(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -141,8 +139,6 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
 
   // REQ-035-c：右下角缩放把手状态
   const [resizing, setResizing] = useState<string | null>(null);
-  // REQ-067：点尺寸预设前的原始位置/大小（按元素 id），用于「还原」按钮
-  const [savedSizes, setSavedSizes] = useState<Record<string, { x: number; y: number; width: number; height: number }>>({});
   const resizeStartRef = useRef<{
     mouseX: number; mouseY: number; elemW: number; elemH: number;
   } | null>(null);
@@ -241,46 +237,14 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
   }, [studentBlocked, sendMessage, updateElement]);
 
   /**
-   * REQ-067：HTML 组件尺寸预设（铺满视野 / 16:9 / 4:3）。
-   * 与缩放把手同一条广播链路（标准两层结构 + type），只是尺寸（铺满时连位置）由按钮算出。
+   * REQ-067（重做）：HTML 组件展示预设（铺满视野 / 16:9 / 4:3）。
+   * 不改元素坐标与尺寸、不广播——只通知 HtmlWidget 进入全屏展示（按比例居中）。
+   * 旧版直接改画布元素的 x/y/w/h 并广播：缩放 10% 时被 4000×3000 上限夹成同一尺寸，
+   * 且把组件挪离原位、全员可见。现在 Esc 退出后画布上的位置和大小原样不动。
    */
-  const applyHtmlSize = useCallback((elementId: string, mode: 'fit' | '16:9' | '4:3' | 'restore') => {
-    if (studentBlocked) return;
-    const currentEl = useRoomStore.getState().elements.find(el => el.id === elementId);
-    if (!currentEl) return;
-    const pos = extractPosition(currentEl.payload ?? {});
-    const { zoom: z, scrollX: sx, scrollY: sy } = useCanvasStore.getState().transform;
-    let { x, y, width: w, height: h } = pos;
-    if (mode === 'restore') {
-      // 还原到点预设之前的位置和大小
-      const prev = savedSizes[elementId];
-      if (!prev) return;
-      ({ x, y, width: w, height: h } = prev);
-      setSavedSizes(m => { const { [elementId]: _gone, ...rest } = m; return rest; });
-    } else {
-      // 第一次点预设时记下原始尺寸，供「还原」使用（连续点多个预设仍还原到最初的样子）
-      setSavedSizes(m => (m[elementId] ? m : { ...m, [elementId]: pos }));
-      // 视口在画布坐标系里的左上角 = (-scroll)，尺寸要扣掉顶部导航栏并除以 zoom
-      const availW = window.innerWidth / z;
-      const availH = (window.innerHeight - HEADER_HEIGHT) / z;
-      if (mode === 'fit') {
-        x = -sx; y = -sy; w = availW; h = availH;
-      } else {
-        // 16:9 / 4:3：在当前视野里放到最大并居中（内容区保持该比例，另加标题栏高度）
-        const r = mode === '16:9' ? 9 / 16 : 3 / 4;
-        w = Math.min(availW, (availH - HTML_HEADER_H) / r);
-        h = w * r + HTML_HEADER_H;
-        x = -sx + (availW - w) / 2;
-        y = -sy + (availH - h) / 2;
-      }
-    }
-    w = Math.round(clampSize(w, RESIZE_MIN_DEFAULT.w, RESIZE_MAX_HTML.w));
-    h = Math.round(clampSize(h, RESIZE_MIN_DEFAULT.h, RESIZE_MAX_HTML.h));
-    x = Math.round(x); y = Math.round(y);
-    const newPayload = { x, y, width: w, height: h, payload: extractBusinessFields(currentEl.payload ?? {}) };
-    updateElement(elementId, newPayload);
-    sendMessage('element_update', { id: elementId, type: currentEl.type ?? '', payload: newPayload });
-  }, [studentBlocked, sendMessage, updateElement, savedSizes]);
+  const presentHtml = useCallback((elementId: string, ratio: 'fit' | '16:9' | '4:3') => {
+    window.dispatchEvent(new CustomEvent('mc-html-present', { detail: { id: elementId, ratio } }));
+  }, []);
 
   /**
    * REQ-035-c：右下角缩放把手。交互模式与移动把手完全一致——
@@ -435,15 +399,14 @@ const FloatingWidgets: React.FC<FloatingWidgetsProps> = ({
                 className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity"
               >
                 {([
-                  ['fit', '铺满视野', '放大到当前整个视野'],
-                  ['16:9', '16:9', '按 16:9 放到当前视野里最大'],
-                  ['4:3', '4:3', '按 4:3 放到当前视野里最大'],
-                  ...(savedSizes[element.id] ? [['restore', '↩ 还原', '回到点预设之前的位置和大小'] as const] : []),
+                  ['fit', '铺满视野', '全屏展示，铺满整个屏幕（Esc 退出，不改变画布）'],
+                  ['16:9', '16:9', '全屏展示，按 16:9 居中放到最大（Esc 退出，不改变画布）'],
+                  ['4:3', '4:3', '全屏展示，按 4:3 居中放到最大（Esc 退出，不改变画布）'],
                 ] as const).map(([mode, label, tip]) => (
                   <button
                     key={mode}
                     title={tip}
-                    onClick={() => applyHtmlSize(element.id, mode)}
+                    onClick={() => presentHtml(element.id, mode)}
                     className="px-2 py-0.5 text-[11px] leading-4 rounded bg-white border border-gray-300 text-gray-600 shadow-sm hover:text-amber-700 hover:border-amber-400"
                   >
                     {label}
