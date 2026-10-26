@@ -205,7 +205,8 @@ func main() {
 	// REQ-050 一期 B：图形生成信号采集（旁路，失败不影响出图）
 	diagramSampleService := services.NewDiagramSampleService(db)
 	diagramHandler := handlers.NewDiagramHandler(aiSvc, diagramSampleService)
-	refineHandler := handlers.NewRefineHandler(aiSvc) // REQ-028：文本→Markdown AI 提炼
+	refineHandler := handlers.NewRefineHandler(aiSvc)   // REQ-028：文本→Markdown AI 提炼
+	mindmapHandler := handlers.NewMindmapHandler(aiSvc) // REQ-068：思维导图多步生成流水线（SSE）
 
 	// REQ-062：房间内智能体（头脑风暴伙伴）
 	// **独立的 key 与模型，既有 AI 功能一行不动。**
@@ -568,6 +569,7 @@ func main() {
 		ai.POST("/diagram", diagramHandler.Generate)
 		ai.POST("/diagram/:gid/outcome", diagramHandler.RecordOutcome) // REQ-050 B：老师后续动作回报
 		ai.POST("/refine", refineHandler.Refine)                       // REQ-028：文本→Markdown AI 提炼
+		ai.POST("/mindmap", mindmapHandler.Generate)                   // REQ-068：多步生成思维导图大纲（SSE）
 		ai.POST("/parse-file", parseFileHandler.ParseFile)             // REQ-038：文件→Markdown（MarkItDown）
 		// REQ-062：房间内智能体。挂在既有 /api/ai 组下，天然继承 AuthRequired；
 		// 另外两道权限（agent_enabled、房间归属）在 handler 的 guard() 里。

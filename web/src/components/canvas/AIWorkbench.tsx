@@ -41,6 +41,7 @@ import {
   assessFlatness,
 } from "../../utils/markdownToDiagram";
 import { refineText } from "../../utils/refineApi";
+import { streamMindmap, MINDMAP_MAX_INPUT, type MindmapProgress } from "../../utils/mindmapApi"; // REQ-068
 import { parseFile, PARSE_FILE_ACCEPT } from "../../utils/parseFileApi";
 import {
   buildDiagramElements,
@@ -223,6 +224,17 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
     repairs: DiagramRepair[];
     issues: DiagramIssue[];
     regenerated: boolean;
+    // REQ-068：多步流水线回执（结构框架 / 补充了几条 / 需要老师留意的提示）
+    pipeline?: {
+      framework: string;
+      nodes: number;
+      supplement: number;
+      rewritten: number;
+      warnings: string[];
+      refined: boolean;
+    };
+    // REQ-068：多步流水线失败、改用快速生成时的原因（不能静默降级）
+    fallback?: string;
     // REQ-058：本次是本地无损直转（没走 AI）时的回执
     direct?: {
       sourceItems: number;
@@ -234,6 +246,15 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
       parentLabel: string;
     };
   } | null>(null);
+  // REQ-068：多步生成的真实进度（每个阶段保留最新一条事件）；genRunRef 用来丢弃已取消的旧结果
+  const [pipeProg, setPipeProg] = useState<{
+    refining?: boolean;
+    refined?: boolean;
+    skeleton?: MindmapProgress;
+    expand?: MindmapProgress;
+    review?: MindmapProgress;
+  }>({});
+  const genRunRef = useRef(0);
   // REQ-049：AI 图形配色风格（全局，存 localStorage，插入画布时生效）
   const [themeKey, setThemeKey] = useState<string>(() => getDiagramThemeKey());
 
@@ -339,6 +360,75 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
     }
 
     setGenStep("generating");
+
+    // ── REQ-068：思维导图走多步流水线（骨架→并行展开→体检重写），失败再降级到单次生成 ──
+    // 结构化 Markdown 已在上面直转（无损）；走到这里的是散乱文字，或老师点了「改用 AI 生成」。
+    let fallbackReason = "";
+    if (selType === "mindmap") {
+      const run = ++genRunRef.current;
+      const stale = () => genRunRef.current !== run;
+      setPipeProg({});
+      let material = text;
+      let refined = false;
+      // 超长先走既有的智能提炼；提炼失败直接报错，不拿截断后的残文去生成
+      if ([...material].length > MINDMAP_MAX_INPUT) {
+        try {
+          setPipeProg({ refining: true });
+          const r = await refineText({ text: material });
+          if (stale()) return;
+          material = r.markdown;
+          refined = true;
+          if ([...material].length > MINDMAP_MAX_INPUT) {
+            throw new Error("提炼后内容仍然过长，请分段生成");
+          }
+          setPipeProg({ refined: true });
+        } catch (e: any) {
+          if (stale()) return;
+          setErrorMsg(e.message ?? "智能提炼失败，请稍后重试");
+          setGenStep("error");
+          return;
+        }
+      }
+      try {
+        const res = await streamMindmap({
+          text: material,
+          onProgress: (p) => { if (!stale()) setPipeProg(prev => ({ ...prev, [p.stage]: p })); },
+        });
+        if (stale()) return;
+        const conv = markdownToDiagram(res.outline, "mindmap");
+        if (!conv) throw new Error("生成结果无法解析");
+        const rootNode = conv.data.nodes.find(n => !n.parent);
+        const item: WorkbenchItem = {
+          id: `wb_${Date.now()}`,
+          type: selType,
+          title: rootNode?.label ?? "未命名图形",
+          data: conv.data,
+          inputText: text,
+          createdAt: new Date().toISOString(),
+          genId: undefined, // 流水线路径不入 REQ-050 采集
+        };
+        setHistory(prev => [item, ...prev].slice(0, MAX_HISTORY));
+        setGenStep("done");
+        clearDraft(roomId);
+        // 回执停住不自动收起：「（补充）」条数是 AI 添加内容的明示，必须让老师看到
+        setGenNotice({
+          repairs: [], issues: [], regenerated: false,
+          pipeline: {
+            framework: res.framework,
+            nodes: conv.data.nodes.length,
+            supplement: res.supplement_notes,
+            rewritten: res.rewritten,
+            warnings: res.warnings ?? [],
+            refined,
+          },
+        });
+        return;
+      } catch (e: any) {
+        if (stale() || e?.name === "AbortError") return;
+        fallbackReason = e?.message ?? "多步生成未成功";
+      }
+    }
+
     try {
       const data = await generateDiagram({ markdown: text, diagram_type: selType, room_id: roomId });
       const rootNode = data.nodes.find(n => !n.parent);
@@ -362,8 +452,8 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
       // 不再 1.2 秒自动收起（否则提示一闪而过等于没提示）
       const repairs = data.repairs ?? [];
       const issues = data.issues ?? [];
-      if (repairs.length > 0 || issues.length > 0 || data.regenerated) {
-        setGenNotice({ repairs, issues, regenerated: !!data.regenerated });
+      if (repairs.length > 0 || issues.length > 0 || data.regenerated || fallbackReason) {
+        setGenNotice({ repairs, issues, regenerated: !!data.regenerated, fallback: fallbackReason || undefined });
       } else {
         setGenNotice(null);
         // 自动收起生成区，返回历史列表
@@ -539,6 +629,7 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
 
   // ── 取消生成流程 ─────────────────────────────────────────────
   const cancelGen = () => {
+    genRunRef.current++; // REQ-068：让还在飞的流水线结果作废
     setGenStep("idle");
     setGenNotice(null); // REQ-050：体检回执不跨次残留
     setRegenItem(null);
@@ -974,8 +1065,27 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
                   <br />
                   <span className="font-medium text-amber-700">{TYPE_LABEL[selType]}</span>
                   <br />
-                  通常需要 3–8 秒
+                  {selType === "mindmap" ? "多步生成，通常需要 20–60 秒" : "通常需要 3–8 秒"}
                 </div>
+                {/* REQ-068：真实步骤进度（来自后端 SSE，不是假进度条） */}
+                {selType === "mindmap" && (
+                  <ol className="text-xs text-gray-600 space-y-1 w-full max-w-[220px]">
+                    {(pipeProg.refining || pipeProg.refined) && (
+                      <li>{pipeProg.refined ? "✓" : "…"} 文字较长，先智能提炼</li>
+                    )}
+                    <li className={pipeProg.skeleton ? "" : "text-gray-400"}>
+                      {pipeProg.skeleton?.branches ? "✓" : pipeProg.skeleton ? "…" : "○"} 理结构
+                      {pipeProg.skeleton?.framework && `（${pipeProg.skeleton.framework}）`}
+                    </li>
+                    <li className={pipeProg.expand ? "" : "text-gray-400"}>
+                      {pipeProg.expand && pipeProg.expand.done === pipeProg.expand.total ? "✓" : pipeProg.expand ? "…" : "○"} 展开分支
+                      {pipeProg.expand?.total ? `（${pipeProg.expand.done ?? 0}/${pipeProg.expand.total}）` : ""}
+                    </li>
+                    <li className={pipeProg.review ? "" : "text-gray-400"}>
+                      {pipeProg.review ? "…" : "○"} 检查补强
+                    </li>
+                  </ol>
+                )}
               </div>
             )}
 
@@ -1028,6 +1138,37 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
                     >
                       嫌太细？改用 AI 归纳一次
                     </button>
+                  </div>
+                )}
+
+                {/* REQ-068：多步生成回执 */}
+                {genNotice.pipeline && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-2.5 mb-2">
+                    <div className="text-xs font-medium text-green-800 mb-1">
+                      已按「{genNotice.pipeline.framework || "自然主题"}」整理，共 {genNotice.pipeline.nodes} 个节点
+                    </div>
+                    {genNotice.pipeline.refined && (
+                      <div className="text-xs text-green-700 leading-snug">文字较长，已先智能提炼再生成。</div>
+                    )}
+                    {genNotice.pipeline.supplement > 0 && (
+                      <div className="text-xs text-green-700 leading-snug">
+                        其中 {genNotice.pipeline.supplement} 条说明是 AI 补充的例子（标了「（补充）」），不是你原文的内容，请核对。
+                      </div>
+                    )}
+                    {genNotice.pipeline.rewritten > 0 && (
+                      <div className="text-xs text-green-700 leading-snug">
+                        有 {genNotice.pipeline.rewritten} 个分支检查后已自动补强。
+                      </div>
+                    )}
+                    {genNotice.pipeline.warnings.map((w, i) => (
+                      <div key={i} className="text-xs text-amber-700 leading-snug mt-1">⚠ {w}</div>
+                    ))}
+                  </div>
+                )}
+
+                {genNotice.fallback && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-2 text-xs text-amber-800 leading-snug">
+                    多步生成没成功（{genNotice.fallback}），已改用快速生成，内容可能较简略。
                   </div>
                 )}
 

@@ -142,6 +142,16 @@ type RefineResult struct {
 // 网络错误在 attempt=0 时重试一次；HTTP 429/5xx 同样重试一次；超时不重试直接返回。
 // 第二个返回值 truncated：本次输出是否因撞到 max_tokens 被截断（REQ-057）。
 func (s *AIService) refineComplete(ctx context.Context, systemPrompt, userContent string, maxTokens int, timeout time.Duration) (string, bool, error) {
+	return s.completeWithTemp(ctx, systemPrompt, userContent, maxTokens, refineTemperature, timeout)
+}
+
+// refineTemperature 提炼场景固定的温度（原值，行为不变）
+const refineTemperature = 0.2
+
+// completeWithTemp 与 refineComplete 完全相同，只多一个温度参数。
+// REQ-068：导图流水线的「展开分支」阶段需要比提炼更高的温度（提炼要稳，展开要有点创意），
+// 但重试/超时/截断信号/错误分类这一整套不该再抄一遍，所以抽出来复用。
+func (s *AIService) completeWithTemp(ctx context.Context, systemPrompt, userContent string, maxTokens int, temperature float64, timeout time.Duration) (string, bool, error) {
 	if !s.IsConfigured() {
 		return "", false, &RefineError{Kind: RefineErrUpstream, Status: 503, UpstreamMsg: "AI 服务未配置"}
 	}
@@ -153,7 +163,7 @@ func (s *AIService) refineComplete(ctx context.Context, systemPrompt, userConten
 			{Role: "user", Content: userContent},
 		},
 		"max_tokens":  maxTokens,
-		"temperature": 0.2,
+		"temperature": temperature,
 		"stream":      false,
 		"thinking":    map[string]string{"type": "disabled"},
 	})
