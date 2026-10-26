@@ -63,11 +63,15 @@ export const HtmlWidget: React.FC<Props> = ({
   // ===== REQ-042 一期：全屏播放（浏览器原生 Fullscreen API，师生均可用）=====
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // REQ-067：全屏展示比例。fit＝铺满整个屏幕；16:9 / 4:3＝内容区按比例居中放到最大（四周黑边）
+  const [presentRatio, setPresentRatio] = useState<'fit' | '16:9' | '4:3'>('fit');
 
   useEffect(() => {
     const onFsChange = () => {
       const d = document as Document & { webkitFullscreenElement?: Element };
-      setIsFullscreen(!!(document.fullscreenElement ?? d.webkitFullscreenElement));
+      const fs = !!(document.fullscreenElement ?? d.webkitFullscreenElement);
+      setIsFullscreen(fs);
+      if (!fs) setPresentRatio('fit'); // 退出全屏后复位，下次按 F / 全屏键仍是铺满
     };
     document.addEventListener('fullscreenchange', onFsChange);
     document.addEventListener('webkitfullscreenchange', onFsChange);
@@ -110,6 +114,23 @@ export const HtmlWidget: React.FC<Props> = ({
 
   const toggleFullscreenRef = useRef(toggleFullscreen);
   toggleFullscreenRef.current = toggleFullscreen;
+
+  // REQ-067：教师预设条（FloatingWidgets，在缩放容器之外）通过窗口事件触发全屏展示。
+  // 点击手势的「用户激活」会随同步派发的事件一并带到这里，requestFullscreen 才不会被浏览器拒绝。
+  useEffect(() => {
+    const onPresent = (e: Event) => {
+      const d = (e as CustomEvent<{ id?: string; ratio?: 'fit' | '16:9' | '4:3' }>).detail;
+      if (!d || d.id !== id) return;
+      setPresentRatio(d.ratio ?? 'fit');
+      const el = containerRef.current as (HTMLDivElement & { webkitRequestFullscreen?: () => void }) | null;
+      const doc = document as Document & { webkitFullscreenElement?: Element };
+      if (el && !(document.fullscreenElement ?? doc.webkitFullscreenElement)) {
+        (el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el))?.();
+      }
+    };
+    window.addEventListener('mc-html-present', onPresent);
+    return () => window.removeEventListener('mc-html-present', onPresent);
+  }, [id]);
 
   // REQ-067：新标签页打开。不能直接打开课件文件地址——顶层页面是本站同源，课件脚本就能读登录信息；
   // 所以打开的是一个专用页面，里面仍是 sandbox="allow-scripts" 的 iframe，安全模型不变。
@@ -283,8 +304,18 @@ export const HtmlWidget: React.FC<Props> = ({
       </div>
 
       {/* 内容区：沙箱 iframe 渲染 */}
-      <div className="flex-1 min-h-0 relative bg-white">
-        {loading ? (
+      <div
+        className={`flex-1 min-h-0 relative ${isFullscreen && presentRatio !== 'fit' ? 'bg-black flex items-center justify-center' : 'bg-white'}`}
+      >
+        {/* 内层始终存在、只改样式，避免进出全屏时重挂 iframe 丢课件状态。
+            16:9 / 4:3：全屏元素即整个视口，宽取「视口宽」与「(视口高 − 标题栏 41px) × 比例」的较小值，高由 aspect-ratio 推出 */}
+        <div
+          className={isFullscreen && presentRatio !== 'fit' ? 'relative bg-white' : 'w-full h-full relative'}
+          style={isFullscreen && presentRatio !== 'fit' ? {
+            width: `min(100vw, calc((100vh - 41px) * ${presentRatio === '16:9' ? 16 / 9 : 4 / 3}))`,
+            aspectRatio: presentRatio === '16:9' ? '16 / 9' : '4 / 3',
+          } : undefined}
+        >        {loading ? (
           <div className="flex items-center justify-center h-full text-gray-400">
             <Loader2 size={20} className="animate-spin" />
           </div>
@@ -304,9 +335,10 @@ export const HtmlWidget: React.FC<Props> = ({
             sandbox="allow-scripts"
             {...(isZip ? { src: entryUrl } : { srcDoc: html })}
             key={reloadKey}
-            className="w-full h-full border-0 block"
+            className="absolute inset-0 w-full h-full border-0 block"
           />
         )}
+        </div>
         {/* REQ-067：内容区右上角常驻的大号全屏按钮（半透明，悬停变实），不再只靠标题栏小图标 */}
         {!loading && !error && !isFullscreen && (
           <button
