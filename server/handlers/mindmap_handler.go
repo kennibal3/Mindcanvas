@@ -111,9 +111,9 @@ func (h *MindmapHandler) Generate(c *gin.Context) {
 		send("error", gin.H{"error": mindmapErrorMessage(err)})
 		return
 	}
-	log.Printf("[mindmap] ok in %s: framework=%s branches=%d nodes=%d flagged=%d rewritten=%d failed=%d truncated=%d supplement=%d",
+	log.Printf("[mindmap] ok in %s: framework=%s branches=%d nodes=%d flagged=%d rewritten=%d failed=%d truncated=%d supplement=%d emphasis_dropped=%d topic=%v",
 		time.Since(start).Round(time.Millisecond), res.Framework, res.Branches, res.Nodes,
-		res.Flagged, res.Rewritten, len(res.FailedBranches), len(res.TruncatedBranches), res.SupplementNotes)
+		res.Flagged, res.Rewritten, len(res.FailedBranches), len(res.TruncatedBranches), res.SupplementNotes, res.EmphasisDropped, res.TopicMode)
 	send("result", gin.H{
 		"outline":          res.Outline,
 		"framework":        res.Framework,
@@ -122,6 +122,7 @@ func (h *MindmapHandler) Generate(c *gin.Context) {
 		"nodes":            res.Nodes,
 		"rewritten":        res.Rewritten,
 		"supplement_notes": res.SupplementNotes,
+		"topic_mode":       res.TopicMode,
 		"warnings":         res.Warnings,
 	})
 }

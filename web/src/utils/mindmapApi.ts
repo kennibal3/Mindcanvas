@@ -26,6 +26,8 @@ export interface MindmapResult {
   rewritten: number;
   /** 以「（补充）」开头的说明条数＝AI 补充、非原文 */
   supplement_notes: number;
+  /** 输入只有主题没有正文：内容全部来自模型常识，需老师自行核对 */
+  topic_mode?: boolean;
   warnings: string[];
 }
 

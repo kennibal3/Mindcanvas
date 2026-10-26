@@ -232,6 +232,7 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
       rewritten: number;
       warnings: string[];
       refined: boolean;
+      topicMode: boolean;
     };
     // REQ-068：多步流水线失败、改用快速生成时的原因（不能静默降级）
     fallback?: string;
@@ -420,6 +421,7 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
             rewritten: res.rewritten,
             warnings: res.warnings ?? [],
             refined,
+            topicMode: !!res.topic_mode,
           },
         });
         return;
@@ -1149,6 +1151,11 @@ export default function AIWorkbench({ roomId, isTeacher, agentEnabled }: AIWorkb
                     </div>
                     {genNotice.pipeline.refined && (
                       <div className="text-xs text-green-700 leading-snug">文字较长，已先智能提炼再生成。</div>
+                    )}
+                    {genNotice.pipeline.topicMode && (
+                      <div className="text-xs text-amber-700 leading-snug">
+                        你只输入了主题，内容全部来自 AI 的常识，没有你自己的材料作依据，请核对后再使用。
+                      </div>
                     )}
                     {genNotice.pipeline.supplement > 0 && (
                       <div className="text-xs text-green-700 leading-snug">

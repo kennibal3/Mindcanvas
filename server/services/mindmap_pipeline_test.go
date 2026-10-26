@@ -650,3 +650,62 @@ func TestOutlineContract(t *testing.T) {
 		t.Fatalf("节点数 %d，样例声明 %d", res.Nodes, fx.Expect.Nodes)
 	}
 }
+
+// ── ★ 总量上限 ──────────────────────────────────────────────
+
+func TestCapEmphasis(t *testing.T) {
+	mk := func(flags ...bool) branchResult {
+		var r branchResult
+		for _, f := range flags {
+			r.items = append(r.items, mmItem{Level: 2, Label: "x", Emphasis: f})
+		}
+		return r
+	}
+	rs := []branchResult{mk(true, false, true), mk(true, true), {err: errors.New("失败"), items: []mmItem{{Emphasis: true}}}, mk(true)}
+	dropped := capMindmapEmphasis(rs, 3)
+	if dropped != 2 {
+		t.Fatalf("应去掉 2 个，实际 %d", dropped)
+	}
+	// 按出现顺序保留前 3 个：分支0 的两个 + 分支1 的第一个
+	if !rs[0].items[0].Emphasis || !rs[0].items[2].Emphasis || !rs[1].items[0].Emphasis {
+		t.Fatal("前 3 个应保留")
+	}
+	if rs[1].items[1].Emphasis || rs[3].items[0].Emphasis {
+		t.Fatal("超出的应去掉")
+	}
+	if !rs[2].items[0].Emphasis {
+		t.Fatal("失败分支不参与计数、不被修改")
+	}
+}
+
+func TestEmphasisCapValue(t *testing.T) {
+	for in, want := range map[int]int{2: 3, 4: 3, 5: 3, 6: 3, 7: 4, 8: 4} {
+		if got := mindmapEmphasisCap(in); got != want {
+			t.Errorf("cap(%d)=%d 期望 %d", in, got, want)
+		}
+	}
+}
+
+func TestPipeline_EmphasisCappedAndTopicModeFlag(t *testing.T) {
+	// goodBranch 每个分支带 1 个 ★；8 个分支 → 上限 4
+	var sk strings.Builder
+	sk.WriteString("# 主题\n")
+	for i := 0; i < 8; i++ {
+		sk.WriteString("## 分支" + string(rune('甲'+i)) + string(rune('甲'+i)) + "\n")
+	}
+	f := &fakeLLM{skeletons: []string{sk.String()}, expand: okExpand}
+	res, err := RunMindmapPipeline(context.Background(), f.call, strings.Repeat("长材料。", 30), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(res.Outline, "★"); n != 4 {
+		t.Fatalf("★ 应封顶 4 个，实际 %d", n)
+	}
+	if res.EmphasisDropped != 4 || res.TopicMode {
+		t.Fatalf("%+v", res)
+	}
+	res2, err := RunMindmapPipeline(context.Background(), (&fakeLLM{skeletons: []string{skel3}, expand: okExpand}).call, "光合作用", nil)
+	if err != nil || !res2.TopicMode {
+		t.Fatalf("短输入应标记 TopicMode: %v %+v", err, res2)
+	}
+}
