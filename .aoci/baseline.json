@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-09-10T08:04:28Z",
-  "updated_at": "2026-10-15T02:34:19Z",
+  "updated_at": "2026-10-22T09:32:46Z",
   "files": {
     ".gitattributes": {
       "sha256": "21fa16a2122e2b0360b47502c577428b645437e08e9e87ffba661f84853cb476",
@@ -29,9 +29,9 @@
       "normalized_sha256": "f1b990d113409a9c7abc877eb83788e99c7096058d43974219dd9ea4c6659208"
     },
     "aoci.code.txt": {
-      "sha256": "e9d4f819d6878c156fac9b77a12842e200800b6a940ca738e1594919febc61ae",
-      "size": 112976,
-      "normalized_sha256": "e9d4f819d6878c156fac9b77a12842e200800b6a940ca738e1594919febc61ae"
+      "sha256": "81dba37fb7e13ac930a776fb41ba07e27e9a9ff997491e3652119d26e3ae412f",
+      "size": 113192,
+      "normalized_sha256": "81dba37fb7e13ac930a776fb41ba07e27e9a9ff997491e3652119d26e3ae412f"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -1037,9 +1037,9 @@
       "normalized_sha256": "a590a75a62404b1ff6832995ea628ebdb322d382b6a6d68fdd4e93148b2f5f41"
     },
     "web/src/App.tsx": {
-      "sha256": "eddb23d6d179602ccc2cd2b076373bb2b16d4f14f7937f5b507090a66febba0e",
-      "size": 6419,
-      "normalized_sha256": "eddb23d6d179602ccc2cd2b076373bb2b16d4f14f7937f5b507090a66febba0e"
+      "sha256": "69211678313e4f60797f5867a31a4498d6d204296104d1dae58025e65ac7e216",
+      "size": 6585,
+      "normalized_sha256": "69211678313e4f60797f5867a31a4498d6d204296104d1dae58025e65ac7e216"
     },
     "web/src/components/canvas/AIWorkbench.tsx": {
       "sha256": "2441bbce8616e7e55368e97be5335628bb05507d2ce0048326bd00ebcc2c4af8",
@@ -1067,9 +1067,9 @@
       "normalized_sha256": "9e6795475b5706bedfe7544c91408f27d18e8aa8a9193e159c761d2691e8ef45"
     },
     "web/src/components/canvas/FloatingWidgets.tsx": {
-      "sha256": "0120460266a83c4a0e6748d153c67f96cdd617a8e20373e9b96e51544a64244e",
-      "size": 20340,
-      "normalized_sha256": "0120460266a83c4a0e6748d153c67f96cdd617a8e20373e9b96e51544a64244e"
+      "sha256": "6c5f9fb92483cb9e35fcc12996bf125f4971dac5cd1319cd6f70a61525e16c69",
+      "size": 25157,
+      "normalized_sha256": "6c5f9fb92483cb9e35fcc12996bf125f4971dac5cd1319cd6f70a61525e16c69"
     },
     "web/src/components/cards/CardRenderer.tsx": {
       "sha256": "b864a3fccbc7569d111e1d6fc704dca815bf48669cba06f32ee2322aea1114b3",
@@ -1162,14 +1162,14 @@
       "normalized_sha256": "e3ba470fd8c65838596b96311b1566cd88906e40b834a085c2ed47a902c71408"
     },
     "web/src/components/widgets/HtmlCreateModal.tsx": {
-      "sha256": "8db62a13a70158589a04728a0cadfe68c4f5d5e76887e0ef87303b418b65c244",
-      "size": 11764,
-      "normalized_sha256": "8db62a13a70158589a04728a0cadfe68c4f5d5e76887e0ef87303b418b65c244"
+      "sha256": "4e00999cf6290cde2dd4e19c151055a421f864b67e3276fa870dbdd4778a1f9e",
+      "size": 16057,
+      "normalized_sha256": "4e00999cf6290cde2dd4e19c151055a421f864b67e3276fa870dbdd4778a1f9e"
     },
     "web/src/components/widgets/HtmlWidget.tsx": {
-      "sha256": "855a9ba93c3de4a8c245e75b136090050c0293ae9c36d4bba03f9aac0793db3e",
-      "size": 13154,
-      "normalized_sha256": "855a9ba93c3de4a8c245e75b136090050c0293ae9c36d4bba03f9aac0793db3e"
+      "sha256": "39603cd9522fed600e847c0f23be42f45c8619ad69b4de0ecf4888cefa0bb144",
+      "size": 16059,
+      "normalized_sha256": "39603cd9522fed600e847c0f23be42f45c8619ad69b4de0ecf4888cefa0bb144"
     },
     "web/src/components/widgets/PollingCreateModal.tsx": {
       "sha256": "990fcbb5e845ce3bddf0208740c79de8938fe1f30c87532dc7a194edded48e6a",
@@ -1290,6 +1290,11 @@
       "sha256": "9ce8264c6b6ed6bf5fb35f70e1ff258a6717f743a984c4c460234dee94434bc8",
       "size": 52863,
       "normalized_sha256": "9ce8264c6b6ed6bf5fb35f70e1ff258a6717f743a984c4c460234dee94434bc8"
+    },
+    "web/src/pages/HtmlViewPage.tsx": {
+      "sha256": "ea5a5ef8f5e9c9ae31f03c8202ff0d9baef5df6765921dcc6826652ec60bbabe",
+      "size": 2769,
+      "normalized_sha256": "ea5a5ef8f5e9c9ae31f03c8202ff0d9baef5df6765921dcc6826652ec60bbabe"
     },
     "web/src/pages/JoinPage.tsx": {
       "sha256": "b3ecb77c5a6716e24d97d3a46cdd22bd29aa040acf5e269ce67d41a574048fc2",
