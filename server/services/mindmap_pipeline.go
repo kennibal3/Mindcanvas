@@ -67,6 +67,7 @@ type MindmapResult struct {
 	SupplementNotes   int      // 以「（补充）」开头的说明条数（AI 补充、非原文）
 	TopicMode         bool     // 输入只有主题没有正文：内容全部来自模型常识
 	EmphasisDropped   int      // 超出全图 ★ 上限、被去掉的数量
+	SupplementDropped int      // 事实类材料里模型违规补充、被代码剔除的条数
 	FailedBranches    []string // 展开失败的分支名
 	TruncatedBranches []string // 被截断的分支名
 	Warnings          []string // 面向老师的人话提示
@@ -441,6 +442,40 @@ func capMindmapEmphasis(results []branchResult, max int) int {
 	return dropped
 }
 
+// mindmapSupplementAllowed 只有教学类框架允许模型补充例子；会议纪要、汇报、计划等事实类材料
+// 必须忠实整理。提示词里已写明，但 2026-10-26 实测豆包仍会在纪要里编「从试点校中选取」，
+// 所以这里在代码里兜底，不依赖模型自觉。主题模式（无正文）整体都是模型知识，不适用此规则。
+func mindmapSupplementAllowed(framework string, topicMode bool) bool {
+	if topicMode {
+		return true
+	}
+	return strings.Contains(framework, "教学环节") || strings.Contains(framework, "知识体系")
+}
+
+// stripMindmapSupplements 事实类材料里：三级要点带补充说明的整条删除，二级要点只清掉说明。
+// 失败分支不处理。返回剔除条数。
+func stripMindmapSupplements(results []branchResult) int {
+	n := 0
+	for i := range results {
+		if results[i].err != nil {
+			continue
+		}
+		kept := results[i].items[:0]
+		for _, it := range results[i].items {
+			if strings.HasPrefix(it.Note, MindmapSupplementMark) {
+				n++
+				if it.Level >= 3 {
+					continue
+				}
+				it.Note = ""
+			}
+			kept = append(kept, it)
+		}
+		results[i].items = kept
+	}
+	return n
+}
+
 type branchResult struct {
 	items     []mmItem
 	truncated bool
@@ -606,6 +641,10 @@ func RunMindmapPipeline(ctx context.Context, llm MindmapLLM, material string, em
 			Done:    len(flags),
 			Total:   len(flags),
 		})
+	}
+
+	if !mindmapSupplementAllowed(sk.Framework, topicMode) {
+		res.SupplementDropped = stripMindmapSupplements(results)
 	}
 
 	// ── ★ 总量上限：模型爱给每个分支的头条都加 ★，满图都是重点就等于没有重点 ──
