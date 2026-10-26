@@ -216,6 +216,13 @@ func parseMindmapItemText(text string) (label, note string, emphasis bool) {
 		s = s[:loc[0]]
 	}
 	label = strings.TrimSpace(s)
+	// 模型偶尔把「（补充）」写进标签里（如「💡 （补充）难点预判」）：挪到说明开头，标签保持干净
+	if strings.Contains(label, MindmapSupplementMark) {
+		label = strings.Join(strings.Fields(strings.Replace(label, MindmapSupplementMark, "", 1)), " ")
+		if note != "" && !strings.HasPrefix(note, MindmapSupplementMark) {
+			note = MindmapSupplementMark + note
+		}
+	}
 	return
 }
 
