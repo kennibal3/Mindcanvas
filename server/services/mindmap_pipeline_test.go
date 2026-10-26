@@ -291,8 +291,9 @@ func TestPipeline_Happy(t *testing.T) {
 	if !strings.HasPrefix(res.Outline, "# ♻️ 社区垃圾分类推进方案\n\n## 📊 现状\n- ★ ") {
 		t.Fatalf("大纲开头不对:\n%s", res.Outline)
 	}
-	if res.SupplementNotes != 3 {
-		t.Fatalf("补充说明数 %d，期望 3", res.SupplementNotes)
+	// skel3 的框架是「问题解决」（事实类）：模型写的 3 条「（补充）」应被代码剔除
+	if res.SupplementNotes != 0 || res.SupplementDropped != 3 {
+		t.Fatalf("补充说明 %d / 剔除 %d，期望 0 / 3", res.SupplementNotes, res.SupplementDropped)
 	}
 	// 节点数 = 1 根 + 3 分支 + 每分支 4 条
 	if res.Nodes != 1+3+3*4 {
@@ -632,7 +633,7 @@ func TestOutlineContract(t *testing.T) {
 	if err := json.Unmarshal(raw, &fx); err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeLLM{skeletons: []string{"框架：问题解决\n# 🔬 样例主题\n## 🌱 甲\n## 💡 乙"}}
+	f := &fakeLLM{skeletons: []string{"框架：教学环节\n# 🔬 样例主题\n## 🌱 甲\n## 💡 乙"}}
 	f.expand = func(branch string, attempt int) (string, bool, error) {
 		if strings.Contains(branch, "甲") {
 			return "- ★ 🅰 核心概念 :: 材料里的原话\n  - 细分一 :: 例：一个具体例子\n- 🅱 方法 :: （补充）建议的做法\n- 其他要点\n", false, nil
@@ -724,5 +725,63 @@ func TestParseItemText_SupplementMarkInLabelMovesToNote(t *testing.T) {
 	l, n, _ = parseMindmapItemText("（补充）独立标签")
 	if l != "独立标签" {
 		t.Fatalf("%q", l)
+	}
+}
+
+func TestSupplementAllowed(t *testing.T) {
+	cases := []struct {
+		fw    string
+		topic bool
+		want  bool
+	}{
+		{"教学环节", false, true}, {"知识体系", false, true},
+		{"项目管理", false, false}, {"问题解决", false, false}, {"", false, false},
+		{"项目管理", true, true},
+	}
+	for _, c := range cases {
+		if got := mindmapSupplementAllowed(c.fw, c.topic); got != c.want {
+			t.Errorf("%q topic=%v → %v，期望 %v", c.fw, c.topic, got, c.want)
+		}
+	}
+}
+
+func TestStripSupplements(t *testing.T) {
+	rs := []branchResult{{items: []mmItem{
+		{Level: 2, Label: "甲", Note: "原文说明"},
+		{Level: 2, Label: "乙", Note: "（补充）编的"},
+		{Level: 3, Label: "乙一", Note: "（补充）编的子项"},
+		{Level: 3, Label: "乙二", Note: "原文子项"},
+	}}, {err: errors.New("失败"), items: []mmItem{{Level: 2, Label: "丙", Note: "（补充）x"}}}}
+	n := stripMindmapSupplements(rs)
+	if n != 2 {
+		t.Fatalf("剔除 %d，期望 2", n)
+	}
+	got := rs[0].items
+	if len(got) != 3 || got[0].Note != "原文说明" || got[1].Label != "乙" || got[1].Note != "" || got[2].Label != "乙二" {
+		t.Fatalf("%+v", got)
+	}
+	if rs[1].items[0].Note != "（补充）x" {
+		t.Fatal("失败分支不处理")
+	}
+}
+
+func TestPipeline_FactualMaterialSupplementsStripped(t *testing.T) {
+	// 骨架选「项目管理」：模型违规补充的例子必须被剔除
+	f := &fakeLLM{skeletons: []string{"框架：项目管理\n# 纪要\n## 甲甲\n## 乙乙\n## 丙丙"}, expand: okExpand}
+	res, err := RunMindmapPipeline(context.Background(), f.call, strings.Repeat("会议材料。", 30), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Outline, "（补充）") || res.SupplementNotes != 0 || res.SupplementDropped != 3 {
+		t.Fatalf("事实类材料不应保留补充: dropped=%d notes=%d\n%s", res.SupplementDropped, res.SupplementNotes, res.Outline)
+	}
+	// 教学环节：保留
+	f2 := &fakeLLM{skeletons: []string{"框架：教学环节\n# 课\n## 甲甲\n## 乙乙\n## 丙丙"}, expand: okExpand}
+	res2, err := RunMindmapPipeline(context.Background(), f2.call, strings.Repeat("教案材料。", 30), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.SupplementNotes != 3 || res2.SupplementDropped != 0 {
+		t.Fatalf("教学类应保留补充: %+v", res2)
 	}
 }
