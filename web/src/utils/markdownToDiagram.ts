@@ -60,6 +60,10 @@ export interface OutlineItem {
   /** 1 起的层级，1 ＝ 最外层 */
   depth: number;
   text: string;
+  /** REQ-068：「标题 :: 说明」里的说明部分 */
+  note?: string;
+  /** REQ-068：行首/行尾带 ★ 的重点标记 */
+  emphasis?: boolean;
   /** 来源行号（1 起），仅用于排查 */
   line: number;
 }
@@ -103,6 +107,35 @@ export function stripInlineMarkdown(s: string): string {
 }
 
 // ────────────────────────────────────────────────────────────────
+// REQ-068：条目文本里的两种可选标记
+//   「标题 :: 说明」   —— 空白包围的 :: 把一行拆成标题与补充说明/例子
+//                         （要求两侧有空白，所以 std::vector 这类不会被误拆）
+//   「★ 标题」「标题 ★」—— 重点。只认 ★（U+2605），不认 ⭐：后者常被当装饰
+//                         图标放在标题前，属于标题文字的一部分
+// 图标不单独建模：emoji 本来就是标题文字，原样保留、照常渲染。
+// 没有这些标记的输入，解析结果与改动前逐字一致（无损直转的承诺不变）。
+// ────────────────────────────────────────────────────────────────
+const RE_NOTE_SEP = /\s::\s/;
+const RE_MARK_LEAD = /^\s*★\s*/;
+const RE_MARK_TAIL = /\s*★\s*$/;
+
+export function parseItemText(raw: string): { text: string; note?: string; emphasis?: boolean } {
+  let s = raw;
+  let emphasis = false;
+  if (RE_MARK_LEAD.test(s)) { emphasis = true; s = s.replace(RE_MARK_LEAD, ""); }
+  else if (RE_MARK_TAIL.test(s)) { emphasis = true; s = s.replace(RE_MARK_TAIL, ""); }
+
+  let note: string | undefined;
+  const m = RE_NOTE_SEP.exec(s);
+  if (m) {
+    note = stripInlineMarkdown(s.slice(m.index + m[0].length)) || undefined;
+    s = s.slice(0, m.index);
+  }
+  const text = stripInlineMarkdown(s);
+  return { text, ...(note ? { note } : {}), ...(emphasis ? { emphasis: true } : {}) };
+}
+
+// ────────────────────────────────────────────────────────────────
 // 第一步：抽大纲
 //
 // 层级怎么算：标题给绝对层级（# ＝1，## ＝2 …）；列表项挂在「当前标题」
@@ -131,11 +164,11 @@ export function extractOutline(md: string): OutlineItem[] {
 
     const h = RE_HEADING.exec(line);
     if (h) {
-      const text = stripInlineMarkdown(h[2]);
-      if (!text) continue;
+      const p = parseItemText(h[2]);
+      if (!p.text) continue;
       headingDepth = h[1].length;
       indentStack = []; // 新标题重开一段列表上下文
-      items.push({ depth: headingDepth, text, line: i + 1 });
+      items.push({ depth: headingDepth, ...p, line: i + 1 });
       continue;
     }
 
@@ -148,18 +181,18 @@ export function extractOutline(md: string): OutlineItem[] {
       if (indentStack.length === 0 || indentStack[indentStack.length - 1] < indent) {
         indentStack.push(indent);
       }
-      const text = stripInlineMarkdown(li[2]);
-      if (!text) continue;
-      items.push({ depth: headingDepth + indentStack.length, text, line: i + 1 });
+      const p = parseItemText(li[2]);
+      if (!p.text) continue;
+      items.push({ depth: headingDepth + indentStack.length, ...p, line: i + 1 });
       continue;
     }
 
     // 普通段落：挂在当前标题下一层。
     // 不跳过它——「跳过就是丢内容」正是本次要修的毛病。
-    const text = stripInlineMarkdown(line);
-    if (!text) continue;
+    const p = parseItemText(line);
+    if (!p.text) continue;
     indentStack = [];
-    items.push({ depth: headingDepth + 1, text, line: i + 1 });
+    items.push({ depth: headingDepth + 1, ...p, line: i + 1 });
   }
 
   return items;
@@ -189,7 +222,11 @@ export function outlineToNodes(
     }
     const parent = stack.length > 0 ? stack[stack.length - 1].id : "";
     const id = `md${++seq}`;
-    nodes.push({ id, label: item.text, parent });
+    nodes.push({
+      id, label: item.text, parent,
+      ...(item.note ? { note: item.note } : {}),
+      ...(item.emphasis ? { emphasis: true } : {}),
+    });
     stack.push({ depth: item.depth, id });
   }
 
