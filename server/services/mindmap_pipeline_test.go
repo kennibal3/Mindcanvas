@@ -709,3 +709,20 @@ func TestPipeline_EmphasisCappedAndTopicModeFlag(t *testing.T) {
 		t.Fatalf("短输入应标记 TopicMode: %v %+v", err, res2)
 	}
 }
+
+func TestParseItemText_SupplementMarkInLabelMovesToNote(t *testing.T) {
+	l, n, e := parseMindmapItemText("💡 （补充）学生思维难点预判 :: 对照实验变量控制易混淆")
+	if l != "💡 学生思维难点预判" || n != "（补充）对照实验变量控制易混淆" || e {
+		t.Fatalf("(%q,%q,%v)", l, n, e)
+	}
+	// 已在说明里带标记的不重复加
+	l, n, _ = parseMindmapItemText("例子 :: （补充）一个例子")
+	if l != "例子" || n != "（补充）一个例子" {
+		t.Fatalf("(%q,%q)", l, n)
+	}
+	// 标签里有标记且没有说明：说明只剩标记本身，会被体检当成空说明——此时丢掉标记，保持原样安静
+	l, n, _ = parseMindmapItemText("（补充）独立标签")
+	if l != "独立标签" {
+		t.Fatalf("%q", l)
+	}
+}
