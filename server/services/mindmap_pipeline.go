@@ -65,6 +65,8 @@ type MindmapResult struct {
 	Rewritten         int      // 被定向重写并采纳的分支数
 	Flagged           int      // 体检不合格、触发重写的分支数
 	SupplementNotes   int      // 以「（补充）」开头的说明条数（AI 补充、非原文）
+	TopicMode         bool     // 输入只有主题没有正文：内容全部来自模型常识
+	EmphasisDropped   int      // 超出全图 ★ 上限、被去掉的数量
 	FailedBranches    []string // 展开失败的分支名
 	TruncatedBranches []string // 被截断的分支名
 	Warnings          []string // 面向老师的人话提示
@@ -400,6 +402,38 @@ func runLimited(n, limit int, fn func(i int)) {
 // 主流程
 // ────────────────────────────────────────────────────────────
 
+// mindmapEmphasisCap 全图 ★ 上限：约一半分支数，至少 3 个
+func mindmapEmphasisCap(branches int) int {
+	c := (branches + 1) / 2
+	if c < 3 {
+		c = 3
+	}
+	return c
+}
+
+// capMindmapEmphasis 按出现顺序保留前 max 个 ★，其余去掉；返回去掉的数量。
+// 失败的分支不参与计数（它们不会出现在图上）。
+func capMindmapEmphasis(results []branchResult, max int) int {
+	kept, dropped := 0, 0
+	for i := range results {
+		if results[i].err != nil {
+			continue
+		}
+		for j := range results[i].items {
+			if !results[i].items[j].Emphasis {
+				continue
+			}
+			if kept < max {
+				kept++
+			} else {
+				results[i].items[j].Emphasis = false
+				dropped++
+			}
+		}
+	}
+	return dropped
+}
+
 type branchResult struct {
 	items     []mmItem
 	truncated bool
@@ -566,6 +600,10 @@ func RunMindmapPipeline(ctx context.Context, llm MindmapLLM, material string, em
 			Total:   len(flags),
 		})
 	}
+
+	// ── ★ 总量上限：模型爱给每个分支的头条都加 ★，满图都是重点就等于没有重点 ──
+	res.EmphasisDropped = capMindmapEmphasis(results, mindmapEmphasisCap(total))
+	res.TopicMode = topicMode
 
 	// ── 组装 ──
 	var out strings.Builder
