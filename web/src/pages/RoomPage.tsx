@@ -749,8 +749,9 @@ const RoomPage = () => {
                   {studentNickname}
                 </span>
               </button>
-            ) : (
-              // 教师端：成员数量按钮
+            ) : panelCollapsed ? (
+              // 教师端：成员数量按钮。REQ-069：场控面板展开时面板里已有「在线成员」列表，
+              // 顶栏不再重复放人数与浮层，只在面板收起时保留这个入口
               <button
                 onClick={() => setShowMembers(!showMembers)}
                 className="flex items-center gap-1 text-xs text-gray-500 hover:text-amber-700 px-2 py-1 rounded-lg hover:bg-gray-100"
@@ -759,7 +760,7 @@ const RoomPage = () => {
                 <span>{members.length}人</span>
                 {showMembers ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               </button>
-            )}
+            ) : null}
             {connectionStatus === 'connected'
               ? <Wifi size={14} className="text-green-500" />
               : connectionStatus === 'connecting'
@@ -783,14 +784,11 @@ const RoomPage = () => {
       </header>
 
       {/* 教师：成员列表浮层（REQ-012：改用 MemberList 组件，⋯ 按钮可用）*/}
-      {isTeacher && showMembers && (
+      {isTeacher && showMembers && panelCollapsed && (
         <div
           className="fixed top-[44px] z-[60] bg-white rounded-xl shadow-xl border border-gray-200 w-72 max-h-[480px] overflow-y-auto animate-fade-in"
           style={{ right: panelCollapsed ? '8px' : '304px' }}
         >
-          <div className="p-3 border-b border-gray-100">
-            <div className="text-xs font-medium text-gray-400">在线成员 ({members.length})</div>
-          </div>
           <div className="p-2">
             <MemberList
               members={members}
@@ -1022,7 +1020,7 @@ const RoomPage = () => {
       )}
 
       {/* 遮罩：点击关闭成员浮层/分享弹层 */}
-      {(showMembers || showShare) && (
+      {((showMembers && panelCollapsed) || showShare) && (
         <div
           className="fixed inset-0 z-[55]"
           onClick={() => { setShowMembers(false); setShowShare(false); }}

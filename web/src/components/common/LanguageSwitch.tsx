@@ -1,9 +1,10 @@
 // REQ-069：一键中/英切换。默认中文，点一下切到英文，再点切回。
 import { useTranslation } from 'react-i18next';
-import { setLang } from '@/i18n';
+import { setLang, LANG_SWITCH_ENABLED } from '@/i18n';
 
 export default function LanguageSwitch({ className = '' }: { className?: string }) {
   const { i18n } = useTranslation();
+  if (!LANG_SWITCH_ENABLED) return null;
   const isEn = i18n.language === 'en';
   return (
     <button
