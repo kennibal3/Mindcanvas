@@ -32,6 +32,7 @@ import { extractSyncedRoom } from '@/utils/wsContracts';
 // REQ-039 3d：消费作业详情页交接过来的「插入画布」内容
 import { takeCanvasInsert } from '@/utils/canvasHandoff';
 import { buildLectureCards } from '@/utils/diagramBuilder';
+import LanguageSwitch from '@/components/common/LanguageSwitch';
 
 // ===== 剪贴板工具函数 =====
 const copyToClipboard = (text: string): Promise<void> => {
@@ -723,6 +724,7 @@ const RoomPage = () => {
 
           {/* 右侧 */}
           <div className="flex items-center gap-2">
+            <LanguageSwitch />
             {!isTeacher ? (
               // REQ-019：学生端头像点击入口
               // BUG-045：用户明确要求昵称/头像的前端呈现"尽量大一点，比较醒目一点"——
@@ -1013,8 +1015,6 @@ const RoomPage = () => {
         <ControlPanel
           roomId={roomId}
           sendMessage={send}
-          connectionStatus={connectionStatus}
-          onReconnect={reconnect}
           excalidrawAPI={excalidrawAPI}
           onReadOnlyChange={handleReadOnlyChange}
           onFollowModeChange={handleFollowModeChange}

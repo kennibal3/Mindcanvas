@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import LanguageSwitch from '@/components/common/LanguageSwitch';
 import { useAuth } from '@/hooks/useAuth';
 import { LogIn, Eye, EyeOff } from 'lucide-react';
 
@@ -32,8 +33,9 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center"
+    <div className="relative min-h-screen flex items-center justify-center"
          style={{ background: 'linear-gradient(135deg, var(--color-primary-50) 0%, #FDF6EC 60%, var(--color-bg) 100%)' }}>
+      <LanguageSwitch className="absolute top-4 right-4" />
       <div className="w-full max-w-md px-4">
 
         {/* Logo 区域 */}
