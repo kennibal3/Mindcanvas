@@ -12,9 +12,13 @@ import en from './en.json';
 export type Lang = 'zh' | 'en';
 // 专用键名：不沿用旧版语言检测器自动缓存的 i18nextLng，避免历史自动判断结果被当成"用户选择"
 export const LANG_STORAGE_KEY = 'mc_lang';
+// 英文目前只覆盖约 92 条文案，房间/场控面板等大部分界面仍是写死中文，开放切换会中英混杂。
+// 整页翻译完成前保持 false：切换按钮不显示，且无视浏览器里已存的 en 选择，一律中文。
+export const LANG_SWITCH_ENABLED = false;
 
 function readSavedLang(): Lang {
   try {
+    if (!LANG_SWITCH_ENABLED) return 'zh';
     const v = localStorage.getItem(LANG_STORAGE_KEY);
     return v === 'en' ? 'en' : 'zh';
   } catch {
