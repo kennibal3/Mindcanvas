@@ -1,0 +1,100 @@
+/* =============================================================
+ * REQ-069 · Excalidraw 换皮：把画布自带界面对齐「暖木教育」设计令牌
+ *
+ * 做法：Excalidraw 0.18 的工具栏/弹窗/侧栏全部由 .excalidraw 上的 CSS 变量驱动，
+ * 这里只覆盖变量，不碰它的 DOM、不改它的行为。
+ * - 选择器用 `.excalidraw.excalidraw`（双类），特异性高于库自带的 `.excalidraw`，
+ *   与样式加载先后无关。
+ * - 画布固定浅色主题（CanvasEngine 里 theme="light"），所以不需要处理 .theme--dark。
+ * - 取值优先引用 index.css 的令牌（--color-surface / --color-border …），
+ *   护眼模式换令牌时自动跟随；少数无法引用令牌的色阶在文末单独给护眼模式覆盖。
+ * - 注意：--color-selection 同时被库读去画「选中框/手柄」的颜色，所以选中框也会变暖色。
+ * 不属于本文件的：画笔取色盘（绘图颜色，不是界面色）。
+ * ============================================================= */
+
+.excalidraw.excalidraw {
+  /* —— 品牌主色：与 .btn-primary（amber-700）一致 —— */
+  --color-primary:               #B45309;
+  --color-primary-darker:        #92400E;
+  --color-primary-darkest:       #78350F;
+  --color-primary-hover:         #92400E;
+  --color-primary-light:         var(--color-primary-50);
+  --color-primary-light-darker:  #F6DDB5;
+  --color-on-primary-container:  var(--color-primary-900);
+  --color-brand-hover:           #92400E;
+  --color-brand-active:          #78350F;
+  --color-selection:             var(--color-primary-500);
+  --focus-highlight-color:       var(--color-primary-500);
+  --select-highlight-color:      var(--color-primary-300);
+
+  /* —— 表面与边框 —— */
+  --island-bg-color:             var(--color-surface);
+  --default-bg-color:            var(--color-surface);
+  --color-surface-lowest:        var(--color-surface);
+  --color-surface-low:           #F1EEE6;
+  --color-surface-mid:           #F6F3EC;
+  --color-surface-high:          #EFEBDF;
+  --color-border-outline:        #A8A596;
+  --color-border-outline-variant: var(--color-border-strong);
+  --dialog-border-color:         var(--color-border);
+  --sidebar-border-color:        var(--color-border);
+  --overlay-bg-color:            rgba(251, 250, 247, 0.88);
+
+  /* —— 文字 —— */
+  --color-on-surface:            var(--color-text);
+  --text-primary-color:          var(--color-text);
+  --input-label-color:           var(--color-text-muted);
+  --popup-text-color:            var(--color-text);
+
+  /* —— 输入框 / 弹出层 —— */
+  --input-bg-color:              var(--color-surface);
+  --input-border-color:          var(--color-border-strong);
+  --input-hover-bg-color:        #F6F3EC;
+  --popup-secondary-bg-color:    #F6F3EC;
+
+  /* —— 危险色（删除等）：与 index.css 的 --color-danger 同值。
+   * 这里必须写字面值：库自己也定义了同名变量 --color-danger，写成 var(--color-danger)
+   * 会变成自己引用自己而整体失效。 —— */
+  --color-danger:                #A32D2D;
+  --button-destructive-color:    #A32D2D;
+  --button-destructive-bg-color: #FCEBEB;
+
+  /* —— 灰阶：同明度换成暖灰，与全站 tailwind gray 同一组 —— */
+  --color-gray-10:  #F6F4EF;
+  --color-gray-20:  #EAE7DE;
+  --color-gray-30:  #D8D4C8;
+  --color-gray-40:  #BDB9AB;
+  --color-gray-50:  #9A988F;
+  --color-gray-60:  #807E74;
+  --color-gray-70:  #6B6A64;
+  --color-gray-80:  #4A4944;
+  --color-gray-85:  #35342F;
+  --color-gray-90:  #2C2C2A;
+  --color-gray-100: #1E1E1C;
+
+  /* —— 圆角：对齐面板 rounded-xl（12px）/ 控件 8px —— */
+  --border-radius-md: 0.5rem;
+  --border-radius-lg: 0.75rem;
+
+  /* —— 阴影：换成带暖色的令牌阴影 —— */
+  --shadow-island:  0 0 1px rgba(44, 44, 42, 0.18), var(--shadow-card), var(--shadow-pop);
+  --modal-shadow:   0 12px 40px rgba(65, 36, 2, 0.14);
+  --sidebar-shadow: 0 12px 40px rgba(65, 36, 2, 0.14);
+
+  /* —— 字体：与全站同一套（中文走苹方/微软雅黑），不再单独加载 Assistant —— */
+  --ui-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+             'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+/* 护眼模式：上面几个写死的暖色阶改为跟护眼配色走 */
+:root.eye-care-mode .excalidraw.excalidraw {
+  --color-surface-low:        #E9DFC3;
+  --color-surface-mid:        #EFE6CE;
+  --color-surface-high:       #E6DAB8;
+  --input-hover-bg-color:     #EFE6CE;
+  --popup-secondary-bg-color: #EFE6CE;
+  --overlay-bg-color:         rgba(243, 236, 216, 0.88);
+  --color-danger:                #9B3D2D;
+  --button-destructive-color:    #9B3D2D;
+  --button-destructive-bg-color: #F3DEDA;
+}

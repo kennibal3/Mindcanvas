@@ -12,6 +12,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { Excalidraw, CaptureUpdateAction } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
+import '@/styles/excalidraw-skin.css'; // REQ-069：画布界面换成暖木令牌（须在库样式之后）
 import { useCanvasStore } from '@/store/canvasStore';
 import { useRoomStore } from '@/store/roomStore';
 import { useImageUpload } from '@/hooks/useImageUpload';
