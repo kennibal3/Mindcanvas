@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ChevronLeft, ChevronRight, Wifi, WifiOff, RotateCw,
+  ChevronLeft, ChevronRight,
   Lock, Unlock, Navigation, Eye, EyeOff,
   Radio, Palette, Sun,
   Download, Loader2, BookOpen, Share2,
@@ -63,9 +63,6 @@ type ControlTab = 'control' | 'flow' | 'group';
 interface ControlPanelProps {
   roomId: string;
   sendMessage: (type: string, payload: Record<string, any>) => void;
-  connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
-  // BUG-036：重试耗尽（error）后，手动重连按钮调用的重连函数
-  onReconnect?: () => void;
   excalidrawAPI?: any;
   onReadOnlyChange?: (readonly: boolean) => void;
   onFollowModeChange?: (follow: boolean) => void;
@@ -134,14 +131,20 @@ const formatBytes = (n: number) => {
 };
 
 interface SceneCapacityBarProps {
-  size: number;
-  warnBytes: number;
-  rejectBytes: number;
-  status: 'ok' | 'warn' | 'reject';
+  elementCount: number;
+  elementLabel: string;
+  // 以下四项在 room_sync 到达前为 undefined：只显示元素数，不画容量条
+  size?: number;
+  warnBytes?: number;
+  rejectBytes?: number;
+  status?: 'ok' | 'warn' | 'reject';
 }
 
-const SceneCapacityBar = ({ size, warnBytes, rejectBytes, status }: SceneCapacityBarProps) => {
-  const pct = rejectBytes > 0 ? Math.min(100, (size / rejectBytes) * 100) : 0;
+const SceneCapacityBar = ({
+  elementCount, elementLabel, size, warnBytes, rejectBytes, status,
+}: SceneCapacityBarProps) => {
+  const hasSize = size !== undefined && rejectBytes !== undefined && status !== undefined;
+  const pct = hasSize && rejectBytes! > 0 ? Math.min(100, (size! / rejectBytes!) * 100) : 0;
   const barColor =
     status === 'reject' ? 'bg-red-500' : status === 'warn' ? 'bg-amber-500' : 'bg-green-500';
   const textColor =
@@ -152,18 +155,22 @@ const SceneCapacityBar = ({ size, warnBytes, rejectBytes, status }: SceneCapacit
       <div className="flex items-center justify-between text-xs mb-1">
         <span className="flex items-center gap-1 text-gray-500">
           <HardDrive size={12} />
-          画布容量
+          {elementLabel} <span className="font-medium text-gray-700">{elementCount}</span>
         </span>
-        <span className={textColor}>
-          {formatBytes(size)} / {formatBytes(rejectBytes)}
-        </span>
+        {hasSize && (
+          <span className={textColor} title="画布容量（当前 / 上限）">
+            {formatBytes(size!)} / {formatBytes(rejectBytes!)}
+          </span>
+        )}
       </div>
-      <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${barColor}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      {hasSize && (
+        <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${barColor}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
       {status === 'warn' && (
         <p className="text-xs text-amber-700 mt-1">画布内容较多，可能影响加载速度</p>
       )}
@@ -301,7 +308,7 @@ const SaveTemplateModal = ({ roomId, onClose, onSaved }: SaveTemplateModalProps)
 
 // ===== 主面板 =====
 const ControlPanel = ({
-  roomId, sendMessage, connectionStatus, onReconnect, excalidrawAPI,
+  roomId, sendMessage, excalidrawAPI,
   onReadOnlyChange, onFollowModeChange,
 }: ControlPanelProps) => {
   const { t } = useTranslation();
@@ -648,24 +655,8 @@ const ControlPanel = ({
 
       {/* 顶部标题栏 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-sm">{t('control.panel')}</h3>
-          {connectionStatus === 'connected'
-            ? <Wifi size={14} className="text-green-500" />
-            /* BUG-036：自动重连耗尽后（error）给一个手动重连按钮 */
-            : connectionStatus === 'error'
-              ? (
-                <button
-                  onClick={onReconnect}
-                  className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
-                  title="连接已断开，点击重新连接"
-                >
-                  <WifiOff size={14} />
-                  <RotateCw size={11} />
-                </button>
-              )
-              : <WifiOff size={14} className="text-red-500" />}
-        </div>
+        {/* REQ-069：连接状态图标只保留房间顶栏那一个（含 BUG-036 的手动重连按钮），面板标题旁不再重复 */}
+        <h3 className="font-semibold text-sm">{t('control.panel')}</h3>
         <button
           onClick={() => { setCollapsed(true); window.dispatchEvent(new CustomEvent('ctrl_panel_collapsed', { detail: { collapsed: true } })); }}
           className="p-1 rounded hover:bg-gray-100 text-gray-400"
@@ -714,31 +705,19 @@ const ControlPanel = ({
 
         {activeTab === 'control' && (
           <>
-            {/* 统计卡片 */}
-            <div className="px-4 py-3 grid grid-cols-2 gap-3">
-              <div className="bg-amber-50 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-amber-700">{members.length}</div>
-                <div className="text-xs text-gray-500">{t('control.memberCount')}</div>
-              </div>
-              <div className="bg-green-50 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-green-600">
-                  {elements.filter(e => !e.is_deleted).length}
-                </div>
-                <div className="text-xs text-gray-500">{t('control.elementCount')}</div>
-              </div>
+            {/* REQ-069：在线人数只在房间顶栏与下方「在线成员」标题各出现一次，这里不再放大卡片；
+                画布元素数与容量合并为一行（room_sync 到达前 sceneSize 为 null，只显示元素数）。
+                REQ-029：容量提示条逻辑不变。 */}
+            <div className="px-4 pt-3 pb-1">
+              <SceneCapacityBar
+                elementCount={elements.filter(e => !e.is_deleted).length}
+                elementLabel={t('control.elementCount')}
+                size={sceneSize?.size}
+                warnBytes={sceneSize?.warnBytes}
+                rejectBytes={sceneSize?.rejectBytes}
+                status={sceneSize?.status}
+              />
             </div>
-
-            {/* REQ-029：场景容量提示条（room_sync 到达前 sceneSize 为 null，不渲染） */}
-            {sceneSize && (
-              <div className="px-4 pb-1">
-                <SceneCapacityBar
-                  size={sceneSize.size}
-                  warnBytes={sceneSize.warnBytes}
-                  rejectBytes={sceneSize.rejectBytes}
-                  status={sceneSize.status}
-                />
-              </div>
-            )}
 
             {/* 场控按钮组 */}
             <div className="px-4 py-2 space-y-2">

@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import LanguageSwitch from '@/components/common/LanguageSwitch';
 import { AVATARS } from '@/utils/constants';
 
 const API_BASE = '/api';
@@ -193,9 +194,10 @@ const JoinPage = () => {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 flex flex-col"
+      className="relative min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 flex flex-col"
       style={{ minHeight: '-webkit-fill-available' }}
     >
+      <LanguageSwitch className="absolute top-3 right-3 z-10" />
       {/* 滚动容器：键盘弹出时内容可滚动 */}
       <div className="flex-1 overflow-y-auto">
         <div className="min-h-full flex flex-col items-center justify-center px-4 py-8 sm:py-12">

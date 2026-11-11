@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import LanguageSwitch from '@/components/common/LanguageSwitch';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Plus, Copy, Trash2, Lock, Users, LogOut, Settings,
@@ -559,6 +560,7 @@ const DashboardPage = () => {
                 <span className="hidden sm:inline">管理后台</span>
               </button>
             )}
+            <LanguageSwitch />
             <button
               onClick={() => {
                 setProfileName(user?.display_name || '');
